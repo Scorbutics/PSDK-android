@@ -7,7 +7,7 @@ android {
     buildToolsVersion "30.0.3"
 
     defaultConfig {
-        applicationId "org.sfmldev.android"
+        applicationId "com.android.psdk"
         minSdkVersion 26
         targetSdkVersion 29
         versionCode 1
@@ -15,7 +15,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                //cppFlags "-std=c++17 -g -ggdb -O0"
+                cppFlags "-std=c++17 -fdeclspec -g -ggdb -O0"
                 arguments "-DANDROID_STL=c++_shared","-DANDROID_PLATFORM=android-26","-DANDROID_ABI=arm64-v8a"
             }
         }
@@ -36,6 +36,11 @@ android {
             version "3.20.1"
         }
     }
+    sourceSets {
+        main {
+            jniLibs.filter.include("**/*")
+        }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -44,4 +49,5 @@ android {
 }
 
 dependencies {
+    implementation fileTree(dir: 'libs', include: '*.jar')
 }
