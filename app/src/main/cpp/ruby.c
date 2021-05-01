@@ -37,13 +37,9 @@ static VALUE rescue_require( VALUE data, VALUE err) {
     return Qnil;
 }
 
-static void sure_require( char *name)
-{
-    rb_rescue2( &call_require, (VALUE) name, &rescue_require, Qnil,
-                rb_eLoadError, (VALUE) 0);
+static void sure_require( char *name) {
+    rb_rescue2( &call_require, (VALUE) name, &rescue_require, Qnil, rb_eLoadError, (VALUE) 0);
 }
-
-
 
 int ExecRubyVM(const char* baseDirectory, const char* filename) {
     SetupRubyEnv(baseDirectory);

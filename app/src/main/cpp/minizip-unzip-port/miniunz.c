@@ -419,7 +419,6 @@ int unzip(zipfilename,dirname)
         printf("Cannot open %s or %s.zip\n",zipfilename,zipfilename);
         return 1;
     }
-    printf("%s opened\n",filename_try);
     if (chdir(dirname))
     {
         printf("Error changing into %s, aborting\n", dirname);

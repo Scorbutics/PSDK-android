@@ -14,9 +14,8 @@
 int CopyAssetFile(AAssetManager *mgr, const char* fname, const char* writeablePath) {
     struct stat sb;
     int32_t res = stat(writeablePath, &sb);
-    if (0 == res && sb.st_mode & S_IFDIR) {
-        printf("'%s' dir already exists.\n", writeablePath);
-    } else if (ENOENT == errno) {
+    if (ENOENT == errno) {
+        printf("'%s' dir does not exist. Trying to create it...\n", writeablePath);
         res = mkdir(writeablePath, 0770);
     }
     if (0 == res) {
