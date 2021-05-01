@@ -18,7 +18,7 @@ FOREACH(lib_shared ${libs_shared_dependencies})
 ENDFOREACH()
 
 set(sfml-main ${IMPORT_DIR}/${ANDROID_ABI}/libsfml-main.a )
-add_library(litecgss-example SHARED main.cpp sample_png.cpp)
+add_library(litecgss-example SHARED main.cpp sample_png.c prepare.c ruby.c minizip-unzip-port/ioapi.c minizip-unzip-port/miniunz.c minizip-unzip-port/unzip.c)
 target_link_libraries(litecgss-example
         "-Wl,--whole-archive ${sfml-main} -Wl,--no-whole-archive"
         #${sfml-main}

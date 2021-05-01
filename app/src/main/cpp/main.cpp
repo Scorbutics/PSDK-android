@@ -1,6 +1,5 @@
-#include <iostream>
-
 #include <SFML/Window/Keyboard.hpp>
+#include <SFML/System/NativeActivity.hpp>
 #include <LiteCGSS/Views/DisplayWindow.h>
 #include <LiteCGSS/Views/Viewport.h>
 #include <LiteCGSS/Configuration/DisplayWindowSettings.h>
@@ -8,16 +7,14 @@
 #include <LiteCGSS/Graphics/Texture.h>
 #include <LiteCGSS/Graphics/Serializers/TextureSerializer.h>
 
+//#include <android/native_activity.h>
 #include <android/log.h>
-#include <pthread.h>
-#include <unistd.h>
 
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_INFO, "sfml-activity", __VA_ARGS__))
 
-#include <ruby/ruby.h>
-#include <dlfcn.h>
-
+#include "prepare.h"
 #include "sample_png.h"
+#include "ruby.h"
 
 void MemTest() {
     auto settings = cgss::DisplayWindowSettings{};
@@ -187,46 +184,6 @@ static void ViewTest() {
     }
 }
 
-static int pfd[2];
-static pthread_t loggingThread;
-static const char *LOG_TAG = "PSDK-android";
-
-static void *loggingFunction(void*) {
-    ssize_t readSize;
-    char buf[2048];
-
-    while((readSize = read(pfd[0], buf, sizeof buf - 1)) > 0) {
-        if(buf[readSize - 1] == '\n') {
-            --readSize;
-        }
-
-        buf[readSize] = 0;  // add null-terminator
-
-        __android_log_write(ANDROID_LOG_DEBUG, LOG_TAG, buf); // Set any log level you want
-    }
-
-    return 0;
-}
-
-static int runLoggingThread() { // run this function to redirect your output to android log
-    setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
-    setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
-
-    /* create the pipe and redirect stdout and stderr */
-    pipe(pfd);
-    dup2(pfd[1], 1);
-    dup2(pfd[1], 2);
-
-    /* spawn the logging thread */
-    if(pthread_create(&loggingThread, 0, loggingFunction, 0) == -1) {
-        return -1;
-    }
-
-    pthread_detach(loggingThread);
-
-    return 0;
-}
-
 static std::string GetAppDirectoryFromLib(const std::string& base_lib_dir) {
     auto file = std::ifstream {"/proc/self/maps", std::ifstream::binary};
     auto line = std::string{};
@@ -242,7 +199,7 @@ static std::string GetAppDirectoryFromLib(const std::string& base_lib_dir) {
     }
     return "";
 }
-
+/*
 static void OpenLib(const std::string& lib_path) {
     void* lib = dlopen(lib_path.c_str(), RTLD_NOW);
     if (lib == NULL) {
@@ -253,43 +210,80 @@ static void OpenLib(const std::string& lib_path) {
     }
 }
 
-int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
-    //MemTest();
-    //ViewTest();
-
-    runLoggingThread();
-
+static void LoadAllLibs() {
     const auto appDir = GetAppDirectoryFromLib("/lib/arm64/");
     const auto lib64dir = appDir + "/lib/arm64/";
-    static const char* LibDeps[] = { /*"libruby.so"*/ /*, "libcurses.so", "libpanel.so", "libform.so", "libmenu.so", "libhistory.so", "libgdbm.so", "libssl.so" */};
+    static const char* LibDeps[] = { };//"libruby.so"*/ /*, "libcurses.so", "libpanel.so", "libform.so", "libmenu.so", "libhistory.so", "libgdbm.so", "libssl.so" };
     for (const char* dep : LibDeps) {
         OpenLib(lib64dir + dep);
     }
+}
+*/
 
+/*
+void ListFilesInFolder(const char* folder)
+{
+    DIR *d;
+    struct dirent *dir;
+    d = opendir(folder);
+    if (d) {
+        while ((dir = readdir(d)) != NULL) {
+            printf("%s\n", dir->d_name);
+        }
+        closedir(d);
+    } else {
+        fprintf(stderr, "cannot open folder %s\n", folder);
+    }
+}*/
 
-    //dlclose(lib);
+/*
+static std::string GetAppName() {
+    ANativeActivity* activity = sf::getNativeActivity();
+    JNIEnv* env;
+    activity->vm->AttachCurrentThread(&env, NULL);
+    try {
+        jclass android_content_Context = env->GetObjectClass(activity->clazz);
+        jmethodID midGetPackageName = env->GetMethodID(android_content_Context, "getPackageName", "()Ljava/lang/String;");
+        jstring packageName = (jstring) env->CallObjectMethod(activity->clazz, midGetPackageName);
+        auto result = std::string{env->GetStringUTFChars(packageName, NULL)};
+        activity->vm->DetachCurrentThread();
+        return result;
+    } catch (...) {
+        activity->vm->DetachCurrentThread();
+        return "";
+    }
+}*/
 
-    ruby_sysinit(&argc, &argv);
-    RUBY_INIT_STACK;
-    ruby_init();
-    ruby_init_loadpath();
+int main(int argc, char* argv[]) {
+    (void) argc;
+    (void) argv;
+    //MemTest();
+    //ViewTest();
 
-    /* Permet de connaître le nom du script dans les messages d'erreur */
-    //ruby_script("test_memory.rb");
+    auto* activity = sf::getNativeActivity();
+    //m_file = AAssetManager_open(activity->assetManager, filename.c_str(), AASSET_MODE_UNKNOWN);
 
-    int error = 0;
-    /* Charge le script dans l'interpréteur*/
-    //rb_require("test_memory.rb");
-    rb_eval_string("puts \"I Like chocolate\"");
-    rb_load_file("test_memory.rb");
-    //auto * n = rb_load_file("test_memory.rb");
-    //ruby_run_node(n);
+    RunLoggingThread();
+    const auto internalWriteablePath = std::string { GetAppFilesDir(activity) };
+    const auto externalWriteablePath = std::string { GetAppExternalFilesDir(activity) };
+    //const auto libRubyPath = internalWriteablePath + "/lib/ruby/";
 
-    LOGE("Error : %d", error);
+    CopyAssetFile(activity->assetManager, "app_internal.zip", internalWriteablePath.c_str());
+    CopyAssetFile(activity->assetManager, "app_data.zip", externalWriteablePath.c_str());
 
-    ruby_finalize();
+    //std::cout << internalWriteablePath << std::endl;
+    //std::cout << externalWriteablePath << std::endl;
+
+    //LoadAllLibs();
+
+    /*std::ifstream starter_file { externalWriteablePath + "/starter.rb" };
+    std::string line;
+    while (std::getline(starter_file, line)) {
+        std::cout << line << std::endl;
+    }*/
+
+    ExecRubyVM(internalWriteablePath.c_str(), (externalWriteablePath + "/starter.rb").c_str());
+
     return 0;
 }
 
