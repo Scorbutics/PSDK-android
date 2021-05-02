@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-int unzip(const char *filename, const char *dirname);
+int lite_unzip(const char *filename, const char *dirname);
 
 #ifdef __cplusplus
 }

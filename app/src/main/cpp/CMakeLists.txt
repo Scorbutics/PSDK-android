@@ -17,11 +17,14 @@ FOREACH(lib_shared ${libs_shared_dependencies})
     set_target_properties(${lib_shared} PROPERTIES IMPORTED_LOCATION ${IMPORT_DIR}/${ANDROID_ABI}/lib${lib_shared}.so)
 ENDFOREACH()
 
+add_subdirectory(lite-unzip)
+
 set(sfml-main ${IMPORT_DIR}/${ANDROID_ABI}/libsfml-main.a )
-add_library(litecgss-example SHARED main.cpp sample_png.c prepare.c ruby.c minizip-unzip-port/ioapi.c minizip-unzip-port/miniunz.c minizip-unzip-port/unzip.c)
+add_library(litecgss-example SHARED main.cpp jni_helper.c ruby.c logging.c)
+set_target_properties(litecgss-example PROPERTIES COMPILE_FLAGS "-Wall -Wextra -Werror")
 target_link_libraries(litecgss-example
         "-Wl,--whole-archive ${sfml-main} -Wl,--no-whole-archive"
-        #${sfml-main}
+        lite-unzip
         ${log-lib} ${zlib-lib} ${ndk_helper-lib}
         ${libs_shared_dependencies}
 )

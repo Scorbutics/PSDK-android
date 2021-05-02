@@ -1,5 +1,5 @@
-#ifndef PSDK_ANDROID_PREPARE_H
-#define PSDK_ANDROID_PREPARE_H
+#ifndef PSDK_ANDROID_JNI_HELPER_H
+#define PSDK_ANDROID_JNI_HELPER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,10 +10,10 @@ extern "C" {
 int CopyAssetFile(AAssetManager *mgr, const char* fname, const char *writeablePath);
 const char *GetAppFilesDir(ANativeActivity *activity);
 const char* GetAppExternalFilesDir(ANativeActivity *activity);
-int RunLoggingThread();
+const char* GetExternalStorageDir(ANativeActivity *activity);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif //PSDK_ANDROID_PREPARE_H
+#endif //PSDK_ANDROID_JNI_HELPER_H

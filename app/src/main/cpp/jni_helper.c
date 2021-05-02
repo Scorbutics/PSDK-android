@@ -1,58 +1,48 @@
 #include <errno.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <pthread.h>
-#include <unistd.h>
 
-#include <android/log.h>
 #include <android/native_activity.h>
 
 #define MAXFILENAME (256)
 
-#include "minizip-unzip-port/miniunz.h"
+#include "lite-unzip/liteunz.h"
 
 int CopyAssetFile(AAssetManager *mgr, const char* fname, const char* writeablePath) {
     struct stat sb;
-    int32_t res = stat(writeablePath, &sb);
+    stat(writeablePath, &sb);
     if (ENOENT == errno) {
         printf("'%s' dir does not exist. Trying to create it...\n", writeablePath);
-        res = mkdir(writeablePath, 0770);
-    }
-    if (0 == res) {
-        char tofname[MAXFILENAME + 16] = "";
-        FILE *file = NULL;
-
-        snprintf(tofname, MAXFILENAME,"%s/%s", writeablePath, fname);
-        file = fopen(tofname, "rb");
-        if (file) {
-            fclose(file);
-            printf("file already exist : %s\n",tofname);
-            return 0;
-        }
-
-        // copy file is not exist
-        AAsset *asset = AAssetManager_open(mgr, fname, AASSET_MODE_UNKNOWN);
-        if (asset == NULL) {
-            printf("no file : assets/%s\n", fname);
+        if (mkdir(writeablePath, 0770) != 0) {
             return 1;
         }
-
-        off_t fz = AAsset_getLength(asset);
-        const void* buf = AAsset_getBuffer(asset);
-        file = fopen(tofname, "wb");
-        if (file) {
-            fwrite(buf, sizeof(char), fz, file);
-            fclose(file);
-        } else {
-            printf("open file error : %s\n",tofname);
-        }
-        AAsset_close(asset);
-        res = unzip(tofname, writeablePath);
-
-        // No need to keep the extracted zip file
-        //remove(tofname);
     }
-    return res;
+
+    AAsset *asset = AAssetManager_open(mgr, fname, AASSET_MODE_UNKNOWN);
+    if (asset == NULL) {
+        return 2;
+    }
+
+    off_t fz = AAsset_getLength(asset);
+    const void* buf = AAsset_getBuffer(asset);
+
+    char destination_file_name[MAXFILENAME + 16] = "";
+    snprintf(destination_file_name, MAXFILENAME,"%s/%s", writeablePath, fname);
+    FILE *file = fopen(destination_file_name, "wb");
+    if (file) {
+        fwrite(buf, sizeof(char), fz, file);
+        fclose(file);
+        AAsset_close(asset);
+    } else {
+        AAsset_close(asset);
+        return 3;
+    }
+
+    if (lite_unzip(destination_file_name, writeablePath) == 0) {
+        // No need to keep the extracted zip file
+        remove(destination_file_name);
+    }
+    return 0;
 }
 
 const char* GetAppExternalFilesDir(ANativeActivity *activity) {
@@ -67,13 +57,35 @@ const char* GetAppExternalFilesDir(ANativeActivity *activity) {
     JavaVM* vm = activity->vm;
     JNIEnv* env = activity->env;
     jint res = (*vm)->AttachCurrentThread(vm, &env, 0);
-    if (res!=0) {
-        printf("GetAppExternalFilesDir error.\n");
+    if (res != 0) {
+        fprintf(stderr,"Cannot attach current thread (NativeActivity::getExternalFilesDir)\n");
+        return NULL;
     }
     jclass cls_Env = (*env)->FindClass(env, "android/app/NativeActivity");
     jmethodID mid = (*env)->GetMethodID(env, cls_Env, "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
     jobject obj_File = (*env)->CallObjectMethod(env, activity->clazz, mid, NULL);
     jclass cls_File = (*env)->FindClass(env, "java/io/File");
+    jmethodID mid_getPath = (*env)->GetMethodID(env, cls_File, "getPath", "()Ljava/lang/String;");
+    jstring obj_Path = (jstring) (*env)->CallObjectMethod(env, obj_File, mid_getPath);
+    writeablePath = (*env)->GetStringUTFChars(env, obj_Path, NULL);
+    (*vm)->DetachCurrentThread(vm);
+    return writeablePath;
+}
+
+const char* GetExternalStorageDir(ANativeActivity *activity) {
+    JavaVM* vm = activity->vm;
+    JNIEnv* env = activity->env;
+    jint res = (*vm)->AttachCurrentThread(vm, &env, 0);
+    if (res != 0) {
+        fprintf(stderr, "Cannot attach current thread (Enviroment::getExternalStorageDirectory)\n");
+        return NULL;
+    }
+
+    static const char* writeablePath = NULL;
+    jclass cls_Env = (*env)->FindClass(env, "android/os/Environment");
+    jmethodID mid = (*env)->GetStaticMethodID(env, cls_Env, "getExternalStorageDirectory", "()Ljava/io/File;");
+    jobject obj_File = (*env)->CallStaticObjectMethod(env, cls_Env, mid);
+    jclass cls_File = (*env)->GetObjectClass(env, obj_File);
     jmethodID mid_getPath = (*env)->GetMethodID(env, cls_File, "getPath", "()Ljava/lang/String;");
     jstring obj_Path = (jstring) (*env)->CallObjectMethod(env, obj_File, mid_getPath);
     writeablePath = (*env)->GetStringUTFChars(env, obj_Path, NULL);
@@ -106,45 +118,4 @@ const char* GetAppFilesDir(ANativeActivity *activity) {
     writeablePath = (*env)->GetStringUTFChars(env,path, NULL);
     (*vm)->DetachCurrentThread(vm);
     return writeablePath;
-}
-
-
-static int pfd[2];
-static pthread_t loggingThread;
-static const char *LOG_TAG = "PSDK-android";
-
-static void *loggingFunction(void*) {
-    ssize_t readSize;
-    char buf[2048];
-
-    while((readSize = read(pfd[0], buf, sizeof buf - 1)) > 0) {
-        if(buf[readSize - 1] == '\n') {
-            --readSize;
-        }
-
-        buf[readSize] = 0;  // add null-terminator
-
-        __android_log_write(ANDROID_LOG_DEBUG, LOG_TAG, buf); // Set any log level you want
-    }
-
-    return 0;
-}
-
-int RunLoggingThread() {
-    setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
-    setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
-
-    /* create the pipe and redirect stdout and stderr */
-    pipe(pfd);
-    dup2(pfd[1], 1);
-    dup2(pfd[1], 2);
-
-    /* spawn the logging thread */
-    if(pthread_create(&loggingThread, 0, loggingFunction, 0) == -1) {
-        return -1;
-    }
-
-    pthread_detach(loggingThread);
-
-    return 0;
 }

@@ -9,9 +9,10 @@ static void SetupRubyEnv(const char* baseDirectory)
 
     static const char* RUBY_VERSION = "3.0.0";
     const size_t baseDirectorySize = strlen(baseDirectory);
-    const size_t maxRubyDirBufferSize = RUBY_NUM_PATH_IN_RUBYLIB_ENV_VAR * ((baseDirectorySize * sizeof(char) + sizeof(char))
-                                        + (strlen(RUBY_VERSION) * sizeof(char))
-                                        + RUBY_BUFFER_PATH_SIZE);
+    const size_t maxRubyDirBufferSize = RUBY_NUM_PATH_IN_RUBYLIB_ENV_VAR *
+            ((baseDirectorySize * sizeof(char) + sizeof(char)) +
+            (strlen(RUBY_VERSION) * sizeof(char)) +
+            RUBY_BUFFER_PATH_SIZE);
 
     char* rubyBufferDir = (char*) malloc(maxRubyDirBufferSize);
     snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s/ruby/gems/%s/", baseDirectory, RUBY_VERSION);
@@ -28,20 +29,6 @@ static void SetupRubyEnv(const char* baseDirectory)
 
 #include <ruby/ruby.h>
 
-static VALUE call_require( VALUE name) {
-    return rb_require( (char *) name);
-}
-
-static VALUE rescue_require( VALUE data, VALUE err) {
-    VALUE val = rb_obj_as_string(err);
-    fprintf(stderr, "Error: [[[%s]]]\n", rb_string_value_cstr(&val));
-    return Qnil;
-}
-
-static void sure_require( char *name) {
-    rb_rescue2( &call_require, (VALUE) name, &rescue_require, Qnil, rb_eLoadError, (VALUE) 0);
-}
-
 int ExecRubyVM(const char* baseDirectory, const char* filename) {
     SetupRubyEnv(baseDirectory);
 
@@ -55,7 +42,7 @@ int ExecRubyVM(const char* baseDirectory, const char* filename) {
         RUBY_INIT_STACK;
         ruby_init();
         int result = ruby_run_node(ruby_options(argc_, argv_));
-        for (size_t i = 0; i < argc_; i++) {
+        for (int i = 0; i < argc_; i++) {
             free(argv_[i]);
         }
         free(argv_);

@@ -1,32 +1,52 @@
 #include <string>
-#include <SFML/System/NativeActivity.hpp>
-
-//#include <android/native_activity.h>
-#include <android/log.h>
+#include <iostream>
+#include <fstream>
 #include <dirent.h>
 #include <unistd.h>
 
-#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_INFO, "sfml-activity", __VA_ARGS__))
+#include <SFML/System/NativeActivity.hpp>
 
-#include "prepare.h"
-#include "sample_png.h"
+#include "jni_helper.h"
 #include "ruby.h"
+#ifndef NDEBUG
+#include "logging.h"
+#endif
 
 int main(int argc, char* argv[]) {
-    RunLoggingThread();
-    (void) argc;
-    (void) argv;
+#ifndef NDEBUG
+	LoggingThreadRun("com.psdk.android");
+#endif
+  (void) argc;
+  (void) argv;
 
-    auto* activity = sf::getNativeActivity();
+  auto* activity = sf::getNativeActivity();
 
-    const auto internalWriteablePath = std::string { GetAppFilesDir(activity) };
-    const auto externalWriteablePath = std::string { GetAppExternalFilesDir(activity) };
+  const auto internalWriteablePath = std::string { GetAppFilesDir(activity) };
+  const auto externalWriteablePath = std::string { GetAppExternalFilesDir(activity) };
 
-    CopyAssetFile(activity->assetManager, "app_internal.zip", internalWriteablePath.c_str());
-    CopyAssetFile(activity->assetManager, "app_data.zip", externalWriteablePath.c_str());
+  const auto assetsDone = internalWriteablePath + "/.assets.done";
 
-    chdir(externalWriteablePath.c_str());
-    ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
-    return 0;
+	if (!std::ifstream { assetsDone }) {
+		const int copyInternalResult = CopyAssetFile(activity->assetManager, "app_internal.zip", internalWriteablePath.c_str());
+		if (copyInternalResult != 0) {
+			std::cerr << "Cannot extract " << internalWriteablePath << "/app_internal.zip (error " << copyInternalResult << ")" << std::endl;
+			return 1;
+		}
+		const int copyDataResult = CopyAssetFile(activity->assetManager, "app_data.zip", externalWriteablePath.c_str());
+		if (copyDataResult != 0) {
+			std::cerr << "Cannot extract " << externalWriteablePath << "/app_data.zip (error " << copyDataResult << ")" << std::endl;
+			return 1;
+		}
+
+		if (!std::ofstream { assetsDone }) {
+			std::cerr << "Unable to create file '" << assetsDone << "' to indicate that assets have been unzipped successfully" << std::endl;
+		}
+	}
+  if (chdir(externalWriteablePath.c_str()) != 0) {
+		std::cerr << "Cannot change current directory to '" << externalWriteablePath << "'" << std::endl;
+		return 2;
+  }
+
+  return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
 }
 
