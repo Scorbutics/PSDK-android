@@ -12,6 +12,23 @@
 #include "logging.h"
 #endif
 
+static void CopyLibsToInternal(const std::string& internalWriteablePath, const std::string& psdkFolder) {
+	static const char* PSDK_LIBS[] = { "LiteRGSS.so", "SFMLAudio.so", NULL };
+	for (size_t i = 0; PSDK_LIBS[i] != NULL; i++) {
+		auto sourceLibFile = std::ifstream{ psdkFolder + std::string{PSDK_LIBS[i]} };
+		if (!sourceLibFile) {
+			std::cout << "No lib named '" << PSDK_LIBS[i] << "' found in PSDK folder, continuing" << std::endl;
+			continue;
+		}
+		auto destinationLibFile = std::ofstream { internalWriteablePath + "/" + std::string{PSDK_LIBS[i]}};
+		if (!destinationLibFile) {
+			std::cerr << "Error while trying to copy lib '" << PSDK_LIBS[i] << "'to internal memory, continuing" << std::endl;
+			continue;
+		}
+		destinationLibFile << sourceLibFile.rdbuf();
+	}
+}
+
 int main(int argc, char* argv[]) {
 #ifndef NDEBUG
 	LoggingThreadRun("com.psdk.android");
@@ -52,6 +69,7 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Cannot require app permissions" << std::endl;
 	}
 
-  	setenv("PSDK_ANDROID_FOLDER_LOCATION", GetExternalStorageDir(activity), 1);
-  	return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
+  setenv("PSDK_ANDROID_FOLDER_LOCATION", (std::string {GetExternalStorageDir(activity)} + "/PSDK/").c_str(), 1);
+	CopyLibsToInternal(internalWriteablePath, std::string {GetExternalStorageDir(activity)} + "/PSDK/");
+  return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
 }
