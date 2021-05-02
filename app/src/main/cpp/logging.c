@@ -53,8 +53,8 @@ static void* loggingFunction(void* unused) {
 		for (ssize_t index = 0; index < readSize; index++) {
 			if (buf[index] == '\n') {
 				/* When a line break, we append everything to the globalBuffer and then log it */
-				AppendLog(buf + startBuf, &globalBuffer, &globalBufferCapacity, &globalBufferSize, index - 1 - startBuf);
-				globalBuffer[globalBufferSize + 1] = '\0';
+				AppendLog(buf + startBuf, &globalBuffer, &globalBufferCapacity, &globalBufferSize, index - startBuf);
+				globalBuffer[globalBufferSize] = '\0';
 				__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, globalBuffer);
 				globalBufferSize = 0;
 				startBuf = index;
