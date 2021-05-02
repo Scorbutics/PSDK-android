@@ -11,6 +11,7 @@ int CopyAssetFile(AAssetManager *mgr, const char* fname, const char *writeablePa
 const char *GetAppFilesDir(ANativeActivity *activity);
 const char* GetAppExternalFilesDir(ANativeActivity *activity);
 const char* GetExternalStorageDir(ANativeActivity *activity);
+int request_android_permissions(ANativeActivity* activity, const char* permissions[]);
 
 #ifdef __cplusplus
 }

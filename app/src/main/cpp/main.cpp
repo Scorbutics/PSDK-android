@@ -42,11 +42,15 @@ int main(int argc, char* argv[]) {
 			std::cerr << "Unable to create file '" << assetsDone << "' to indicate that assets have been unzipped successfully" << std::endl;
 		}
 	}
-  if (chdir(externalWriteablePath.c_str()) != 0) {
+	if (chdir(externalWriteablePath.c_str()) != 0) {
 		std::cerr << "Cannot change current directory to '" << externalWriteablePath << "'" << std::endl;
 		return 2;
-  }
+	}
+
+	const char* perms[] = { "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", NULL };
+	if (!request_android_permissions(activity, perms)) {
+		std::cerr << "Cannot require app permissions" << std::endl;
+	}
 
   return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
 }
-
