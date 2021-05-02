@@ -50,7 +50,7 @@ int CopyAssetFile(AAssetManager *mgr, const char* fname, const char* writeablePa
         res = unzip(tofname, writeablePath);
 
         // No need to keep the extracted zip file
-        remove(tofname);
+        //remove(tofname);
     }
     return res;
 }

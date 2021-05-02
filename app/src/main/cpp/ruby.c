@@ -15,6 +15,7 @@ static void SetupRubyEnv(const char* baseDirectory)
 
     char* rubyBufferDir = (char*) malloc(maxRubyDirBufferSize);
     snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s/ruby/gems/%s/", baseDirectory, RUBY_VERSION);
+    setenv("GEM_HOME", rubyBufferDir, 1);
     setenv("GEM_PATH", rubyBufferDir, 1);
     strncat(rubyBufferDir, "specifications/", maxRubyDirBufferSize);
     setenv("GEM_SPEC_CACHE", rubyBufferDir, 1);
@@ -44,22 +45,20 @@ static void sure_require( char *name) {
 int ExecRubyVM(const char* baseDirectory, const char* filename) {
     SetupRubyEnv(baseDirectory);
 
-    int argc = 0;
-    char* argv[] = { NULL };
-    ruby_sysinit(&argc, &argv);
-    RUBY_INIT_STACK;
-    ruby_init();
-    ruby_init_loadpath();
+    int argc_ = 2;
+    char ** argv_ = (char**) malloc(sizeof(char*) * (argc_));
+    argv_[0] = strdup("starter");
+    argv_[1] = strdup(filename);
 
-    sure_require("enc/encdb");
-    sure_require("enc/trans/transdb");
-
-    /* Permet de connaître le nom du script dans les messages d'erreur */
-    ruby_script(filename);
-
-    /* Charge le script dans l'interpréteur*/
-    sure_require(filename);
-
-    ruby_finalize();
-    return 0;
+    ruby_sysinit(&argc_, &argv_);
+    {
+        RUBY_INIT_STACK;
+        ruby_init();
+        int result = ruby_run_node(ruby_options(argc_, argv_));
+        for (size_t i = 0; i < argc_; i++) {
+            free(argv_[i]);
+        }
+        free(argv_);
+        return result;
+    }
 }
