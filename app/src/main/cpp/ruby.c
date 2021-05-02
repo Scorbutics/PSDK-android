@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ruby/config.h>
+
 static void SetupRubyEnv(const char* baseDirectory)
 {
 #define RUBY_BUFFER_PATH_SIZE (256)
@@ -21,7 +23,7 @@ static void SetupRubyEnv(const char* baseDirectory)
     strncat(rubyBufferDir, "specifications/", maxRubyDirBufferSize);
     setenv("GEM_SPEC_CACHE", rubyBufferDir, 1);
 
-    snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s/extralibs/:%s/ruby/%s/:%s/ruby/%s/aarch64-linux-android-android/", baseDirectory, baseDirectory, RUBY_VERSION, baseDirectory, RUBY_VERSION);
+    snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s/extralibs/:%s/ruby/%s/:%s/ruby/%s/"RUBY_PLATFORM"/", baseDirectory, baseDirectory, RUBY_VERSION, baseDirectory, RUBY_VERSION);
     setenv("RUBYLIB", rubyBufferDir, 1);
 
     free(rubyBufferDir);
