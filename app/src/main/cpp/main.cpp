@@ -52,5 +52,6 @@ int main(int argc, char* argv[]) {
 		std::cerr << "Cannot require app permissions" << std::endl;
 	}
 
-  return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
+  	setenv("PSDK_ANDROID_FOLDER_LOCATION", GetExternalStorageDir(activity), 1);
+  	return ExecRubyVM(internalWriteablePath.c_str(), "./starter.rb");
 }
