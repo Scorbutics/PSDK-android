@@ -10,8 +10,8 @@ extern "C" {
 int CopyAssetFile(AAssetManager *mgr, const char* fname, const char *writeablePath);
 const char *GetAppFilesDir(ANativeActivity *activity);
 const char* GetAppExternalFilesDir(ANativeActivity *activity);
-const char* GetExternalStorageDir(ANativeActivity *activity);
 int request_android_permissions(ANativeActivity* activity, const char* permissions[]);
+const char* GetAllocPSDKLocation(ANativeActivity* activity);
 
 #ifdef __cplusplus
 }

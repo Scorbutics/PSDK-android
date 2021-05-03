@@ -7,7 +7,7 @@ android {
     buildToolsVersion "30.0.3"
 
     defaultConfig {
-        applicationId "com.android.psdk"
+        applicationId "com.psdk.starter"
         minSdkVersion 26
         targetSdkVersion 29
         versionCode 1
@@ -37,18 +37,20 @@ android {
             version "3.20.1"
         }
     }
-    sourceSets {
-        main {
-            jniLibs.filter.include("**/*")
-        }
-    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+    buildFeatures {
+        viewBinding true
     }
     ndkVersion '22.1.7171670'
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: '*.jar')
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'com.google.android.material:material:1.3.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
 }
