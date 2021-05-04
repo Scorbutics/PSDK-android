@@ -18,6 +18,7 @@ FOREACH(lib_shared ${libs_shared_dependencies})
 ENDFOREACH()
 
 add_subdirectory(lite-unzip)
+add_subdirectory(ruby-info)
 
 set(sfml-main ${IMPORT_DIR}/${ANDROID_ABI}/libsfml-main.a )
 add_library(litecgss-example SHARED main.cpp jni_helper.c ruby.c logging.c)
