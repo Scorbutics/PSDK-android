@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <bitmap
+            android:gravity="center"
+            android:tint="@color/teal_700"
+            android:src="@android:drawable/checkbox_off_background"/>
+    </item>
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:tint="@color/design_default_color_error"
+            android:src="@android:drawable/checkbox_off_background"/>
+    </item>
+</selector>
