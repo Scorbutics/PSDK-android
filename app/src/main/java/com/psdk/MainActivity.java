@@ -15,6 +15,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.w3c.dom.Text;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,9 +25,11 @@ import java.nio.file.Paths;
 
 public class MainActivity extends android.app.Activity {
 	static {
+		System.loadLibrary("engine-check");
 		System.loadLibrary("ruby-info");
 	}
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
+	private static final int ACCEPT_PERMISSIONS_REQUESTCODE = 8007;
 
 	private String m_gameRbLocation;
 	private boolean m_badGameRbLocation = true;
@@ -37,57 +41,21 @@ public class MainActivity extends android.app.Activity {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-		setContentView(R.layout.main);
 
 		m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE);
-		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
-						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/Game.rb");
-		setGameRbLocationValue(psdkLocation, true);
-
-		final Button clickButton = (Button) findViewById(R.id.startGame);
-		clickButton.setOnClickListener(v -> {
-			if (m_badGameRbLocation) {
-				invalidGameRbMessage();
-				return;
-			}
-			if (m_badAbiCompatibility) {
-				invalidProjectCompatibilityMessage();
-			}
-			SharedPreferences.Editor edit = m_projectPreferences.edit();
-			edit.putString(PROJECT_LOCATION_STRING, m_gameRbLocation);
-			edit.commit();
-			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
-			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
-			MainActivity.this.startActivity(switchActivityIntent);
-		});
-
-		final Button locatePsdkButton = (Button) findViewById(R.id.locatePSDK);
-		locatePsdkButton.setOnClickListener(v -> openFile("*/*"));
-
-		final EditText psdkLocationText = (EditText) findViewById(R.id.psdkLocation);
-		psdkLocationText.addTextChangedListener(new TextWatcher() {
-			@Override
-			public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-			@Override
-			public void onTextChanged(CharSequence s, int start, int before, int count) {
-				setGameRbLocationValue(psdkLocationText.getText().toString(), false);
-			}
-			@Override
-			public void afterTextChanged(Editable s) {}
-		});
-
-		final StringBuilder sb = new StringBuilder();
-		for (final String abi : Build.SUPPORTED_ABIS) {
-			sb.append(abi + "/ ");
+		final String errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences);
+		if (errorUnpackAssets != null) {
+			unableToUnpackAssetsMessage(errorUnpackAssets);
 		}
-		final TextView abiVersion = (TextView) findViewById(R.id.deviceAbiVersion);
-		abiVersion.setText(sb.toString());
+		if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE)) {
+			loadScreen();
+		}
+	}
 
-		final TextView rubyVersion = (TextView) findViewById(R.id.engineRubyVersion);
-		rubyVersion.setText(getRubyVersion());
-
-		final TextView rubyPlatform = (TextView) findViewById(R.id.engineRubyPlatform);
-		rubyPlatform.setText(getRubyPlatform());
+	private void cannotLoadProjectMessage(String errorMessage) {
+		final TextView projectEngineHealth = (TextView) findViewById(R.id.projectEngineHealth);
+		projectEngineHealth.setText(errorMessage);
+		Toast.makeText(getApplicationContext(), "Unable to load project : " + errorMessage, Toast.LENGTH_LONG).show();
 	}
 
 	private String getSelectedPsdkFolderLocation() {
@@ -177,17 +145,94 @@ public class MainActivity extends android.app.Activity {
 
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-		if (requestCode != CHOOSE_FILE_REQUESTCODE || resultCode != RESULT_OK) {
-			return;
-		}
+		switch (requestCode) {
+			case ACCEPT_PERMISSIONS_REQUESTCODE:
+				if (resultCode == RESULT_CANCELED) {
+					loadScreen();
+				}
+				break;
+			case CHOOSE_FILE_REQUESTCODE:
+				if (resultCode != RESULT_OK) {
+					return;
+				}
+				final File file = checkFilepathValid(PathUtil.getPathFromUri(getApplicationContext(), data.getData()));
+				if (file == null) {
+					invalidGameRbMessage();
+					return;
+				}
 
-		final File file = checkFilepathValid(PathUtil.getPathFromUri(getApplicationContext(), data.getData()));
-		if (file == null) {
-			invalidGameRbMessage();
-			return;
+				setGameRbLocationValue(file.getAbsolutePath(), true);
+				break;
+			default:
+				break;
 		}
+	}
 
-		setGameRbLocationValue(file.getAbsolutePath(), true);
+	private void loadScreen() {
+		setContentView(R.layout.main);
+		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
+						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/Game.rb");
+		setGameRbLocationValue(psdkLocation, true);
+
+		final Button clickButton = (Button) findViewById(R.id.startGame);
+		clickButton.setOnClickListener(v -> {
+			if (m_badGameRbLocation) {
+				invalidGameRbMessage();
+				return;
+			}
+			if (m_badAbiCompatibility) {
+				invalidProjectCompatibilityMessage();
+				return;
+			}
+
+			final String loadError = EngineCheck.tryLoad(this, getSelectedPsdkFolderLocation());
+			if (loadError != null) {
+				cannotLoadProjectMessage(loadError);
+				return;
+			}
+
+			SharedPreferences.Editor edit = m_projectPreferences.edit();
+			edit.putString(PROJECT_LOCATION_STRING, m_gameRbLocation);
+			edit.commit();
+			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
+			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
+			MainActivity.this.startActivity(switchActivityIntent);
+		});
+
+		final Button locatePsdkButton = (Button) findViewById(R.id.locatePSDK);
+		locatePsdkButton.setOnClickListener(v -> openFile("*/*"));
+
+		final EditText psdkLocationText = (EditText) findViewById(R.id.psdkLocation);
+		psdkLocationText.addTextChangedListener(new TextWatcher() {
+			@Override
+			public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+			@Override
+			public void onTextChanged(CharSequence s, int start, int before, int count) {
+				setGameRbLocationValue(psdkLocationText.getText().toString(), false);
+			}
+			@Override
+			public void afterTextChanged(Editable s) {}
+		});
+
+		final StringBuilder sb = new StringBuilder();
+		for (final String abi : Build.SUPPORTED_ABIS) {
+			sb.append(abi + "/ ");
+		}
+		final TextView abiVersion = (TextView) findViewById(R.id.deviceAbiVersion);
+		abiVersion.setText(sb.toString());
+
+		final TextView rubyVersion = (TextView) findViewById(R.id.engineRubyVersion);
+		rubyVersion.setText(RubyInfo.getRubyVersion());
+
+		final TextView rubyPlatform = (TextView) findViewById(R.id.engineRubyPlatform);
+		rubyPlatform.setText(RubyInfo.getRubyPlatform());
+
+		final TextView lastEngineDebugLogs = (TextView) findViewById(R.id.lastEngineDebugLogs);
+		try {
+			lastEngineDebugLogs.setText(new String(Files.readAllBytes(Paths.get(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log")), StandardCharsets.UTF_8));
+		} catch (IOException exception) {
+			lastEngineDebugLogs.setText("");
+		}
 	}
 
 	private File checkFilepathValid(final String filepath) {
@@ -215,6 +260,8 @@ public class MainActivity extends android.app.Activity {
 		Toast.makeText(getApplicationContext(), "Your PSDK project is incompatible with the current application engine", Toast.LENGTH_LONG).show();
 	}
 
-	public native String getRubyVersion();
-	public native String getRubyPlatform();
+	private void unableToUnpackAssetsMessage(final String error) {
+		Toast.makeText(getApplicationContext(), "Unable to unpack application assets : " + error, Toast.LENGTH_LONG).show();
+	}
+
 }

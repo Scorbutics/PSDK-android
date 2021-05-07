@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 #ifndef NDEBUG
-int LoggingThreadRun(const char* appname);
+int LoggingThreadRun(const char* appname, const char* extraLogFile);
 #endif
 #ifdef __cplusplus
 }

@@ -1,7 +1,3 @@
-//
-// Created by scor on 01/05/2021.
-//
-
 #ifndef PSDK_ANDROID_RUBY_H
 #define PSDK_ANDROID_RUBY_H
 

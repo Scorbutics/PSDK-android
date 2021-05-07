@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19.2)
 
-project("ruby-info")
+project("ruby-info" C)
 
 set(IMPORT_DIR ${CMAKE_SOURCE_DIR}/../ext-native-libs)
 

@@ -7,8 +7,8 @@ extern "C" {
 
 #include <jni.h>
 
-JNIEXPORT jstring JNICALL Java_com_psdk_MainActivity_getRubyVersion(JNIEnv* env, jobject thiz);
-JNIEXPORT jstring JNICALL Java_com_psdk_MainActivity_getRubyPlatform(JNIEnv *env, jobject thiz);
+JNIEXPORT jstring JNICALL Java_com_psdk_RubyInfo_getRubyVersion(JNIEnv* env, jclass clazz);
+JNIEXPORT jstring JNICALL Java_com_psdk_RubyInfo_getRubyPlatform(JNIEnv *env, jclass clazz);
 
 #ifdef __cplusplus
 }

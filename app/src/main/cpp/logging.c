@@ -6,9 +6,12 @@
 #include <android/log.h>
 #include <malloc.h>
 
+#define MAX_LOGFILE_SIZE 100 * 1024
+
 static int pfd[2];
 static pthread_t loggingThread;
 static char *log_tag = NULL;
+static FILE* fullLog = NULL;
 
 static int ResizeGlobalLogBufferIfNeeded(char** globalBuffer, size_t* globalBufferCapacity, size_t newSize) {
 	if (*globalBufferCapacity <= newSize) {
@@ -35,6 +38,16 @@ static int AppendLog(const char* buf, char** globalBuffer, size_t* globalBufferC
 	return 0;
 }
 
+static void WriteFullLogLine(const char* line) {
+	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, line);
+	if (fullLog != NULL) {
+		if (ftell(fullLog) > MAX_LOGFILE_SIZE) {
+			rewind (fullLog);
+		}
+		fprintf(fullLog, "%s\n", line);
+	}
+}
+
 static void* loggingFunction(void* unused) {
 	(void) unused;
 	ssize_t readSize;
@@ -55,7 +68,7 @@ static void* loggingFunction(void* unused) {
 				/* When a line break, we append everything to the globalBuffer and then log it */
 				AppendLog(buf + startBuf, &globalBuffer, &globalBufferCapacity, &globalBufferSize, index - startBuf);
 				globalBuffer[globalBufferSize] = '\0';
-				__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, globalBuffer);
+				WriteFullLogLine(globalBuffer);
 				globalBufferSize = 0;
 				startBuf = index;
 			}
@@ -72,11 +85,12 @@ static void* loggingFunction(void* unused) {
 	return NULL;
 }
 
-int LoggingThreadRun(const char* appname) {
+int LoggingThreadRun(const char* appname, const char* extraLogFile) {
 	setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
 	setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
 
 	log_tag = strdup(appname);
+	fullLog = fopen(extraLogFile, "w");
 
 	pipe(pfd);
 	dup2(pfd[1], 1);
