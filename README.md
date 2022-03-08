@@ -11,3 +11,4 @@ Note that before building you require EXACTLY :
  - Android Studio >= 4.2.0 (currently in release candidate, the main distribution is still 4.1.3)
  - CMake >= 3.19.2
  - Ninja
+ - libtool binary (package 'libtool-bin' on Ubuntu)
