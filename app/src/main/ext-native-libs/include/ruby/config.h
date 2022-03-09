@@ -41,6 +41,7 @@
 #define HAVE_SYS_IOCTL_H 1
 #define HAVE_SYS_PARAM_H 1
 #define HAVE_SYS_PRCTL_H 1
+#define HAVE_SYS_RANDOM_H 1
 #define HAVE_SYS_RESOURCE_H 1
 #define HAVE_SYS_SELECT_H 1
 #define HAVE_SYS_SENDFILE_H 1
@@ -160,6 +161,7 @@
 #define HAVE_DECL_GETENV 1
 #define SIZEOF_SIZE_T 8
 #define SIZEOF_PTRDIFF_T 8
+#define SIZEOF_DEV_T 8
 #define PRI_SIZE_PREFIX "z"
 #define PRI_PTRDIFF_PREFIX "t"
 #define HAVE_STRUCT_STAT_ST_BLKSIZE 1
@@ -168,6 +170,8 @@
 #define SIZEOF_STRUCT_STAT_ST_SIZE SIZEOF_OFF_T
 #define SIZEOF_STRUCT_STAT_ST_BLOCKS SIZEOF_OFF_T
 #define SIZEOF_STRUCT_STAT_ST_INO SIZEOF_LONG
+#define SIZEOF_STRUCT_STAT_ST_DEV SIZEOF_DEV_T
+#define SIZEOF_STRUCT_STAT_ST_RDEV SIZEOF_DEV_T
 #define HAVE_STRUCT_STAT_ST_ATIM 1
 #define HAVE_STRUCT_STAT_ST_ATIMENSEC 1
 #define HAVE_STRUCT_STAT_ST_MTIM 1
@@ -213,9 +217,10 @@
 #define GETGROUPS_T gid_t
 #define HAVE_ALLOCA_H 1
 #define HAVE_ALLOCA 1
+#define HAVE_DUP 1
+#define HAVE_DUP2 1
 #define HAVE_ACOSH 1
 #define HAVE_CBRT 1
-#define HAVE_DUP2 1
 #define HAVE_ERF 1
 #define HAVE_FFS 1
 #define HAVE_FLOCK 1
@@ -230,9 +235,7 @@
 #define HAVE_STRLCPY 1
 #define HAVE_STRSTR 1
 #define HAVE_TGAMMA 1
-#define HAVE_FINITE 1
-#define HAVE_ISINF 1
-#define HAVE_ISNAN 1
+#define HAVE_ISFINITE 1
 #define SPT_TYPE SPT_REUSEARGV
 #define HAVE_SIGNBIT 1
 #define HAVE_FORK 1
@@ -250,7 +253,6 @@
 #define HAVE_DL_ITERATE_PHDR 1
 #define HAVE_DLOPEN 1
 #define HAVE_DLADDR 1
-#define HAVE_DUP 1
 #define HAVE_DUP3 1
 #define HAVE_ENDGRENT 1
 #define HAVE_EVENTFD 1
@@ -303,6 +305,7 @@
 #define HAVE_MKFIFO 1
 #define HAVE_MKNOD 1
 #define HAVE_MKTIME 1
+#define HAVE_MMAP 1
 #define HAVE_OPENAT 1
 #define HAVE_PIPE2 1
 #define HAVE_POLL 1
@@ -370,6 +373,7 @@
 #define HAVE_BUILTIN___BUILTIN_CHOOSE_EXPR_CONSTANT_P 1
 #define HAVE_BUILTIN___BUILTIN_TYPES_COMPATIBLE_P 1
 #define HAVE_BUILTIN___BUILTIN_TRAP 1
+#define HAVE_BUILTIN___BUILTIN_EXPECT 1
 #define ATAN2_INF_C99 1
 #define HAVE_CLOCK_GETRES 1
 #define HAVE_STRUCT_TM_TM_ZONE 1
@@ -391,12 +395,14 @@
 #define HAVE_PTHREAD_ATTR_GETSTACK 1
 #define HAVE_PTHREAD_ATTR_GETGUARDSIZE 1
 #define HAVE_PTHREAD_CONDATTR_SETCLOCK 1
-#define HAVE_PTHREAD_SIGMASK 1
 #define HAVE_PTHREAD_SETNAME_NP 1
+#define HAVE_PTHREAD_SIGMASK 1
 #define HAVE_PTHREAD_GETATTR_NP 1
 #define SET_CURRENT_THREAD_NAME(name) pthread_setname_np(pthread_self(), name)
 #define SET_ANOTHER_THREAD_NAME(thid,name) pthread_setname_np(thid, name)
 #define DEFINE_MCONTEXT_PTR(mc, uc) mcontext_t *mc = &(uc)->uc_mcontext
+#define HAVE_SYS_USER_H 1
+#define HAVE_CONST_PAGE_SIZE 1
 #define USE_ELF 1
 #define HAVE_ELF_H 1
 #define HAVE_LIBZ 1
@@ -411,5 +417,7 @@
 #define RUBY_JMP_BUF jmp_buf
 #define USE_MJIT 1
 #define HAVE_PTHREAD_H 1
+#define THREAD_IMPL_H "thread_pthread.h"
+#define THREAD_IMPL_SRC "thread_pthread.c"
 #define RUBY_PLATFORM "aarch64-linux-android-android"
 #endif /* INCLUDE_RUBY_CONFIG_H */

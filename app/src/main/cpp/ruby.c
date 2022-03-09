@@ -29,7 +29,10 @@ static void SetupRubyEnv(const char* baseDirectory)
     free(rubyBufferDir);
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ruby/ruby.h>
+#pragma GCC diagnostic pop
 
 int ExecRubyVM(const char* baseDirectory, const char* filename) {
     SetupRubyEnv(baseDirectory);
