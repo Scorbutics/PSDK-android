@@ -18,9 +18,11 @@ import android.widget.Toast;
 import org.w3c.dom.Text;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class MainActivity extends android.app.Activity {
@@ -29,6 +31,7 @@ public class MainActivity extends android.app.Activity {
 		System.loadLibrary("ruby-info");
 	}
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
+	private static final int START_GAME_REQUESTCODE = 8700;
 	private static final int ACCEPT_PERMISSIONS_REQUESTCODE = 8007;
 
 	private String m_gameRbLocation;
@@ -63,7 +66,7 @@ public class MainActivity extends android.app.Activity {
 	}
 
 	private void setGameRbLocationValue(String gameRbLocation, boolean triggerEvent) {
-		m_gameRbLocation = gameRbLocation;
+		m_gameRbLocation = gameRbLocation != null ? gameRbLocation.trim() : null;
 		final EditText psdkLocation = (EditText) findViewById(R.id.psdkLocation);
 		if (triggerEvent) {
 			psdkLocation.setText(m_gameRbLocation);
@@ -90,8 +93,16 @@ public class MainActivity extends android.app.Activity {
 			}
 
 			final TextView abiVersion = (TextView) findViewById(R.id.projectAbiVersion);
-			final File liteRGSSLib = new File(psdkFolder + "/LiteRGSS.so");
-			abiVersion.setText(DisplayElfInfo.findAbiType(liteRGSSLib));
+			try {
+				final File liteRGSSLib = new File(psdkFolder + "/LiteRGSS.so");
+				if (liteRGSSLib.exists()) {
+					abiVersion.setText(DisplayElfInfo.findAbiType(liteRGSSLib));
+				} else {
+					abiVersion.setText("Unable to find LiteRGSS.so in folder '" + psdkFolder + "'to compute ABI !");
+				}
+			} catch (Exception e) {
+				abiVersion.setText(e.getLocalizedMessage());
+			}
 
 			m_badAbiCompatibility = true;
 			for (final String abi : Build.SUPPORTED_ABIS) {
@@ -155,13 +166,15 @@ public class MainActivity extends android.app.Activity {
 				if (resultCode != RESULT_OK) {
 					return;
 				}
-				final File file = checkFilepathValid(PathUtil.getPathFromUri(getApplicationContext(), data.getData()));
-				if (file == null) {
-					invalidGameRbMessage();
+				final String path = new PathUtil(getApplicationContext()).getPathFromUri(data.getData());
+				setGameRbLocationValue(path, true);
+				break;
+			case START_GAME_REQUESTCODE:
+				final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
+				if (resultCode != RESULT_OK) {
+					lastErrorLog.setText("Error starting game activity, code : " + resultCode);
 					return;
 				}
-
-				setGameRbLocationValue(file.getAbsolutePath(), true);
 				break;
 			default:
 				break;
@@ -196,7 +209,17 @@ public class MainActivity extends android.app.Activity {
 			edit.commit();
 			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
 			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
-			MainActivity.this.startActivity(switchActivityIntent);
+			try {
+				try {
+					FileWriter fw = new FileWriter(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log", false);
+					fw.flush();
+				} catch (Exception e) {
+					Toast.makeText(getApplicationContext(), e.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+				}
+				MainActivity.this.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE);
+				} catch (android.content.ActivityNotFoundException ex) {
+					Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+				}
 		});
 
 		final Button locatePsdkButton = (Button) findViewById(R.id.locatePSDK);
@@ -230,8 +253,8 @@ public class MainActivity extends android.app.Activity {
 		final TextView lastEngineDebugLogs = (TextView) findViewById(R.id.lastEngineDebugLogs);
 		try {
 			lastEngineDebugLogs.setText(new String(Files.readAllBytes(Paths.get(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log")), StandardCharsets.UTF_8));
-		} catch (IOException exception) {
-			lastEngineDebugLogs.setText("");
+		} catch (Exception exception) {
+			lastEngineDebugLogs.setText(exception.getLocalizedMessage());
 		}
 	}
 
@@ -241,14 +264,16 @@ public class MainActivity extends android.app.Activity {
 		}
 		final File finalFile = new File(filepath);
 		if (!finalFile.exists()) {
+			System.out.println("Error : file at filepath " + filepath + " does not exist");
 			return null;
 		}
 		final String absPath = finalFile.getAbsolutePath();
 		final int sep = absPath.lastIndexOf(File.separator);
-		final String filename = absPath.substring(sep + 1);
+		final String filename = absPath.substring(sep + 1).trim();
 		if ("Game.rb".equals(filename)) {
 			return finalFile;
 		}
+		System.out.println("Error : selected file at filepath " + filepath + " is not 'Game.rb', but '" + filename + "'");
 		return null;
 	}
 

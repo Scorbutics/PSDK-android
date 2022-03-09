@@ -1,15 +1,17 @@
 #ifndef NDEBUG
 #include <stdio.h>
-#include <pthread.h>
 #include <string.h>
 #include <unistd.h>
 #include <android/log.h>
 #include <malloc.h>
 
+#include "logging.h"
+
 #define MAX_LOGFILE_SIZE 100 * 1024
 
+int g_logging_thread_continue = 1;
+pthread_t g_logging_thread = 0;
 static int pfd[2];
-static pthread_t loggingThread;
 static char *log_tag = NULL;
 static FILE* fullLog = NULL;
 
@@ -61,7 +63,7 @@ static void* loggingFunction(void* unused) {
 	size_t globalBufferSize = 0;
 	size_t globalBufferCapacity = sizeof(buf) / sizeof(*buf);
 
-	while ((readSize = read(pfd[0], buf, sizeof buf - 1)) > 0) {
+	while (g_logging_thread_continue && (readSize = read(pfd[0], buf, sizeof buf - 1)) > 0) {
 		size_t startBuf = 0;
 		for (ssize_t index = 0; index < readSize; index++) {
 			if (buf[index] == '\n') {
@@ -80,29 +82,37 @@ static void* loggingFunction(void* unused) {
 		}
 	}
 
+	if (globalBufferSize > 0) {
+		globalBuffer[globalBufferSize] = '\0';
+		WriteFullLogLine(globalBuffer);
+		globalBufferSize = 0;
+	}
+	WriteFullLogLine("----------------------------");
+	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread ended");
+
 	free(globalBuffer);
 	free(log_tag);
+	fclose(fullLog);
 	return NULL;
 }
 
 int LoggingThreadRun(const char* appname, const char* extraLogFile) {
-	setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
+	setvbuf(stdout, 0, _IONBF, 0); // make stdout line-buffered
 	setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
 
 	log_tag = strdup(appname);
-	fullLog = fopen(extraLogFile, "w");
+	fullLog = fopen(extraLogFile, "a+");
 
 	pipe(pfd);
-	dup2(pfd[1], 1);
-	dup2(pfd[1], 2);
+	dup2(pfd[1], STDERR_FILENO);
+	dup2(pfd[1], STDOUT_FILENO);
 
-	if (pthread_create(&loggingThread, 0, loggingFunction, 0) == -1) {
-		__android_log_write(ANDROID_LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag,
+	if (pthread_create(&g_logging_thread, 0, loggingFunction, 0) == -1) {
+		__android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,
 											"Cannot spawn logging thread : logging from stdout / stderr won't show in logcat");
 		return -1;
 	}
-
-	pthread_detach(loggingThread);
+	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread started");
 	return 0;
 }
 #endif

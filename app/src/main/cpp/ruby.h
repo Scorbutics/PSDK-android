@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-int ExecRubyVM(const char* baseDirectory, const char *filename);
+int ExecRubyVM(const char* baseDirectory);
 
 #ifdef __cplusplus
 }

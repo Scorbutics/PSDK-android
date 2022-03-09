@@ -24,13 +24,10 @@ public class AppInstall {
 	public static String unpackExtraAssetsIfNeeded(Activity activity, SharedPreferences preferences) {
 		if (preferences.getBoolean(INSTALL_NEEDED, true)) {
 			final String internalWriteablePath = activity.getFilesDir().getAbsolutePath();
-			final String externalWriteablePath = activity.getExternalFilesDir(null).getAbsolutePath();
 
 			try {
 				final InputStream appInternalData = activity.getAssets().open("app_internal.zip");
 				UnzipUtility.unzip(appInternalData, internalWriteablePath);
-
-				copyAssetFile(activity, "starter.rb", externalWriteablePath);
 
 				SharedPreferences.Editor edit = preferences.edit();
 				edit.putBoolean(INSTALL_NEEDED, false);
