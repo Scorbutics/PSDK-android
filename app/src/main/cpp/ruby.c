@@ -19,9 +19,12 @@ static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
                                      "  puts \"LiteRGSS engine is valid\"\n"
                                      "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
                                      "  puts \"Going to directory : \" + ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
+                                     "  ENV['PSDK_BINARY_PATH'] = \"\"\n"
+                                     "  require 'ruby_physfs_patch.rb'\n"
                                      "  require './Game.rb'\n"
                                      "rescue => error\n"
                                      "  STDERR.puts error\n"
+                                     "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
                                      "end";
 
 static void SetupRubyEnv(const char* baseDirectory)

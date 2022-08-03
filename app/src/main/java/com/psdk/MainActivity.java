@@ -27,7 +27,6 @@ import java.nio.file.Paths;
 
 public class MainActivity extends android.app.Activity {
 	static {
-		System.loadLibrary("engine-check");
 		System.loadLibrary("ruby-info");
 	}
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
@@ -36,7 +35,6 @@ public class MainActivity extends android.app.Activity {
 
 	private String m_gameRbLocation;
 	private boolean m_badGameRbLocation = true;
-	private boolean m_badAbiCompatibility = true;
 	private SharedPreferences m_projectPreferences;
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
@@ -91,26 +89,6 @@ public class MainActivity extends android.app.Activity {
 				// File does not exist
 				lastErrorLog.setText("No log");
 			}
-
-			final TextView abiVersion = (TextView) findViewById(R.id.projectAbiVersion);
-			try {
-				final File liteRGSSLib = new File(psdkFolder + "/LiteRGSS.so");
-				if (liteRGSSLib.exists()) {
-					abiVersion.setText(DisplayElfInfo.findAbiType(liteRGSSLib));
-				} else {
-					abiVersion.setText("Unable to find LiteRGSS.so in folder '" + psdkFolder + "'to compute ABI !");
-				}
-			} catch (Exception e) {
-				abiVersion.setText(e.getLocalizedMessage());
-			}
-
-			m_badAbiCompatibility = true;
-			for (final String abi : Build.SUPPORTED_ABIS) {
-				if (abi.equals(abiVersion.getText())) {
-					m_badAbiCompatibility = false;
-				}
-			}
-			abiVersion.setBackgroundResource(m_badAbiCompatibility ? R.drawable.edterr : R.drawable.edtnormal);
 
 			final TextView projectVersion = (TextView) findViewById(R.id.projectVersion);
 			try {
@@ -191,16 +169,6 @@ public class MainActivity extends android.app.Activity {
 		clickButton.setOnClickListener(v -> {
 			if (m_badGameRbLocation) {
 				invalidGameRbMessage();
-				return;
-			}
-			if (m_badAbiCompatibility) {
-				invalidProjectCompatibilityMessage();
-				return;
-			}
-
-			final String loadError = EngineCheck.tryLoad(this, getSelectedPsdkFolderLocation());
-			if (loadError != null) {
-				cannotLoadProjectMessage(loadError);
 				return;
 			}
 

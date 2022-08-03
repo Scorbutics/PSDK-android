@@ -6,6 +6,12 @@ android {
     compileSdkVersion 32
     buildToolsVersion "30.0.3"
 
+    sourceSets {
+        main {
+            assets.srcDirs += ['src/main/ruby']
+        }
+    }
+
     defaultConfig {
         applicationId "com.psdk.starter"
         minSdkVersion 26
@@ -45,7 +51,7 @@ android {
     buildFeatures {
         viewBinding true
     }
-    ndkVersion '23.1.7779620'
+    ndkVersion '25.0.8775105'
 }
 
 dependencies {

@@ -18,17 +18,21 @@ FOREACH(lib_shared ${libs_shared_dependencies})
     set_target_properties(${lib_shared} PROPERTIES IMPORTED_LOCATION ${IMPORT_DIR}/${ANDROID_ABI}/lib${lib_shared}.so)
 ENDFOREACH()
 
+#Special LiteRGSS case
+#add_library(LiteRGSS SHARED IMPORTED)
+#set_target_properties(LiteRGSS PROPERTIES IMPORTED_LOCATION ${IMPORT_DIR}/${ANDROID_ABI}/LiteRGSS.so)
+
 add_subdirectory(jni-lib)
 add_subdirectory(ruby-info)
-add_subdirectory(engine-check)
 
 set(sfml-main ${IMPORT_DIR}/${ANDROID_ABI}/libsfml-main.a)
-add_library(litecgss-example SHARED main.cpp ruby.c logging.c)
-set_target_properties(litecgss-example PROPERTIES COMPILE_FLAGS "-Wall -Wextra -Werror")
-target_link_libraries(litecgss-example
+add_library(psdk-app SHARED main.cpp ruby.c logging.c)
+set_target_properties(psdk-app PROPERTIES COMPILE_FLAGS "-Wall -Wextra -Werror")
+target_link_libraries(psdk-app
         "-Wl,--whole-archive ${sfml-main} -Wl,--no-whole-archive"
         jni-lib
         ${log-lib} ${zlib-lib}
         ${libs_shared_dependencies}
+        #LiteRGSS
 )
-target_include_directories(litecgss-example PRIVATE ${IMPORT_DIR}/include ${JNI_LIB_DIR})
+target_include_directories(psdk-app PRIVATE ${IMPORT_DIR}/include ${JNI_LIB_DIR})

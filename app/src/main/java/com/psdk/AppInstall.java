@@ -21,13 +21,32 @@ public class AppInstall {
 
 	private static String INSTALL_NEEDED = "APP_INSTALL_NEEDED";
 
+	private static void copyAsset(Activity activity, String internalWriteablePath, String filename) throws IOException {
+		final InputStream in = activity.getAssets().open(filename);
+		File outFile = new File(internalWriteablePath, filename);
+
+		final OutputStream out = new FileOutputStream(outFile);
+
+		byte[] buffer = new byte[1024];
+		int read;
+		while ((read = in.read(buffer)) != -1) {
+			out.write(buffer, 0, read);
+		}
+
+		in.close();
+		out.flush();
+		out.close();
+	}
+
 	public static String unpackExtraAssetsIfNeeded(Activity activity, SharedPreferences preferences) {
-		if (preferences.getBoolean(INSTALL_NEEDED, true)) {
+		//if (preferences.getBoolean(INSTALL_NEEDED, true)) {
 			final String internalWriteablePath = activity.getFilesDir().getAbsolutePath();
 
 			try {
-				final InputStream appInternalData = activity.getAssets().open("app_internal.zip");
+				final InputStream appInternalData = activity.getAssets().open("app-internal.zip");
 				UnzipUtility.unzip(appInternalData, internalWriteablePath);
+
+				copyAsset(activity, internalWriteablePath, "ruby_physfs_patch.rb");
 
 				SharedPreferences.Editor edit = preferences.edit();
 				edit.putBoolean(INSTALL_NEEDED, false);
@@ -36,17 +55,8 @@ public class AppInstall {
 				Log.e("PSDK", "Error", exception);
 				return exception.getMessage();
 			}
-		}
+		//}
 		return null;
-	}
-
-	private static void copyAssetFile(Activity activity, String filename, String externalWriteablePath) throws IOException {
-		final InputStream rubyStarter = activity.getAssets().open(filename);
-		byte[] buffer = new byte[rubyStarter.available()];
-		rubyStarter.read(buffer);
-		File targetFile = new File(externalWriteablePath + "/" + filename);
-		OutputStream outStream = new FileOutputStream(targetFile);
-		outStream.write(buffer);
 	}
 
 	public static boolean requestPermissionsIfNeeded(Activity activity, int requestCode) {

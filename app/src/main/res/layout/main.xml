@@ -117,23 +117,6 @@
                         android:layout_height="match_parent">
 
                         <TextView
-                            android:id="@+id/textView6"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Project ABI" />
-
-                        <TextView
-                            android:id="@+id/projectAbiVersion"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content" />
-
-                    </TableRow>
-
-                    <TableRow
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent">
-
-                        <TextView
                             android:id="@+id/textView8"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"

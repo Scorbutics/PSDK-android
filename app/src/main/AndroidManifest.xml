@@ -35,7 +35,7 @@
             android:configChanges="keyboardHidden|orientation|screenSize">
 
             <meta-data android:name="android.app.lib_name" android:value="sfml-activity" />
-            <meta-data android:name="sfml.app.lib_name" android:value="litecgss-example" />
+            <meta-data android:name="sfml.app.lib_name" android:value="psdk-app" />
         </activity>
     </application>
 </manifest>
