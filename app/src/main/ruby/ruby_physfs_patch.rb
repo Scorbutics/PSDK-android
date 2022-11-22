@@ -1,8 +1,8 @@
 require 'LiteRGSS'
 
 Project_path = Dir.pwd
-DATA_ARCHIVE = LiteRGSS::AssetsArchive.new "./data.zip";
-CODE_ARCHIVE = LiteRGSS::AssetsArchive.new "./code.zip";
+DATA_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/data.zip";
+CODE_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/code.zip";
 
 LiteRGSS::AssetWriter::write_dir = Project_path
 
