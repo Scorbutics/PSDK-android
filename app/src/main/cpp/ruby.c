@@ -9,6 +9,8 @@
 #include <ruby/config.h>
 #include <ruby/version.h>
 
+//#define PSDK_COMPILE
+
 static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
                                      "puts \"VM: rubygems loaded with success\"\n"
                                      "begin\n"
@@ -17,10 +19,20 @@ static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
                                      "  puts \"Testing the LiteRGSS engine validity\"\n"
                                      "  require 'LiteRGSS'\n"
                                      "  puts \"LiteRGSS engine is valid\"\n"
+#ifdef PSDK_COMPILE
                                      "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
-                                     "  puts \"Going to directory : \" + ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
+#else
+                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]  + '/Release'\n"
+#endif
+                                     "  puts \"Going to directory : \" + Dir.pwd\n"
                                      "  ENV['PSDK_BINARY_PATH'] = \"\"\n"
+#ifdef PSDK_COMPILE
+                                     "  File.open('.gameopts', 'w') { |file| file.write(\"--util=project_compilation\") }\n"
+                                     "  puts RUBY_PLATFORM\n"
+                                     "  ARGV << \"skip_lib\"\n"
+                                     "  ARGV << \"skip_binary\"\n"
                                      "  require 'ruby_physfs_patch.rb'\n"
+#endif
                                      "  require './Game.rb'\n"
                                      "rescue => error\n"
                                      "  STDERR.puts error\n"

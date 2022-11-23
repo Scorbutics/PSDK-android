@@ -90,7 +90,12 @@ public class MainActivity extends android.app.Activity {
 			final TextView projectVersion = (TextView) findViewById(R.id.projectVersion);
 			try {
 				final byte[] encoded = Files.readAllBytes(Paths.get(psdkFolder + "/pokemonsdk/version.txt"));
-				final long versionNumeric = Long.valueOf(new String(encoded, StandardCharsets.UTF_8));
+				long versionNumeric = 0;
+				try {
+					versionNumeric = Long.valueOf(new String(encoded, StandardCharsets.UTF_8).trim());
+				} catch (NumberFormatException nfe) {
+					projectVersion.setText("INVALID");
+				}
 				final long majorVersion = versionNumeric >> 8;
 				final String versionStr = String.valueOf(majorVersion) + "." + String.valueOf(versionNumeric - (majorVersion << 8) - 256);
 				projectVersion.setText(versionStr);

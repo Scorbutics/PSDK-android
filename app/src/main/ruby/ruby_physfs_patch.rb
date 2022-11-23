@@ -1,17 +1,22 @@
 require 'LiteRGSS'
 
+begin
 Project_path = Dir.pwd
 DATA_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/data.zip";
 CODE_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/code.zip";
 
 LiteRGSS::AssetWriter::write_dir = Project_path
+rescue
+STDERR.puts "Unable to read from zip files"
+return
+end
 
 class ::File
   def self.path_in_assets(filename)
     filename = File.expand_path(filename)
     rel_path = filename.split(Project_path)[1]
     rel_path = filename if rel_path.nil?
-    return LiteRGSS::AssetFile::exist?(rel_path) ? rel_path : nil
+    return LiteRGSS::AssetFile::exist?((Dir.physfs_pwd.nil? ? "" : + Dir.physfs_pwd + "/") + rel_path) ? rel_path : nil
   end
 
   Old_file_exist_ = method(:exist?)
@@ -106,6 +111,78 @@ class ::File
       puts $!.message
     end
   end
+
+    def File.copy_stream(src, dst)
+      content = File.read(src)
+      Old_file_open_.call(dst, 'w') { |file| file.write(content) }
+      return 0
+    end
+end
+
+class ::Dir
+
+  @@_Physfs_virtual_pwd = nil
+
+  def Dir.physfs_pwd
+    return @@_Physfs_virtual_pwd
+  end
+
+  Old_dir_chdir_ = method(:chdir)
+  def Dir.chdir(path)
+    if File.directory?(path)
+        return Old_dir_chdir_.call(path)
+    end
+    old_path = @@_Physfs_virtual_pwd
+    @@_Physfs_virtual_pwd = path
+    if block_given?
+        begin
+            yield
+        ensure
+            @@_Physfs_virtual_pwd = old_path
+        end
+    end
+  end
+
+  Old_dir_square_ = method(:[])
+  def Dir.[](search_pattern)
+
+    directory_path = search_pattern.sub(/(\/[\*.a-zA-Z0-9]+)?(\/)?$/i, "")
+    if directory_path == search_pattern
+        search = search_pattern
+        directory_path = ""
+    else
+        search = search_pattern.sub(directory_path, "").sub("/", "")
+    end
+    supp_files = []
+    if File.directory?(directory_path)
+      #STDERR.puts "REAL DIRECTORY #{directory_path} (#{search_pattern})"
+      supp_files = Old_dir_square_.call(search_pattern)
+    end
+
+    all_files = LiteRGSS::AssetFile::enumerate(@@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path))
+    if search.start_with?("**")
+        # TODO
+        raise "UNSUPPORTED"
+    elsif search.start_with?("*")
+        search = search.sub("*", "")
+        if search != ".*" && search != "/" && search != ".*/"
+            final_files = all_files.select {|item| item.end_with? search }
+        else
+            final_files = all_files
+            search = ""
+        end
+        STDERR.puts "SEARCH FILES #{search} in #{directory_path} (#{search_pattern})" if !final_files.empty?
+        # TODO bad fix workaround : remove the include? '.' and replace the check by knowing if it's a file or directory
+        final_files = final_files.select { |item| item.include? '.' }. map {|item| directory_path + "/" + item }
+        if (search == "")
+            #STDERR.puts final_files
+        end
+        return final_files + supp_files
+    else
+        raise "UNKNOWN #{search}"
+    end
+  end
+
 end
 
 def global_require(moduleName)
