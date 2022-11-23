@@ -10,6 +10,7 @@
 #include <ruby/version.h>
 
 //#define PSDK_COMPILE
+//#define PSDK_LOAD_UNCOMPILED
 
 static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
                                      "puts \"VM: rubygems loaded with success\"\n"
@@ -19,18 +20,21 @@ static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
                                      "  puts \"Testing the LiteRGSS engine validity\"\n"
                                      "  require 'LiteRGSS'\n"
                                      "  puts \"LiteRGSS engine is valid\"\n"
-#ifdef PSDK_COMPILE
+#if defined(PSDK_COMPILE) || defined(PSDK_LOAD_UNCOMPILED)
                                      "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
 #else
-                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]  + '/Release'\n"
+                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"] + '/Release'\n"
 #endif
                                      "  puts \"Going to directory : \" + Dir.pwd\n"
                                      "  ENV['PSDK_BINARY_PATH'] = \"\"\n"
-#ifdef PSDK_COMPILE
+#if defined(PSDK_COMPILE)
                                      "  File.open('.gameopts', 'w') { |file| file.write(\"--util=project_compilation\") }\n"
-                                     "  puts RUBY_PLATFORM\n"
                                      "  ARGV << \"skip_lib\"\n"
                                      "  ARGV << \"skip_binary\"\n"
+#elif defined(PSDK_LOAD_UNCOMPILED)
+                                     "  File.open('.gameopts', 'w').close()\n"
+#endif
+#if defined(PSDK_COMPILE) || defined(PSDK_LOAD_UNCOMPILED)
                                      "  require 'ruby_physfs_patch.rb'\n"
 #endif
                                      "  require './Game.rb'\n"
