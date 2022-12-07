@@ -156,30 +156,61 @@ class ::Dir
     supp_files = []
     if File.directory?(directory_path)
       #STDERR.puts "REAL DIRECTORY #{directory_path} (#{search_pattern})"
+      # By default, we add files from real FS to the zip FS
       supp_files = Old_dir_square_.call(search_pattern)
     end
-
-    all_files = LiteRGSS::AssetFile::enumerate(@@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path))
-    if search.start_with?("**")
+    #STDERR.puts "SEARCH #{search} in #{directory_path} (#{search_pattern})"
+    if directory_path.include?("**")
         # TODO
-        raise "UNSUPPORTED"
+        #raise "UNSUPPORTED RECURSIVE"
+        dirs = directory_path.split("/**")
+        directory_path = dirs[0]
+        if dirs.length > 1
+            raise "UNSUPPORTED"
+        end
+        search_append = ""
+        if dirs.length == 2
+            search_append = dirs[1]
+        end
+        STDERR.puts "RECURSIVE #{search} in #{directory_path} (#{search_pattern})"
+        physfs_dir_path = @@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path)
+        all_dirs = LiteRGSS::AssetFile::enumerate(physfs_dir_path).map {|item| physfs_dir_path + "/" + item }
+        #.select { |item| LiteRGSS::AssetFile::is_directory? (item) }
+        final_files = []
+        all_dirs.each do |dir|
+            if LiteRGSS::AssetFile::is_directory? dir
+                final_search = dir + "/" + search + search_append
+                STDERR.puts "GO RECURSIVE SEARCH #{final_search} in #{directory_path} (#{search_pattern})"
+                final_files << Dir[final_search]
+            else
+                STDERR.puts "Not a directory #{dir}"
+                final_files << dir
+            end
+        end
+        return final_files
     elsif search.start_with?("*")
+        physfs_dir_path = @@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path)
+        all_files = LiteRGSS::AssetFile::enumerate(physfs_dir_path)
         search = search.sub("*", "")
         if search != ".*" && search != "/" && search != ".*/"
             final_files = all_files.select {|item| item.end_with? search }
         else
             final_files = all_files
-            search = ""
+            final_files = final_files.select { |item| !LiteRGSS::AssetFile::is_directory? (physfs_dir_path + "/" + item) } if (search == ".*" || search == ".*/")
         end
         STDERR.puts "SEARCH FILES #{search} in #{directory_path} (#{search_pattern})" if !final_files.empty?
-        # TODO bad fix workaround : remove the include? '.' and replace the check by knowing if it's a file or directory
-        final_files = final_files.select { |item| item.include? '.' }. map {|item| directory_path + "/" + item }
-        if (search == "")
-            #STDERR.puts final_files
-        end
+        build_final_path = -> (item) {
+            full_item_path = physfs_dir_path + "/" + item
+            if LiteRGSS::AssetFile::is_directory? (full_item_path)
+                return "#{full_item_path}/"
+            end
+            return full_item_path
+        }
+        final_files = final_files.map {|item| build_final_path.call(item) }
         return final_files + supp_files
     else
-        raise "UNKNOWN #{search}"
+        STDERR.puts "UNKNOWN #{search} (#{search_pattern})"
+        raise "UNKNOWN #{search} (#{search_pattern})"
     end
   end
 
