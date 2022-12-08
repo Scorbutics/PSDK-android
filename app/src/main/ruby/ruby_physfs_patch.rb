@@ -1,15 +1,12 @@
 require 'LiteRGSS'
 
-begin
 Project_path = Dir.pwd
-DATA_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/data.zip";
-CODE_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/code.zip";
+STDERR.puts Project_path
+PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/project.psa"
+#DATA_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/data.zip"
+#CODE_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/code.zip"
 
 LiteRGSS::AssetWriter::write_dir = Project_path
-rescue
-STDERR.puts "Unable to read from zip files"
-return
-end
 
 class ::File
   def self.path_in_assets(filename)
@@ -161,8 +158,6 @@ class ::Dir
     end
     #STDERR.puts "SEARCH #{search} in #{directory_path} (#{search_pattern})"
     if directory_path.include?("**")
-        # TODO
-        #raise "UNSUPPORTED RECURSIVE"
         dirs = directory_path.split("/**")
         directory_path = dirs[0]
         if dirs.length > 1
@@ -175,7 +170,6 @@ class ::Dir
         STDERR.puts "RECURSIVE #{search} in #{directory_path} (#{search_pattern})"
         physfs_dir_path = @@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path)
         all_dirs = LiteRGSS::AssetFile::enumerate(physfs_dir_path).map {|item| physfs_dir_path + "/" + item }
-        #.select { |item| LiteRGSS::AssetFile::is_directory? (item) }
         final_files = []
         all_dirs.each do |dir|
             if LiteRGSS::AssetFile::is_directory? dir

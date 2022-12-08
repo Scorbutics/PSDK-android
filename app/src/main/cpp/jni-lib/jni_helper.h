@@ -8,7 +8,6 @@ extern "C" {
 #include <android/native_activity.h>
 
 const char* GetAppFilesDir(ANativeActivity *activity);
-const char* GetAppFilesDirCall(JNIEnv* env, jobject activity);
 const char* GetAppExternalFilesDir(ANativeActivity *activity);
 const char* GetAllocPSDKLocation(ANativeActivity* activity);
 

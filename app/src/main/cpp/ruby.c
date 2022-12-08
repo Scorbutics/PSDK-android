@@ -9,40 +9,6 @@
 #include <ruby/config.h>
 #include <ruby/version.h>
 
-//#define PSDK_COMPILE
-//#define PSDK_LOAD_UNCOMPILED
-
-static const char STARTER_SCRIPT[] = "require 'rubygems'\n"
-                                     "puts \"VM: rubygems loaded with success\"\n"
-                                     "begin\n"
-                                     "  t = Time.now()\n"
-                                     "  puts t.strftime(\"Time is %m/%d/%y %H:%M\")\n"
-                                     "  puts \"Testing the LiteRGSS engine validity\"\n"
-                                     "  require 'LiteRGSS'\n"
-                                     "  puts \"LiteRGSS engine is valid\"\n"
-#if defined(PSDK_COMPILE) || defined(PSDK_LOAD_UNCOMPILED)
-                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
-#else
-                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"] + '/Release'\n"
-#endif
-                                     "  puts \"Going to directory : \" + Dir.pwd\n"
-                                     "  ENV['PSDK_BINARY_PATH'] = \"\"\n"
-#if defined(PSDK_COMPILE)
-                                     "  File.open('.gameopts', 'w') { |file| file.write(\"--util=project_compilation\") }\n"
-                                     "  ARGV << \"skip_lib\"\n"
-                                     "  ARGV << \"skip_binary\"\n"
-#elif defined(PSDK_LOAD_UNCOMPILED)
-                                     "  File.open('.gameopts', 'w').close()\n"
-#endif
-#if defined(PSDK_COMPILE) || defined(PSDK_LOAD_UNCOMPILED)
-                                     "  require 'ruby_physfs_patch.rb'\n"
-#endif
-                                     "  require './Game.rb'\n"
-                                     "rescue => error\n"
-                                     "  STDERR.puts error\n"
-                                     "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
-                                     "end";
-
 static void SetupRubyEnv(const char* baseDirectory)
 {
 #define RUBY_BUFFER_PATH_SIZE (256)
@@ -80,6 +46,7 @@ static void SetupRubyEnv(const char* baseDirectory)
 }
 
 #ifdef NDEBUG
+// If I remember correctly, ruby will override this define, so we need to create another one
 #define REAL_NDEBUG
 #endif
 
@@ -88,8 +55,7 @@ static void SetupRubyEnv(const char* baseDirectory)
 #include <ruby/ruby.h>
 #pragma GCC diagnostic pop
 
-
-int ExecRubyVM(const char* baseDirectory)
+int ExecRubyVM(const char* baseDirectory, const char* script)
 {
     SetupRubyEnv(baseDirectory);
 
@@ -97,12 +63,12 @@ int ExecRubyVM(const char* baseDirectory)
     char ** argv_ = (char**) malloc(sizeof(char*) * (argc_));
     argv_[0] = strdup("");
     argv_[1] = strdup("-e");
-    argv_[2] = strdup(STARTER_SCRIPT);
+    argv_[2] = strdup(script);
 
     ruby_sysinit(&argc_, &argv_);
 #ifndef REAL_NDEBUG
     char mess[64];
-	snprintf(mess, sizeof(mess), "Ruby VM sysinit argv: '%s %s %s'", argv_[0], argv_[1], argv_[2]);
+    snprintf(mess, sizeof(mess), "Ruby VM sysinit argv: '%s %s %s'", argv_[0], argv_[1], argv_[2]);
     __android_log_write(ANDROID_LOG_DEBUG, "com.psdk.android", mess);
 #endif
     {
@@ -131,3 +97,4 @@ int ExecRubyVM(const char* baseDirectory)
         return result;
     }
 }
+

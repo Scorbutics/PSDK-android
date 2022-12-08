@@ -14,7 +14,7 @@
             android:id="@+id/textView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="PSDK for Android v0.1"
+            android:text="PSDK for Android v0.2-SNAPSHOT"
             android:textAlignment="center"
             android:textSize="16sp"
             android:textStyle="bold" />
@@ -30,11 +30,17 @@
                 android:layout_height="wrap_content"
                 android:text="START" />
 
+            <Button
+                android:id="@+id/compileGame"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="compile" />
+
             <TextView
                 android:id="@+id/psdkLocationTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="PSDK Game.rb location"
+                android:text="PSDK Archive location"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -57,7 +63,7 @@
                 android:id="@+id/locatePSDK"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Locate PSDK 'Game.rb'" />
+                android:text="Locate PSDK archive" />
 
             <LinearLayout
                 android:id="@+id/informationLayout"

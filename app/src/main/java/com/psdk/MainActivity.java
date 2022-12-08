@@ -30,8 +30,8 @@ public class MainActivity extends android.app.Activity {
 	private static final int START_GAME_REQUESTCODE = 8700;
 	private static final int ACCEPT_PERMISSIONS_REQUESTCODE = 8007;
 
-	private String m_gameRbLocation;
-	private boolean m_badGameRbLocation = true;
+	private String m_archiveLocation;
+	private boolean m_badArchiveLocation = true;
 	private SharedPreferences m_projectPreferences;
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
@@ -50,33 +50,27 @@ public class MainActivity extends android.app.Activity {
 		}
 	}
 
-	private void cannotLoadProjectMessage(String errorMessage) {
-		final TextView projectEngineHealth = (TextView) findViewById(R.id.projectEngineHealth);
-		projectEngineHealth.setText(errorMessage);
-		Toast.makeText(getApplicationContext(), "Unable to load project : " + errorMessage, Toast.LENGTH_LONG).show();
-	}
-
 	private String getSelectedPsdkFolderLocation() {
-		return m_gameRbLocation.substring(0, m_gameRbLocation.lastIndexOf(File.separator));
+		return m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf(File.separator));
 	}
 
-	private void setGameRbLocationValue(String gameRbLocation, boolean triggerEvent) {
-		m_gameRbLocation = gameRbLocation != null ? gameRbLocation.trim() : null;
+	private void setArchiveLocationValue(String location, boolean triggerEvent) {
+		m_archiveLocation = location != null ? location.trim() : null;
 		final EditText psdkLocation = (EditText) findViewById(R.id.psdkLocation);
 		if (triggerEvent) {
-			psdkLocation.setText(m_gameRbLocation);
+			psdkLocation.setText(m_archiveLocation);
 		}
-		m_badGameRbLocation = checkFilepathValid(m_gameRbLocation) == null;
-		psdkLocation.setBackgroundResource(m_badGameRbLocation ? R.drawable.edterr : R.drawable.edtnormal);
+		m_badArchiveLocation = checkFilepathValid(m_archiveLocation) == null;
+		psdkLocation.setBackgroundResource(m_badArchiveLocation ? R.drawable.edterr : R.drawable.edtnormal);
 		final CheckedTextView psdkLocationValid = (CheckedTextView) findViewById(R.id.psdkLocationValid);
-		psdkLocationValid.setChecked(!m_badGameRbLocation);
+		psdkLocationValid.setChecked(!m_badArchiveLocation);
 		final Button clickButton = (Button) findViewById(R.id.startGame);
-		clickButton.setEnabled(!m_badGameRbLocation);
+		clickButton.setEnabled(!m_badArchiveLocation);
 		final LinearLayout projectInfoLayout = (LinearLayout) findViewById(R.id.informationLayout);
-		projectInfoLayout.setVisibility(m_badGameRbLocation ? View.INVISIBLE : View.VISIBLE);
+		projectInfoLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
 		final LinearLayout errorLogLayout = (LinearLayout) findViewById(R.id.errorLogLayout);
-		errorLogLayout.setVisibility(m_badGameRbLocation ? View.INVISIBLE : View.VISIBLE);
-		if (!m_badGameRbLocation) {
+		errorLogLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
+		if (!m_badArchiveLocation) {
 			final String psdkFolder = getSelectedPsdkFolderLocation();
 			final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
 			try {
@@ -147,7 +141,7 @@ public class MainActivity extends android.app.Activity {
 					return;
 				}
 				final String path = new PathUtil(getApplicationContext()).getPathFromUri(data.getData());
-				setGameRbLocationValue(path, true);
+				setArchiveLocationValue(path, true);
 				break;
 			case START_GAME_REQUESTCODE:
 				final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
@@ -165,17 +159,26 @@ public class MainActivity extends android.app.Activity {
 		setContentView(R.layout.main);
 		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
 						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/Game.rb");
-		setGameRbLocationValue(psdkLocation, true);
+		setArchiveLocationValue(psdkLocation, true);
+
+		final Button compileButton = (Button) findViewById(R.id.compileGame);
+		compileButton.setOnClickListener(v -> {
+			try {
+				ProjectCompiler.compile();
+			} catch (IOException ex) {
+				Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+			}
+		});
 
 		final Button clickButton = (Button) findViewById(R.id.startGame);
 		clickButton.setOnClickListener(v -> {
-			if (m_badGameRbLocation) {
+			if (m_badArchiveLocation) {
 				invalidGameRbMessage();
 				return;
 			}
 
 			SharedPreferences.Editor edit = m_projectPreferences.edit();
-			edit.putString(PROJECT_LOCATION_STRING, m_gameRbLocation);
+			edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation);
 			edit.commit();
 			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
 			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
@@ -201,7 +204,7 @@ public class MainActivity extends android.app.Activity {
 			public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
 			@Override
 			public void onTextChanged(CharSequence s, int start, int before, int count) {
-				setGameRbLocationValue(psdkLocationText.getText().toString(), false);
+				setArchiveLocationValue(psdkLocationText.getText().toString(), false);
 			}
 			@Override
 			public void afterTextChanged(Editable s) {}
@@ -240,10 +243,10 @@ public class MainActivity extends android.app.Activity {
 		final String absPath = finalFile.getAbsolutePath();
 		final int sep = absPath.lastIndexOf(File.separator);
 		final String filename = absPath.substring(sep + 1).trim();
-		if ("Game.rb".equals(filename)) {
+		if (filename.endsWith(".psa")) {
 			return finalFile;
 		}
-		System.out.println("Error : selected file at filepath " + filepath + " is not 'Game.rb', but '" + filename + "'");
+		System.out.println("Error : selected file at filepath " + filepath + " is not a 'psa' file : '" + filename + "'");
 		return null;
 	}
 

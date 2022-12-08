@@ -30,7 +30,7 @@ const char* GetAppExternalFilesDir(ANativeActivity *activity) {
 	return writeablePath;
 }
 
-const char* GetAppFilesDirCall(JNIEnv* env, jobject activity) {
+static const char* GetAppFilesDirCall(JNIEnv* env, jobject activity) {
 	JavaVM* vm;
 	(*env)->GetJavaVM(env, &vm);
 
