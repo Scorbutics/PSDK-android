@@ -1,5 +1,5 @@
-#ifndef PSDK_ANDROID_RUBY_H
-#define PSDK_ANDROID_RUBY_H
+#ifndef PSDK_ANDROID_RUBY_VM_H
+#define PSDK_ANDROID_RUBY_VM_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,4 +11,4 @@ int ExecRubyVM(const char* baseDirectory, const char* script);
 }
 #endif
 
-#endif //PSDK_ANDROID_RUBY_H
+#endif //PSDK_ANDROID_RUBY_VM_H

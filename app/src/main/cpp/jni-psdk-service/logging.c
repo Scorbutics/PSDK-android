@@ -2,8 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <android/log.h>
 #include <malloc.h>
+#include <errno.h>
 
 #include "logging.h"
 
@@ -12,8 +16,9 @@
 int g_logging_thread_continue = 1;
 pthread_t g_logging_thread = 0;
 static int pfd[2];
-static char *log_tag = NULL;
-static FILE* fullLog = NULL;
+static char* log_tag = NULL;
+static int logFd = -1;
+static char* logFileName = NULL;
 
 static int ResizeGlobalLogBufferIfNeeded(char** globalBuffer, size_t* globalBufferCapacity, size_t newSize) {
 	if (*globalBufferCapacity <= newSize) {
@@ -42,11 +47,14 @@ static int AppendLog(const char* buf, char** globalBuffer, size_t* globalBufferC
 
 static void WriteFullLogLine(const char* line) {
 	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, line);
-	if (fullLog != NULL) {
-		if (ftell(fullLog) > MAX_LOGFILE_SIZE) {
+	if (logFd > 0) {
+/*		if (ftell(fullLog) > MAX_LOGFILE_SIZE) {
 			rewind (fullLog);
 		}
-		fprintf(fullLog, "%s\n", line);
+*/
+		write(logFd, line, strlen(line));
+		write(logFd, "\n", 1);
+		//fprintf(fullLog, "%s\n", line);
 	}
 }
 
@@ -54,6 +62,15 @@ static void* loggingFunction(void* unused) {
 	(void) unused;
 	ssize_t readSize;
 	char buf[64];
+
+    logFd = open(logFileName, O_WRONLY);
+    if (logFd == -1) {
+        char logMessage[512];
+        sprintf(logMessage, "Cannot open file : %s (name is %s)", strerror(errno), logFileName);
+        __android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+        return NULL;
+    }
+
 	char* globalBuffer = (char*) malloc(sizeof(buf));
 	if (globalBuffer == NULL) {
 		__android_log_write(ANDROID_LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag,
@@ -92,7 +109,9 @@ static void* loggingFunction(void* unused) {
 
 	free(globalBuffer);
 	free(log_tag);
-	fclose(fullLog);
+	close(logFd);
+	unlink(logFileName);
+	free(logFileName);
 	return NULL;
 }
 
@@ -101,11 +120,30 @@ int LoggingThreadRun(const char* appname, const char* extraLogFile) {
 	setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
 
 	log_tag = strdup(appname);
-	fullLog = fopen(extraLogFile, "a+");
+	logFileName = strdup(extraLogFile);
+    unlink(logFileName);
+	if (mkfifo(logFileName, 0664) != 0) {
+		char currentWorkingDir[512];
+		char logMessage[512];
+
+		if (getcwd(currentWorkingDir, sizeof(currentWorkingDir)) == NULL) {
+			sprintf(logMessage, "Unable to get the current directory : %s", strerror(errno));
+		} else {
+			sprintf(logMessage, "Current directory: %s", currentWorkingDir);
+		}
+		__android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+
+		sprintf(logMessage, "Cannot create a named fifo : %s (name is %s)", strerror(errno), logFileName);
+        __android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+		return -2;
+	}
+    __android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BAP");
 
 	pipe(pfd);
 	dup2(pfd[1], STDERR_FILENO);
 	dup2(pfd[1], STDOUT_FILENO);
+
+    __android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BOOP");
 
 	if (pthread_create(&g_logging_thread, 0, loggingFunction, 0) == -1) {
 		__android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,

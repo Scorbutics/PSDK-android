@@ -24,7 +24,7 @@ import java.nio.file.Paths;
 
 public class MainActivity extends android.app.Activity {
 	static {
-		System.loadLibrary("ruby-info");
+		System.loadLibrary("jni-ruby-info");
 	}
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
 	private static final int START_GAME_REQUESTCODE = 8700;
@@ -158,14 +158,14 @@ public class MainActivity extends android.app.Activity {
 	private void loadScreen() {
 		setContentView(R.layout.main);
 		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
-						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/Game.rb");
+						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/");
 		setArchiveLocationValue(psdkLocation, true);
 
 		final Button compileButton = (Button) findViewById(R.id.compileGame);
 		compileButton.setOnClickListener(v -> {
 			try {
-				ProjectCompiler.compile();
-			} catch (IOException ex) {
+				ProjectCompiler.compile(getApplicationInfo().dataDir, getFilesDir().getPath(), getExternalFilesDir(null).getPath(), getSelectedPsdkFolderLocation());
+			} catch (Exception ex) {
 				Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
 			}
 		});

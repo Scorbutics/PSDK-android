@@ -4,14 +4,15 @@
 #include <dirent.h>
 #include <unistd.h>
 
-#include <SFML/System/NativeActivity.hpp>
+#include "SFML/System/NativeActivity.hpp"
 
-#include "jni-lib/jni_helper.h"
+#include "jni_helper.h"
 #include "psdk.h"
-#include "ruby.h"
+#include "ruby-vm.h"
 
 #ifndef NDEBUG
 #include <android/log.h>
+#include <assert.h>
 #include "logging.h"
 #endif
 
@@ -69,33 +70,27 @@ static const char STARTER_SCRIPT[] = "begin\n"
                                      "  STDERR.puts error\n"
                                      "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
                                      "end";
-static int ExecPSDKProcess(const char* script, bool withLogging)
+static int ExecPSDKProcess(const char* script, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation, const char* loggingFile)
 {
-    auto* activity = sf::getNativeActivity();
-
-    const auto* externalWriteablePath = GetAppExternalFilesDir(activity);
 #ifndef NDEBUG
-    if (withLogging) {
-        LoggingThreadRun("com.psdk.android",
-                         (std::string{externalWriteablePath} + "/last_stdout.log").c_str());
+    if (loggingFile != NULL) {
+        LoggingThreadRun("com.psdk.starter", loggingFile);
     }
 #endif
-    const auto* internalWriteablePath = GetAppFilesDir(activity);
     if (chdir(externalWriteablePath) != 0) {
         std::cerr << "Cannot change current directory to '" << externalWriteablePath << "'" << std::endl;
         return 2;
     }
 
-    const char* psdkLocation = GetAllocPSDKLocation(activity);
     setenv("PSDK_ANDROID_FOLDER_LOCATION", psdkLocation, 1);
 #ifndef NDEBUG
     char mess[64];
     snprintf(mess, sizeof(mess), "Ruby thread started");
-    __android_log_write(ANDROID_LOG_DEBUG, "com.psdk.android",  mess);
+    __android_log_write(ANDROID_LOG_DEBUG, "com.psdk.starter",  mess);
 #endif
     const int rubyReturn = ExecRubyVM(internalWriteablePath, script);
 #ifndef NDEBUG
-    if (withLogging) {
+    if (loggingFile != NULL) {
         g_logging_thread_continue = 0;
 
         // Force "read" to end in logging thread
@@ -109,27 +104,35 @@ static int ExecPSDKProcess(const char* script, bool withLogging)
 
 int StartGame()
 {
-    return ExecPSDKProcess(STARTER_SCRIPT, true);
+    auto* activity = sf::getNativeActivity();
+    assert(activity != NULL);
+
+    const auto* internalWriteablePath = GetAppFilesDir(activity);
+    const auto* externalWriteablePath = GetAppExternalFilesDir(activity);
+    const char* psdkLocation = GetAllocPSDKLocation(activity);
+
+    return ExecPSDKProcess(STARTER_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, (std::string{externalWriteablePath} + "/last_stdout.log").c_str());
 }
 
-int CompileGame(const char* fifo)
+int CompileGame(const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
 {
-    freopen(fifo,"w",stderr);
+    (void) fifo;
+    //freopen(fifo,"w",stderr);
 
     int psdkResult = 0;
     try {
-        psdkResult = ExecPSDKProcess(COMPILE_SCRIPT, false);
+        psdkResult = ExecPSDKProcess(COMPILE_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, fifo);
     } catch (...) {
         psdkResult = 255;
     }
-    fclose(stderr);
+    //fclose(stderr);
 
     //reopen: 2 is file descriptor of stderr
-    stderr = fdopen(2, "w");
+    //stderr = fdopen(2, "w");
     return psdkResult;
 }
 
-int CheckEngineValidity()
+int CheckEngineValidity(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
 {
-    return ExecPSDKProcess(VALIDITY_SCRIPT, false);
+    return ExecPSDKProcess(VALIDITY_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, NULL);
 }
