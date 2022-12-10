@@ -6,14 +6,14 @@
 
 #include "SFML/System/NativeActivity.hpp"
 
-#include "jni_helper.h"
+#include "get_activity_parameters.h"
 #include "psdk.h"
 #include "ruby-vm.h"
 
 #ifndef NDEBUG
 #include <android/log.h>
 #include <assert.h>
-#include "logging.h"
+#include "../logging/logging.h"
 #endif
 
 
@@ -107,28 +107,28 @@ int StartGame()
     auto* activity = sf::getNativeActivity();
     assert(activity != NULL);
 
-    const auto* internalWriteablePath = GetAppFilesDir(activity);
-    const auto* externalWriteablePath = GetAppExternalFilesDir(activity);
-    const char* psdkLocation = GetAllocPSDKLocation(activity);
+    const auto* internalWriteablePath = GetNewNativeActivityParameter(activity, "INTERNAL_STORAGE_LOCATION");
+    const auto* externalWriteablePath = GetNewNativeActivityParameter(activity, "EXTERNAL_STORAGE_LOCATION");
+    const char* psdkLocation = GetNewNativeActivityParameter(activity, "PSDK_LOCATION");
 
-    return ExecPSDKProcess(STARTER_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, (std::string{externalWriteablePath} + "/last_stdout.log").c_str());
+    int result = ExecPSDKProcess(STARTER_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, (std::string{externalWriteablePath} + "/last_stdout.log").c_str());
+
+    free((void*)psdkLocation);
+    free((void*)externalWriteablePath);
+    free((void*)internalWriteablePath);
+
+    return result;
 }
 
 int CompileGame(const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
 {
-    (void) fifo;
-    //freopen(fifo,"w",stderr);
-
     int psdkResult = 0;
     try {
         psdkResult = ExecPSDKProcess(COMPILE_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, fifo);
     } catch (...) {
         psdkResult = 255;
     }
-    //fclose(stderr);
 
-    //reopen: 2 is file descriptor of stderr
-    //stderr = fdopen(2, "w");
     return psdkResult;
 }
 

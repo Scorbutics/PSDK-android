@@ -14,4 +14,4 @@ extern pthread_t g_logging_thread;
 }
 #endif
 
-#endif //PSDK_ANDROID_JNI_HELPER_H
+#endif //PSDK_ANDROID_JNI_ACTIVITY_PARAMETERS_H

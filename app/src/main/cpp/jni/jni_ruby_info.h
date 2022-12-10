@@ -14,4 +14,4 @@ JNIEXPORT jstring JNICALL Java_com_psdk_RubyInfo_getRubyPlatform(JNIEnv *env, jc
 }
 #endif
 
-#endif //PSDK_ANDROID_JNI_HELPER_H
+#endif //PSDK_ANDROID_JNI_ACTIVITY_PARAMETERS_H

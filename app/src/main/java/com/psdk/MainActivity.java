@@ -24,7 +24,7 @@ import java.nio.file.Paths;
 
 public class MainActivity extends android.app.Activity {
 	static {
-		System.loadLibrary("jni-ruby-info");
+		System.loadLibrary("jni");
 	}
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
 	private static final int START_GAME_REQUESTCODE = 8700;
@@ -35,6 +35,11 @@ public class MainActivity extends android.app.Activity {
 	private SharedPreferences m_projectPreferences;
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
+
+	private String m_applicationPath;
+	private String m_internalWriteablePath;
+	private String m_externalWriteablePath;
+	private PsdkProcessLauncher m_psdkProcessLauncher;
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -161,16 +166,31 @@ public class MainActivity extends android.app.Activity {
 						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/");
 		setArchiveLocationValue(psdkLocation, true);
 
-		final Button compileButton = (Button) findViewById(R.id.compileGame);
+		m_applicationPath = getApplicationInfo().dataDir;
+		m_internalWriteablePath = getFilesDir().getPath();
+		m_externalWriteablePath = getExternalFilesDir(null).getPath();
+
+		final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
+		m_psdkProcessLauncher = new PsdkProcessLauncher(m_applicationPath) {
+			@Override
+			protected void accept(String lineMessage) {
+				runOnUiThread(() -> {
+					lastErrorLog.append(lineMessage);
+					lastErrorLog.append("\n");
+				});
+			}
+		};
+
+		final Button compileButton = findViewById(R.id.compileGame);
 		compileButton.setOnClickListener(v -> {
 			try {
-				ProjectCompiler.compile(getApplicationInfo().dataDir, getFilesDir().getPath(), getExternalFilesDir(null).getPath(), getSelectedPsdkFolderLocation());
+				m_psdkProcessLauncher.run(fifoFilename -> ProjectCompiler.compile(fifoFilename, m_internalWriteablePath, m_externalWriteablePath, getSelectedPsdkFolderLocation()));
 			} catch (Exception ex) {
 				Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
 			}
 		});
 
-		final Button clickButton = (Button) findViewById(R.id.startGame);
+		final Button clickButton = findViewById(R.id.startGame);
 		clickButton.setOnClickListener(v -> {
 			if (m_badArchiveLocation) {
 				invalidGameRbMessage();
@@ -182,6 +202,8 @@ public class MainActivity extends android.app.Activity {
 			edit.commit();
 			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
 			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
+			switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", getFilesDir().getPath());
+			switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null).getPath());
 			try {
 				try {
 					FileWriter fw = new FileWriter(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log", false);
@@ -229,6 +251,7 @@ public class MainActivity extends android.app.Activity {
 		} catch (Exception exception) {
 			lastEngineDebugLogs.setText(exception.getLocalizedMessage());
 		}
+
 	}
 
 	private File checkFilepathValid(final String filepath) {

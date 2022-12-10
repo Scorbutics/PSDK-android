@@ -4,7 +4,7 @@
 #include "psdk.h"
 #include "jni_psdk.h"
 
-JNIEXPORT jint JNICALL Java_com_psdk_ProjectCompiler_compileGame(JNIEnv* env, jclass clazz, jstring fifo,
+JNIEXPORT jint JNICALL Java_com_psdk_ProjectCompiler_compile(JNIEnv* env, jclass clazz, jstring fifo,
                                                                  jstring internalWriteablePath, jstring externalWriteablePath, jstring psdkLocation) {
     (void) clazz;
 
