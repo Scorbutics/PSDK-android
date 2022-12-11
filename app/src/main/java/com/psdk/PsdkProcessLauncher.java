@@ -21,7 +21,10 @@ public abstract class PsdkProcessLauncher {
         File fifo = new File(fifoFilename);
         if (fifo.exists()) { fifo.delete(); }
 
-        Thread compilerThread = new Thread(() -> process.run(fifoFilename));
+        Thread compilerThread = new Thread(() -> {
+            int returnCode = process.run(fifoFilename);
+            onComplete(returnCode);
+        });
         Thread loggingThread = new Thread(() -> {
             try {
                 while (!fifo.exists()) {  }
@@ -33,16 +36,15 @@ public abstract class PsdkProcessLauncher {
                 in.close();
             } catch (IOException e) {
                 e.printStackTrace();
+                onLogError(e);
                 throw new RuntimeException(e);
             }
         });
         compilerThread.start();
         loggingThread.start();
-
-        // TODO ???
-        //thread.join();
-        //threadLog.join();
     }
 
     protected abstract void accept(String lineMessage);
+    protected void onComplete(int returnCode) {}
+    protected void onLogError(Exception e) {}
 }

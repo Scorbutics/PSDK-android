@@ -36,11 +36,6 @@ public class MainActivity extends android.app.Activity {
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
 
-	private String m_applicationPath;
-	private String m_internalWriteablePath;
-	private String m_externalWriteablePath;
-	private PsdkProcessLauncher m_psdkProcessLauncher;
-
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -73,7 +68,7 @@ public class MainActivity extends android.app.Activity {
 		clickButton.setEnabled(!m_badArchiveLocation);
 		final LinearLayout projectInfoLayout = (LinearLayout) findViewById(R.id.informationLayout);
 		projectInfoLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
-		final LinearLayout errorLogLayout = (LinearLayout) findViewById(R.id.errorLogLayout);
+		final LinearLayout errorLogLayout = (LinearLayout) findViewById(R.id.compilationLogLayout);
 		errorLogLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
 		if (!m_badArchiveLocation) {
 			final String psdkFolder = getSelectedPsdkFolderLocation();
@@ -166,28 +161,14 @@ public class MainActivity extends android.app.Activity {
 						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/");
 		setArchiveLocationValue(psdkLocation, true);
 
-		m_applicationPath = getApplicationInfo().dataDir;
-		m_internalWriteablePath = getFilesDir().getPath();
-		m_externalWriteablePath = getExternalFilesDir(null).getPath();
-
 		final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
-		m_psdkProcessLauncher = new PsdkProcessLauncher(m_applicationPath) {
-			@Override
-			protected void accept(String lineMessage) {
-				runOnUiThread(() -> {
-					lastErrorLog.append(lineMessage);
-					lastErrorLog.append("\n");
-				});
-			}
-		};
+
 
 		final Button compileButton = findViewById(R.id.compileGame);
 		compileButton.setOnClickListener(v -> {
-			try {
-				m_psdkProcessLauncher.run(fifoFilename -> ProjectCompiler.compile(fifoFilename, m_internalWriteablePath, m_externalWriteablePath, getSelectedPsdkFolderLocation()));
-			} catch (Exception ex) {
-				Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
-			}
+			final Intent compileIntent = new Intent(this, CompileActivity.class);
+			compileIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
+			startActivity(compileIntent);
 		});
 
 		final Button clickButton = findViewById(R.id.startGame);

@@ -36,5 +36,13 @@
             <meta-data android:name="android.app.lib_name" android:value="sfml-activity" />
             <meta-data android:name="sfml.app.lib_name" android:value="psdk-app" />
         </activity>
+
+        <activity android:name=".CompileActivity"
+            android:label="@string/app_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.COMPILE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
