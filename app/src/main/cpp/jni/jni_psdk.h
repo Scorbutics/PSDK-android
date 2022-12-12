@@ -8,7 +8,7 @@ extern "C" {
 #include <jni.h>
 #include <android/native_activity.h>
 
-JNIEXPORT jint JNICALL Java_com_psdk_PSDKScript_exec(JNIEnv* env, jclass clazz, jstring scriptContent, jstring fifo,
+JNIEXPORT jint JNICALL Java_com_psdk_PsdkProcess_exec(JNIEnv* env, jclass clazz, jstring scriptContent, jstring fifo,
                                                         jstring internalWriteablePath, jstring externalWriteablePath, jstring psdkLocation);
 
 int StartGameFromNativeActivity(ANativeActivity* activity);

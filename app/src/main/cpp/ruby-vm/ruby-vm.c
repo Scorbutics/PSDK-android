@@ -41,11 +41,6 @@ static void SetupRubyEnv(const char* baseDirectory)
     free(rubyBufferDir);
 }
 
-#ifdef NDEBUG
-// If I remember correctly, ruby will override this define, so we need to create another one
-#define REAL_NDEBUG
-#endif
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "ruby/ruby.h"
@@ -71,19 +66,9 @@ int ExecRubyVM(const char* baseDirectory, const char* script, int fromFilename)
         RUBY_INIT_STACK;
         ruby_init();
 
-#ifndef REAL_NDEBUG
-        printf("Ruby VM init done\n");
-#endif
-
         void* options = ruby_options(argc_, argv_);
-#ifndef REAL_NDEBUG
-        printf("Ruby VM node compiled\n");
-#endif
 
         const int result = ruby_run_node(options);
-#ifndef REAL_NDEBUG
-        printf("Ruby VM node ran\n");
-#endif
 
         for (int i = 0; i < argc_; i++) {
             free(argv_[i]);

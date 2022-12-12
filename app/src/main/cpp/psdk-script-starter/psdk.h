@@ -5,9 +5,7 @@
 extern "C" {
 #endif
 
-int ExecScript(const char* scriptContent, const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
-int StartGame(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
-int CheckEngineValidity(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
+int ExecPSDKScript(const char* scriptContent, const char* fifoOrFilename, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation, int isFifoRealFile);
 
 #ifdef __cplusplus
 }

@@ -39,13 +39,16 @@ public class MainActivity extends android.app.Activity {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-
-		m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE);
-		final String errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences);
-		if (errorUnpackAssets != null) {
-			unableToUnpackAssetsMessage(errorUnpackAssets);
-		}
-		if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE)) {
+		if (isTaskRoot()) {
+			m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE);
+			final String errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences);
+			if (errorUnpackAssets != null) {
+				unableToUnpackAssetsMessage(errorUnpackAssets);
+			}
+			if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE)) {
+				loadScreen();
+			}
+		} else {
 			loadScreen();
 		}
 	}
@@ -185,17 +188,18 @@ public class MainActivity extends android.app.Activity {
 			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
 			switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", getFilesDir().getPath());
 			switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null).getPath());
+			final String outputFilename = getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log";
+			switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename);
+
 			try {
-				try {
-					FileWriter fw = new FileWriter(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log", false);
-					fw.flush();
-				} catch (Exception e) {
-					Toast.makeText(getApplicationContext(), e.getLocalizedMessage(), Toast.LENGTH_LONG).show();
-				}
+				FileWriter fw = new FileWriter(outputFilename, false);
+				fw.flush();
+				final String startScript = PsdkProcess.readFromAssets(this, "start.rb");
+				switchActivityIntent.putExtra("START_SCRIPT", startScript);
 				MainActivity.this.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE);
-				} catch (android.content.ActivityNotFoundException ex) {
-					Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
-				}
+			} catch (Exception e) {
+				Toast.makeText(getApplicationContext(), e.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+			}
 		});
 
 		final Button locatePsdkButton = (Button) findViewById(R.id.locatePSDK);

@@ -18,6 +18,8 @@ public class CompileActivity extends Activity {
     private String m_externalWriteablePath;
     private String m_psdkLocation;
 
+    private static final String SCRIPT = "compile.rb";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -51,6 +53,8 @@ public class CompileActivity extends Activity {
             protected void onComplete(int returnCode) {
                 if (returnCode == 0) {
                     compilationEndState.setText("Compilation success !");
+                    // TODO: zip everything ?
+                    // or create a full apk from the release ?
                 } else {
                     compilationEndState.setText("Compilation failure");
                 }
@@ -59,16 +63,23 @@ public class CompileActivity extends Activity {
         };
 
         try {
-            m_psdkProcessLauncher.run(fifoFilename -> {
-                try {
-                    return PSDKScript.execute(this, "compile.rb", fifoFilename, m_internalWriteablePath, m_externalWriteablePath, m_psdkLocation);
-                } catch (IOException ex) {
-                    Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
-                }
-                return -1;
-            });
+            m_psdkProcessLauncher.run(new PsdkProcess(this, SCRIPT), buildPsdkProcessData());
         } catch (Exception ex) {
             Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        try {
+            m_psdkProcessLauncher.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        super.onBackPressed();
+    }
+
+    private PsdkProcess.InputData buildPsdkProcessData() {
+        return new PsdkProcess.InputData(m_internalWriteablePath, m_externalWriteablePath, m_psdkLocation);
     }
 }

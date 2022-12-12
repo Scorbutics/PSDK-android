@@ -10,22 +10,24 @@ public abstract class PsdkProcessLauncher {
 
     private final String applicationPath;
 
+    private Thread compilerThread;
+    private Thread loggingThread;
 
     public PsdkProcessLauncher(String applicationPath) {
         this.applicationPath = applicationPath;
     }
 
-    public void run(PsdkProcess process) {
+    public void run(PsdkProcess process, PsdkProcess.InputData processData) {
         String fifoFilename = applicationPath + "/" + FIFO_NAME;
 
         File fifo = new File(fifoFilename);
         if (fifo.exists()) { fifo.delete(); }
 
-        Thread compilerThread = new Thread(() -> {
-            int returnCode = process.run(fifoFilename);
+        compilerThread = new Thread(() -> {
+            int returnCode = process.run(fifoFilename, processData);
             onComplete(returnCode);
         });
-        Thread loggingThread = new Thread(() -> {
+        loggingThread = new Thread(() -> {
             try {
                 while (!fifo.exists()) {  }
                 BufferedReader in = new BufferedReader(new FileReader(fifo));
@@ -42,6 +44,19 @@ public abstract class PsdkProcessLauncher {
         });
         compilerThread.start();
         loggingThread.start();
+    }
+
+    public boolean isAlive() {
+        return compilerThread != null && compilerThread.isAlive();
+    }
+
+    public void join() throws InterruptedException {
+        if (compilerThread != null) {
+            compilerThread.join();
+        }
+        if (loggingThread != null) {
+            loggingThread.join();
+        }
     }
 
     protected abstract void accept(String lineMessage);
