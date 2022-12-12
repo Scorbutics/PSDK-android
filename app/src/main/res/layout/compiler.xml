@@ -7,13 +7,22 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:orientation="horizontal">
+        android:layout_height="100dp"
+        android:orientation="vertical"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/compilationScrollView">
+
+        <Button
+            android:id="@+id/backToMainActivity"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_weight="1"
+            android:text="Back to home" />
 
         <TextView
             android:id="@+id/compilationEndState"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="wrap_content" />
     </LinearLayout>
 
     <ScrollView
@@ -21,8 +30,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:descendantFocusability="afterDescendants"
-        android:paddingTop="50dp"
-        android:paddingBottom="50dp"
+        android:paddingTop="100dp"
+        android:paddingBottom="0dp"
         tools:layout_editor_absoluteX="16dp"
         tools:layout_editor_absoluteY="218dp">
 
@@ -40,18 +49,5 @@
                 android:text="Compilation log" />
         </LinearLayout>
     </ScrollView>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/backToMainActivity"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Back to home" />
-    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

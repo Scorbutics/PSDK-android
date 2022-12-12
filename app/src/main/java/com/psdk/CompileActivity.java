@@ -9,6 +9,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.IOException;
+
 public class CompileActivity extends Activity {
     private PsdkProcessLauncher m_psdkProcessLauncher;
     private String m_applicationPath;
@@ -39,11 +41,9 @@ public class CompileActivity extends Activity {
             @Override
             protected void accept(String lineMessage) {
                 runOnUiThread(() -> {
-                    if (!lineMessage.isEmpty()) {
-                        compilationLog.append(lineMessage);
-                        compilationLog.append("\n");
-                        compilationScrollView.fullScroll(View.FOCUS_DOWN);
-                    }
+                    compilationLog.append(lineMessage);
+                    compilationLog.append("\n");
+                    compilationScrollView.fullScroll(View.FOCUS_DOWN);
                 });
             }
 
@@ -59,7 +59,14 @@ public class CompileActivity extends Activity {
         };
 
         try {
-            m_psdkProcessLauncher.run(fifoFilename -> ProjectCompiler.compile(fifoFilename, m_internalWriteablePath, m_externalWriteablePath, m_psdkLocation));
+            m_psdkProcessLauncher.run(fifoFilename -> {
+                try {
+                    return PSDKScript.execute(this, "compile.rb", fifoFilename, m_internalWriteablePath, m_externalWriteablePath, m_psdkLocation);
+                } catch (IOException ex) {
+                    Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+                }
+                return -1;
+            });
         } catch (Exception ex) {
             Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
         }

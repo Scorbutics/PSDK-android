@@ -1,21 +1,15 @@
-#include <string>
-#include <iostream>
-#include <fstream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <dirent.h>
 #include <unistd.h>
 
-#include "SFML/System/NativeActivity.hpp"
-
-#include "get_activity_parameters.h"
 #include "psdk.h"
 #include "ruby-vm.h"
 
 #ifndef NDEBUG
-#include <android/log.h>
-#include <assert.h>
-#include "../logging/logging.h"
+#include "logging.h"
 #endif
-
 
 static const char VALIDITY_SCRIPT[] = "require 'rubygems'\n"
                                       "puts \"VM: rubygems loaded with success\"\n"
@@ -29,20 +23,6 @@ static const char VALIDITY_SCRIPT[] = "require 'rubygems'\n"
                                       "  STDERR.puts error\n"
                                       "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
                                       "end";
-
-static const char COMPILE_SCRIPT[] = "begin\n"
-                                     "  Dir.chdir ENV[\"PSDK_ANDROID_FOLDER_LOCATION\"]\n"
-                                     "  puts \"Going to directory : \" + Dir.pwd\n"
-                                     "  ENV['PSDK_BINARY_PATH'] = \"\"\n"
-                                     "  File.open('.gameopts', 'w') { |file| file.write(\"--util=project_compilation\") }\n"
-                                     "  ARGV << \"skip_lib\"\n"
-                                     "  ARGV << \"skip_binary\"\n"
-                                     "  require 'ruby_physfs_patch.rb'\n"
-                                     "  require './Game.rb'\n"
-                                     "rescue => error\n"
-                                     "  STDERR.puts error\n"
-                                     "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
-                                     "end";
 
 //#define PSDK_COMPILE
 //#define PSDK_LOAD_UNCOMPILED
@@ -70,31 +50,33 @@ static const char STARTER_SCRIPT[] = "begin\n"
                                      "  STDERR.puts error\n"
                                      "  STDERR.puts error.backtrace.join(\"\\n\\t\")\n"
                                      "end";
-static int ExecPSDKProcess(const char* script, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation, const char* loggingFile)
+static int ExecPSDKProcess(const char* script, int fromFilename, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation, const char* loggingFile, int realLogFile)
 {
 #ifndef NDEBUG
     if (loggingFile != NULL) {
-        LoggingThreadRun("com.psdk.starter", loggingFile);
+        LoggingThreadRun("com.psdk.starter", loggingFile, realLogFile);
     }
 #endif
+
     if (chdir(externalWriteablePath) != 0) {
-        std::cerr << "Cannot change current directory to '" << externalWriteablePath << "'" << std::endl;
+        fprintf(stderr, "Cannot change current directory to '%s'\n", externalWriteablePath);
         return 2;
     }
 
     setenv("PSDK_ANDROID_FOLDER_LOCATION", psdkLocation, 1);
+
 #ifndef NDEBUG
-    char mess[64];
-    snprintf(mess, sizeof(mess), "Ruby thread started");
-    __android_log_write(ANDROID_LOG_DEBUG, "com.psdk.starter",  mess);
+    printf("Ruby thread started\n");
 #endif
-    const int rubyReturn = ExecRubyVM(internalWriteablePath, script);
+
+    const int rubyReturn = ExecRubyVM(internalWriteablePath, script, fromFilename);
+
 #ifndef NDEBUG
     if (loggingFile != NULL) {
         g_logging_thread_continue = 0;
 
         // Force "read" to end in logging thread
-        std::cout << "Ruby thread ended : " << rubyReturn << std::endl;
+        printf("Ruby thread ended : %i\n", rubyReturn);
 
         pthread_join(g_logging_thread, NULL);
     }
@@ -102,37 +84,25 @@ static int ExecPSDKProcess(const char* script, const char* internalWriteablePath
     return rubyReturn;
 }
 
-int StartGame()
+int StartGame(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
 {
-    auto* activity = sf::getNativeActivity();
-    assert(activity != NULL);
+    static const char* const LOG_FILENAME = "last_stdout.log";
+    const size_t logPathLength = strlen(externalWriteablePath) + 2 + strlen(LOG_FILENAME);
+    char* logFile = (char*) malloc(logPathLength);
+    snprintf(logFile, logPathLength, "%s/%s", externalWriteablePath, LOG_FILENAME);
 
-    const auto* internalWriteablePath = GetNewNativeActivityParameter(activity, "INTERNAL_STORAGE_LOCATION");
-    const auto* externalWriteablePath = GetNewNativeActivityParameter(activity, "EXTERNAL_STORAGE_LOCATION");
-    const char* psdkLocation = GetNewNativeActivityParameter(activity, "PSDK_LOCATION");
+    const int result = ExecPSDKProcess(STARTER_SCRIPT, 0, internalWriteablePath, externalWriteablePath, psdkLocation, logFile, 1);
 
-    int result = ExecPSDKProcess(STARTER_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, (std::string{externalWriteablePath} + "/last_stdout.log").c_str());
-
-    free((void*)psdkLocation);
-    free((void*)externalWriteablePath);
-    free((void*)internalWriteablePath);
-
+    free(logFile);
     return result;
-}
-
-int CompileGame(const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
-{
-    int psdkResult = 0;
-    try {
-        psdkResult = ExecPSDKProcess(COMPILE_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, fifo);
-    } catch (...) {
-        psdkResult = 255;
-    }
-
-    return psdkResult;
 }
 
 int CheckEngineValidity(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
 {
-    return ExecPSDKProcess(VALIDITY_SCRIPT, internalWriteablePath, externalWriteablePath, psdkLocation, NULL);
+    return ExecPSDKProcess(VALIDITY_SCRIPT, 0, internalWriteablePath, externalWriteablePath, psdkLocation, NULL, 0);
+}
+
+int ExecScript(const char* scriptContent, const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation)
+{
+    return ExecPSDKProcess(scriptContent, 0, internalWriteablePath, externalWriteablePath, psdkLocation, fifo, 0);
 }

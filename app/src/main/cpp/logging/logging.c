@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <android/log.h>
 #include <malloc.h>
 #include <errno.h>
 
@@ -19,6 +18,25 @@ static int pfd[2];
 static char* log_tag = NULL;
 static int logFd = -1;
 static char* logFileName = NULL;
+static logging_native_logging_func_t loggingFunction = NULL;
+
+enum {
+	LOG_UNKNOWN = 0,
+	LOG_DEFAULT,
+	LOG_VERBOSE,
+	LOG_DEBUG,
+	LOG_INFO,
+	LOG_WARN,
+	LOG_ERROR,
+	LOG_FATAL,
+	LOG_SILENT
+};
+
+static void LogNative(int prio, const char* tag, const char* text) {
+	if (loggingFunction != NULL) {
+		loggingFunction(prio, tag, text);
+	}
+}
 
 static int ResizeGlobalLogBufferIfNeeded(char** globalBuffer, size_t* globalBufferCapacity, size_t newSize) {
 	if (*globalBufferCapacity <= newSize) {
@@ -36,7 +54,7 @@ static int ResizeGlobalLogBufferIfNeeded(char** globalBuffer, size_t* globalBuff
 
 static int AppendLog(const char* buf, char** globalBuffer, size_t* globalBufferCapacity, size_t* globalBufferSize, size_t stringSizeToAppend) {
 	if (ResizeGlobalLogBufferIfNeeded(globalBuffer, globalBufferCapacity, *globalBufferSize + stringSizeToAppend + 1) != 0) {
-		__android_log_write(ANDROID_LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag, "Internal memory error, aborting thread");
+		LogNative(LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag, "Internal memory error, aborting thread");
 		return 1;
 	}
 
@@ -46,19 +64,13 @@ static int AppendLog(const char* buf, char** globalBuffer, size_t* globalBufferC
 }
 
 static void WriteFullLogLine(const char* line) {
-	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, line);
+	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, line);
 	if (logFd > 0) {
-/*		if (ftell(fullLog) > MAX_LOGFILE_SIZE) {
-			rewind (fullLog);
-		}
-*/
 		write(logFd, line, strlen(line));
-		write(logFd, "\n", 1);
-		//fprintf(fullLog, "%s\n", line);
 	}
 }
 
-static void* loggingFunction(void* unused) {
+static void* loggingFunctionThread(void* unused) {
 	(void) unused;
 	ssize_t readSize;
 	char buf[64];
@@ -67,13 +79,13 @@ static void* loggingFunction(void* unused) {
     if (logFd == -1) {
         char logMessage[512];
         sprintf(logMessage, "Cannot open file : %s (name is %s)", strerror(errno), logFileName);
-        __android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+		LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
         return NULL;
     }
 
 	char* globalBuffer = (char*) malloc(sizeof(buf));
 	if (globalBuffer == NULL) {
-		__android_log_write(ANDROID_LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag,
+		LogNative(LOG_ERROR, log_tag == NULL ? "UNKNOWN" : log_tag,
 		                    "Internal memory error, aborting thread");
 		return NULL;
 	}
@@ -105,7 +117,7 @@ static void* loggingFunction(void* unused) {
 		globalBufferSize = 0;
 	}
 	WriteFullLogLine("----------------------------");
-	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread ended");
+	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread ended");
 
 	free(globalBuffer);
 	free(log_tag);
@@ -115,42 +127,50 @@ static void* loggingFunction(void* unused) {
 	return NULL;
 }
 
-int LoggingThreadRun(const char* appname, const char* extraLogFile) {
+void LoggingSetNativeLoggingFunction(logging_native_logging_func_t func) {
+	loggingFunction = func;
+}
+
+int LoggingThreadRun(const char* appname, const char* extraLogFile, int realLogFile) {
 	setvbuf(stdout, 0, _IONBF, 0); // make stdout line-buffered
 	setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
 
 	log_tag = strdup(appname);
 	logFileName = strdup(extraLogFile);
-    unlink(logFileName);
-	if (mkfifo(logFileName, 0664) != 0) {
-		char currentWorkingDir[512];
-		char logMessage[512];
 
-		if (getcwd(currentWorkingDir, sizeof(currentWorkingDir)) == NULL) {
-			sprintf(logMessage, "Unable to get the current directory : %s", strerror(errno));
-		} else {
-			sprintf(logMessage, "Current directory: %s", currentWorkingDir);
+	if (realLogFile == 0) {
+		unlink(logFileName);
+		if (mkfifo(logFileName, 0664) != 0) {
+			char currentWorkingDir[512];
+			char logMessage[512];
+
+			if (getcwd(currentWorkingDir, sizeof(currentWorkingDir)) == NULL) {
+				sprintf(logMessage, "Unable to get the current directory : %s", strerror(errno));
+			} else {
+				sprintf(logMessage, "Current directory: %s", currentWorkingDir);
+			}
+			LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+
+			sprintf(logMessage, "Cannot create a named fifo : %s (name is %s)", strerror(errno),
+					logFileName);
+			LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
+			return -2;
 		}
-		__android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
-
-		sprintf(logMessage, "Cannot create a named fifo : %s (name is %s)", strerror(errno), logFileName);
-        __android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag, logMessage);
-		return -2;
 	}
-    __android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BAP");
+	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BAP");
 
 	pipe(pfd);
 	dup2(pfd[1], STDERR_FILENO);
 	dup2(pfd[1], STDOUT_FILENO);
 
-    __android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BOOP");
+	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BOOP");
 
-	if (pthread_create(&g_logging_thread, 0, loggingFunction, 0) == -1) {
-		__android_log_write(ANDROID_LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,
+	if (pthread_create(&g_logging_thread, 0, loggingFunctionThread, 0) == -1) {
+		LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,
 											"Cannot spawn logging thread : logging from stdout / stderr won't show in logcat");
 		return -1;
 	}
-	__android_log_write(ANDROID_LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread started");
+	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread started");
 	return 0;
 }
 #endif

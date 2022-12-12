@@ -1,14 +1,15 @@
 #include <stdio.h>
 #include <string.h>
+#include <android/log.h>
 
-#include <android/native_activity.h>
+#include "get_activity_parameters.h"
 
 const char* GetNewNativeActivityParameter(ANativeActivity* activity, const char* parameterName) {
 	JNIEnv *env = activity->env;
 	JavaVM* vm = activity->vm;
 	const int res = (*vm)->AttachCurrentThread(vm, &env, NULL);
 	if (res != 0) {
-		fprintf(stderr, "Cannot attach current thread (MainActivity::getGameRbLocation)\n");
+		__android_log_write(ANDROID_LOG_ERROR, "com.psdk.starter", "Cannot attach current thread (GetNewNativeActivityParameter)\n");
 		return NULL;
 	}
 

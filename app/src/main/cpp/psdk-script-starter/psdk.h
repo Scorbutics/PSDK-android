@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-int StartGame();
-int CompileGame(const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
+int ExecScript(const char* scriptContent, const char* fifo, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
+int StartGame(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
 int CheckEngineValidity(const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation);
 
 #ifdef __cplusplus
