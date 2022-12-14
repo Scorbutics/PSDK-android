@@ -15,12 +15,17 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class MainActivity extends android.app.Activity {
 	static {
@@ -77,7 +82,7 @@ public class MainActivity extends android.app.Activity {
 			final String psdkFolder = getSelectedPsdkFolderLocation();
 			final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
 			try {
-				final byte[] encoded = Files.readAllBytes(Paths.get(psdkFolder + "/Error.log"));
+				final byte[] encoded = Files.readAllBytes(Paths.get(psdkFolder + "/Release/Error.log"));
 				lastErrorLog.setText(new String(encoded, StandardCharsets.UTF_8));
 			} catch (IOException e) {
 				// File does not exist
@@ -108,24 +113,11 @@ public class MainActivity extends android.app.Activity {
 		Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
 		intent.setType(mimeType);
 		intent.addCategory(Intent.CATEGORY_OPENABLE);
-
-		// special intent for Samsung file manager
-		Intent sIntent = new Intent("com.sec.android.app.myfiles.PICK_DATA");
-		// if you want any file type, you can skip next line
-		sIntent.putExtra("CONTENT_TYPE", mimeType);
-		sIntent.addCategory(Intent.CATEGORY_DEFAULT);
-
-		Intent chooserIntent;
-		if (getPackageManager().resolveActivity(sIntent, 0) != null){
-			// it is device with Samsung file manager
-			chooserIntent = Intent.createChooser(sIntent, "Open file");
-			chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { intent});
-		} else {
-			chooserIntent = Intent.createChooser(intent, "Open file");
-		}
+		intent.setType("*/*");
+		Intent chooseFile = Intent.createChooser(intent, "Choose a file");
 
 		try {
-			startActivityForResult(chooserIntent, CHOOSE_FILE_REQUESTCODE);
+			startActivityForResult(chooseFile, CHOOSE_FILE_REQUESTCODE);
 		} catch (android.content.ActivityNotFoundException ex) {
 			Toast.makeText(getApplicationContext(), "No suitable File Manager was found.", Toast.LENGTH_LONG).show();
 		}
@@ -170,7 +162,8 @@ public class MainActivity extends android.app.Activity {
 		final Button compileButton = findViewById(R.id.compileGame);
 		compileButton.setOnClickListener(v -> {
 			final Intent compileIntent = new Intent(this, CompileActivity.class);
-			compileIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
+			compileIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
+			compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation);
 			startActivity(compileIntent);
 		});
 
@@ -185,10 +178,10 @@ public class MainActivity extends android.app.Activity {
 			edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation);
 			edit.commit();
 			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
-			switchActivityIntent.putExtra("PSDK_LOCATION", getSelectedPsdkFolderLocation());
+			switchActivityIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
 			switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", getFilesDir().getPath());
 			switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null).getPath());
-			final String outputFilename = getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log";
+			final String outputFilename = getExecutionLocation() + "/last_stdout.log";
 			switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename);
 
 			try {
@@ -239,23 +232,51 @@ public class MainActivity extends android.app.Activity {
 
 	}
 
+	private String getExecutionLocation() {
+		//return getSelectedPsdkFolderLocation();
+		return getApplicationInfo().dataDir;
+	}
+
 	private File checkFilepathValid(final String filepath) {
 		if (filepath == null) {
 			return null;
 		}
 		final File finalFile = new File(filepath);
-		if (!finalFile.exists()) {
-			System.out.println("Error : file at filepath " + filepath + " does not exist");
+		if (!finalFile.exists() || !finalFile.canRead()) {
+			System.out.println("Error : file at filepath " + filepath + " does not exist or not readable");
 			return null;
 		}
+
 		final String absPath = finalFile.getAbsolutePath();
 		final int sep = absPath.lastIndexOf(File.separator);
 		final String filename = absPath.substring(sep + 1).trim();
-		if (filename.endsWith(".psa")) {
-			return finalFile;
+		if (!filename.endsWith(".psa")) {
+			System.out.println("Error : selected file at filepath " + filepath + " is not a 'psa' file : '" + filename + "'");
+			return null;
 		}
-		System.out.println("Error : selected file at filepath " + filepath + " is not a 'psa' file : '" + filename + "'");
-		return null;
+
+		try {
+			BufferedInputStream bufIn = new BufferedInputStream(new FileInputStream(finalFile));
+			bufIn.mark(512);
+			ZipInputStream zipIn = new ZipInputStream(bufIn);
+			boolean foundSpecial = false;
+			ZipEntry entry;
+			while ((entry = zipIn.getNextEntry()) != null) {
+				if ("pokemonsdk/version.txt".equals(entry.getName())) {
+					foundSpecial = true;
+					break;
+				}
+			}
+
+			if (!foundSpecial) {
+				System.out.println("pokemonsdk folder not found in the archive");
+				return null;
+			}
+			return finalFile;
+		} catch (IOException e) {
+			System.out.println("Error while reading the archive");
+			return null;
+		}
 	}
 
 	private void invalidGameRbMessage() {

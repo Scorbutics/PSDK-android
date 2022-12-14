@@ -1,5 +1,7 @@
 package com.psdk;
 
+import android.os.Process;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -48,6 +50,10 @@ public abstract class PsdkProcessLauncher {
 
     public boolean isAlive() {
         return compilerThread != null && compilerThread.isAlive();
+    }
+
+    public void killCurrentProcess() {
+        Process.sendSignal(Process.myPid(), Process.SIGNAL_KILL);
     }
 
     public void join() throws InterruptedException {

@@ -1,10 +1,9 @@
 require 'LiteRGSS'
 
 Project_path = Dir.pwd
-STDERR.puts Project_path
-PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/project.psa"
-#DATA_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/data.zip"
-#CODE_ARCHIVE = LiteRGSS::AssetsArchive.new Project_path + "/code.zip"
+PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
+STDERR.puts "Project path: #{Project_path}"
+STDERR.puts "Archive: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
 LiteRGSS::AssetWriter::write_dir = Project_path
 
@@ -167,17 +166,17 @@ class ::Dir
         if dirs.length == 2
             search_append = dirs[1]
         end
-        STDERR.puts "RECURSIVE #{search} in #{directory_path} (#{search_pattern})"
+        #STDERR.puts "RECURSIVE #{search} in #{directory_path} (#{search_pattern})"
         physfs_dir_path = @@_Physfs_virtual_pwd.nil? ? directory_path : (@@_Physfs_virtual_pwd + "/" + directory_path)
         all_dirs = LiteRGSS::AssetFile::enumerate(physfs_dir_path).map {|item| physfs_dir_path + "/" + item }
         final_files = []
         all_dirs.each do |dir|
             if LiteRGSS::AssetFile::is_directory? dir
                 final_search = dir + "/" + search + search_append
-                STDERR.puts "GO RECURSIVE SEARCH #{final_search} in #{directory_path} (#{search_pattern})"
+                #STDERR.puts "GO RECURSIVE SEARCH #{final_search} in #{directory_path} (#{search_pattern})"
                 final_files << Dir[final_search]
             else
-                STDERR.puts "Not a directory #{dir}"
+                #STDERR.puts "Not a directory #{dir}"
                 final_files << dir
             end
         end
@@ -192,7 +191,7 @@ class ::Dir
             final_files = all_files
             final_files = final_files.select { |item| !LiteRGSS::AssetFile::is_directory? (physfs_dir_path + "/" + item) } if (search == ".*" || search == ".*/")
         end
-        STDERR.puts "SEARCH FILES #{search} in #{directory_path} (#{search_pattern})" if !final_files.empty?
+        #STDERR.puts "SEARCH FILES #{search} in #{directory_path} (#{search_pattern})" if !final_files.empty?
         build_final_path = -> (item) {
             full_item_path = physfs_dir_path + "/" + item
             if LiteRGSS::AssetFile::is_directory? (full_item_path)

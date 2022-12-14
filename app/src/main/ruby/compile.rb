@@ -1,6 +1,9 @@
 begin
-  Dir.chdir ENV["PSDK_ANDROID_FOLDER_LOCATION"]
-  ENV['PSDK_BINARY_PATH'] = ""
+  require 'fileutils'
+  FileUtils.rm_rf('./Release');
+  if File.exist?("Release")
+    raise "Unable to remove existing compiled data"
+  end
 
   File.open('.gameopts', 'w') { |file| file.write("--util=project_compilation") }
   ARGV << "skip_lib"

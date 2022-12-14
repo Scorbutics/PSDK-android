@@ -10,13 +10,13 @@ public class PsdkProcess {
 
     static class InputData {
         private String internalWriteablePath;
-        private String externalWriteablePath;
-        private String psdkLocation;
+        private String executionLocation;
+        private String archiveLocation;
 
-        public InputData(String internalWriteablePath, String externalWriteablePath, String psdkLocation) {
+        public InputData(String internalWriteablePath, String executionLocation, String archiveLocation) {
             this.internalWriteablePath = internalWriteablePath;
-            this.externalWriteablePath = externalWriteablePath;
-            this.psdkLocation = psdkLocation;
+            this.executionLocation = executionLocation;
+            this.archiveLocation = archiveLocation;
         }
     }
 
@@ -28,10 +28,10 @@ public class PsdkProcess {
         this.scriptContent = readFromAssets(context, assetScriptName);
     }
 
-    private static native int exec(String scriptContent, String fifo, String internalWriteablePath, String externalWriteablePath, String psdkLocation);
+    private static native int exec(String scriptContent, String fifo, String internalWriteablePath, String executionLocation, String additionalParam);
 
     public int run(String fifo, InputData processData) {
-        return exec(scriptContent, fifo, processData.internalWriteablePath, processData.externalWriteablePath, processData.psdkLocation);
+        return exec(scriptContent, fifo, processData.internalWriteablePath, processData.executionLocation, processData.archiveLocation);
     }
 
     public static String readFromAssets(Context context, String assetScriptName) throws IOException {

@@ -11,7 +11,8 @@
 #include "logging.h"
 #endif
 
-int ExecPSDKScript(const char* scriptContent, const char* fifoOrFilename, const char* internalWriteablePath, const char* externalWriteablePath, const char* psdkLocation, int isFifoRealFile)
+int ExecPSDKScript(const char* scriptContent, const char* fifoOrFilename, const char* internalWriteablePath,
+                   const char* executionLocation, const char* additionalParam, int isFifoRealFile)
 {
 #ifndef NDEBUG
     if (fifoOrFilename != NULL) {
@@ -19,13 +20,13 @@ int ExecPSDKScript(const char* scriptContent, const char* fifoOrFilename, const 
     }
 #endif
 
-    if (chdir(externalWriteablePath) != 0) {
-        fprintf(stderr, "Cannot change current directory to '%s'\n", externalWriteablePath);
+    if (chdir(executionLocation) != 0) {
+        fprintf(stderr, "Cannot change current directory to '%s'\n", executionLocation);
         return 2;
     }
 
-    setenv("PSDK_ANDROID_FOLDER_LOCATION", psdkLocation, 1);
-
+    setenv("PSDK_ANDROID_ADDITIONAL_PARAM", additionalParam == NULL ? "" : additionalParam, 1);
+    setenv("PSDK_BINARY_PATH", "", 1);
     const int rubyReturn = ExecRubyVM(internalWriteablePath, scriptContent, 0);
 
 #ifndef NDEBUG

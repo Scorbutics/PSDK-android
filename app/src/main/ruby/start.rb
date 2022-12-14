@@ -1,6 +1,5 @@
 begin
-  Dir.chdir ENV["PSDK_ANDROID_FOLDER_LOCATION"] + '/Release'
-  ENV['PSDK_BINARY_PATH'] = ""
+  Dir.chdir './Release'
   require './Game.rb'
 rescue => error
   STDERR.puts error

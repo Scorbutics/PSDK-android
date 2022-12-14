@@ -15,8 +15,8 @@ public class CompileActivity extends Activity {
     private PsdkProcessLauncher m_psdkProcessLauncher;
     private String m_applicationPath;
     private String m_internalWriteablePath;
-    private String m_externalWriteablePath;
-    private String m_psdkLocation;
+    private String m_executionLocation;
+    private String m_archiveLocation;
 
     private static final String SCRIPT = "compile.rb";
 
@@ -26,8 +26,8 @@ public class CompileActivity extends Activity {
         setContentView(R.layout.compiler);
         m_applicationPath = getApplicationInfo().dataDir;
         m_internalWriteablePath = getFilesDir().getPath();
-        m_externalWriteablePath = getExternalFilesDir(null).getPath();
-        m_psdkLocation = getIntent().getStringExtra("PSDK_LOCATION");
+        m_executionLocation = getIntent().getStringExtra("EXECUTION_LOCATION");
+        m_archiveLocation = getIntent().getStringExtra("ARCHIVE_LOCATION");
 
         Button backToMainActivity = findViewById(R.id.backToMainActivity);
         backToMainActivity.setOnClickListener(v -> {
@@ -71,15 +71,10 @@ public class CompileActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        try {
-            m_psdkProcessLauncher.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        super.onBackPressed();
+        m_psdkProcessLauncher.killCurrentProcess();
     }
 
     private PsdkProcess.InputData buildPsdkProcessData() {
-        return new PsdkProcess.InputData(m_internalWriteablePath, m_externalWriteablePath, m_psdkLocation);
+        return new PsdkProcess.InputData(m_internalWriteablePath, m_executionLocation, m_archiveLocation);
     }
 }

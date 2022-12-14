@@ -75,7 +75,7 @@ static void* loggingFunctionThread(void* unused) {
 	ssize_t readSize;
 	char buf[64];
 
-    logFd = open(logFileName, O_WRONLY);
+    logFd = open(logFileName, O_CREAT | O_APPEND | O_WRONLY, 0644);
     if (logFd == -1) {
         char logMessage[512];
         sprintf(logMessage, "Cannot open file : %s (name is %s)", strerror(errno), logFileName);
@@ -157,13 +157,10 @@ int LoggingThreadRun(const char* appname, const char* extraLogFile, int realLogF
 			return -2;
 		}
 	}
-	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BAP");
 
 	pipe(pfd);
 	dup2(pfd[1], STDERR_FILENO);
 	dup2(pfd[1], STDOUT_FILENO);
-
-	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "BOOP");
 
 	if (pthread_create(&g_logging_thread, 0, loggingFunctionThread, 0) == -1) {
 		LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,
