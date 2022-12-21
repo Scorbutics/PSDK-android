@@ -2,8 +2,12 @@ package com.psdk;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
@@ -15,7 +19,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 
 public class AppInstall {
 
@@ -59,21 +65,45 @@ public class AppInstall {
 		return null;
 	}
 
-	public static boolean requestPermissionsIfNeeded(Activity activity, int requestCode) {
-		return requestPermissionsNeeded(activity, new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE }, requestCode);
+	public static boolean requestPermissionsIfNeeded(Activity activity, int requestCode, int acceptAllRequestCode) {
+		final String [] quickPermissions = new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE };
+		boolean allAccess = requestPermissionsNeeded(activity, quickPermissions, requestCode);
+		if (!Environment.isExternalStorageManager()) {
+			AppInstall.requestActivityPermissions(activity, acceptAllRequestCode);
+			allAccess = false;
+		}
+		return allAccess;
 	}
 
-	private static boolean requestPermissionsNeeded(Activity activity, String[] permissions, int requestCode) {
+	public static List<String> checkNotGrantedPermissions(Activity activity, String[] permissions) {
 		final List<String> notGrantedPermissions = new ArrayList<>();
 		for (final String permission : permissions) {
 			if (ContextCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
+				ActivityCompat.shouldShowRequestPermissionRationale(activity, permission);
 				notGrantedPermissions.add(permission);
 			}
 		}
+		return notGrantedPermissions;
+	}
+
+	private static boolean requestPermissionsNeeded(Activity activity, String[] permissions, int requestCode) {
+		List<String> notGrantedPermissions = checkNotGrantedPermissions(activity, permissions);
 		if (!notGrantedPermissions.isEmpty()) {
 			ActivityCompat.requestPermissions(activity, notGrantedPermissions.toArray(new String[0]), requestCode);
 			return false;
 		}
 		return true;
+	}
+
+	public static void requestActivityPermissions(Activity activity, int requestCode) {
+		try {
+			Uri uri = Uri.parse("package:" + BuildConfig.APPLICATION_ID);
+			Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri);
+			activity.startActivityForResult(intent, requestCode);
+		} catch (Exception ex) {
+			Intent intent = new Intent();
+			intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+			activity.startActivityForResult(intent, requestCode);
+		}
 	}
 }

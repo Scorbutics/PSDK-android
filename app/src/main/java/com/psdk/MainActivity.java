@@ -1,10 +1,15 @@
 package com.psdk;
 
+import static android.content.pm.PackageManager.PERMISSION_GRANTED;
+
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
@@ -23,7 +28,12 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.IntBinaryOperator;
+import java.util.function.IntPredicate;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -31,12 +41,22 @@ public class MainActivity extends android.app.Activity {
 	static {
 		System.loadLibrary("jni");
 	}
+
+	enum Mode {
+		START_GAME,
+		COMPILE
+	}
+
 	private static final int CHOOSE_FILE_REQUESTCODE = 8777;
 	private static final int START_GAME_REQUESTCODE = 8700;
+	private static final int COMPILE_GAME_REQUESTCODE = 8000;
 	private static final int ACCEPT_PERMISSIONS_REQUESTCODE = 8007;
+	private static final int ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE = 8070;
 
+	private Mode m_mode = Mode.COMPILE;
+	private String m_permissionErrorMessage;
 	private String m_archiveLocation;
-	private boolean m_badArchiveLocation = true;
+	private String m_badArchiveLocation;
 	private SharedPreferences m_projectPreferences;
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
@@ -46,20 +66,18 @@ public class MainActivity extends android.app.Activity {
 		super.onCreate(savedInstanceState);
 		if (isTaskRoot()) {
 			m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE);
+
 			final String errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences);
 			if (errorUnpackAssets != null) {
 				unableToUnpackAssetsMessage(errorUnpackAssets);
 			}
-			if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE)) {
+
+			if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)) {
 				loadScreen();
 			}
 		} else {
 			loadScreen();
 		}
-	}
-
-	private String getSelectedPsdkFolderLocation() {
-		return m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf(File.separator));
 	}
 
 	private void setArchiveLocationValue(String location, boolean triggerEvent) {
@@ -68,21 +86,12 @@ public class MainActivity extends android.app.Activity {
 		if (triggerEvent) {
 			psdkLocation.setText(m_archiveLocation);
 		}
-		m_badArchiveLocation = checkFilepathValid(m_archiveLocation) == null;
-		psdkLocation.setBackgroundResource(m_badArchiveLocation ? R.drawable.edterr : R.drawable.edtnormal);
-		final CheckedTextView psdkLocationValid = (CheckedTextView) findViewById(R.id.psdkLocationValid);
-		psdkLocationValid.setChecked(!m_badArchiveLocation);
-		final Button clickButton = (Button) findViewById(R.id.startGame);
-		clickButton.setEnabled(!m_badArchiveLocation);
-		final LinearLayout projectInfoLayout = (LinearLayout) findViewById(R.id.informationLayout);
-		projectInfoLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
-		final LinearLayout errorLogLayout = (LinearLayout) findViewById(R.id.compilationLogLayout);
-		errorLogLayout.setVisibility(m_badArchiveLocation ? View.INVISIBLE : View.VISIBLE);
-		if (!m_badArchiveLocation) {
-			final String psdkFolder = getSelectedPsdkFolderLocation();
+		m_badArchiveLocation = checkFilepathValid(m_archiveLocation);
+		boolean validState = lockScreenIfInvalidState();
+		if (!validState) {
 			final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
 			try {
-				final byte[] encoded = Files.readAllBytes(Paths.get(psdkFolder + "/Release/Error.log"));
+				final byte[] encoded = Files.readAllBytes(Paths.get(getApplicationInfo().dataDir + "/Release/Error.log"));
 				lastErrorLog.setText(new String(encoded, StandardCharsets.UTF_8));
 			} catch (IOException e) {
 				// File does not exist
@@ -90,23 +99,50 @@ public class MainActivity extends android.app.Activity {
 			}
 
 			final TextView projectVersion = (TextView) findViewById(R.id.projectVersion);
-			try {
-				final byte[] encoded = Files.readAllBytes(Paths.get(psdkFolder + "/pokemonsdk/version.txt"));
-				long versionNumeric = 0;
+			if (m_mode == Mode.COMPILE) {
+				projectVersion.setText("Unknown (game uncompiled)");
+			} else {
 				try {
-					versionNumeric = Long.valueOf(new String(encoded, StandardCharsets.UTF_8).trim());
-				} catch (NumberFormatException nfe) {
+					final byte[] encoded = Files.readAllBytes(Paths.get(getApplicationInfo().dataDir + "/Release/pokemonsdk/version.txt"));
+					long versionNumeric = 0;
+					try {
+						versionNumeric = Long.valueOf(new String(encoded, StandardCharsets.UTF_8).trim());
+					} catch (NumberFormatException nfe) {
+						projectVersion.setText("INVALID");
+					}
+					final long majorVersion = versionNumeric >> 8;
+					final String versionStr = String.valueOf(majorVersion) + "." + String.valueOf(versionNumeric - (majorVersion << 8) - 256);
+					projectVersion.setText(versionStr);
+				} catch (IOException e) {
 					projectVersion.setText("INVALID");
 				}
-				final long majorVersion = versionNumeric >> 8;
-				final String versionStr = String.valueOf(majorVersion) + "." + String.valueOf(versionNumeric - (majorVersion << 8) - 256);
-				projectVersion.setText(versionStr);
-			} catch (IOException e) {
-				projectVersion.setText("INVALID");
 			}
-
+		} else {
+			SharedPreferences.Editor edit = m_projectPreferences.edit();
+			edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation);
+			edit.commit();
 		}
 
+		final TextView projectEngineHealth = findViewById(R.id.projectEngineHealth);
+		projectEngineHealth.setText(isValidState()  ? "" : m_permissionErrorMessage + " " + m_badArchiveLocation);
+		projectEngineHealth.setBackgroundResource(!isValidState() ? R.drawable.edterr : R.drawable.edtnormal);
+	}
+
+	private boolean lockScreenIfInvalidState() {
+		boolean validState = isValidState();
+		final EditText psdkLocation = (EditText) findViewById(R.id.psdkLocation);
+		psdkLocation.setBackgroundResource(!validState ? R.drawable.edterr : R.drawable.edtnormal);
+		final CheckedTextView psdkLocationValid = (CheckedTextView) findViewById(R.id.psdkLocationValid);
+		psdkLocationValid.setChecked(validState);
+		final Button clickButton = (Button) findViewById(R.id.startGame);
+		clickButton.setEnabled(validState);
+		final LinearLayout projectInfoLayout = (LinearLayout) findViewById(R.id.informationLayout);
+		projectInfoLayout.setVisibility(!validState ? View.INVISIBLE : View.VISIBLE);
+		final LinearLayout errorLogLayout = (LinearLayout) findViewById(R.id.compilationLogLayout);
+		errorLogLayout.setVisibility(!validState ? View.INVISIBLE : View.VISIBLE);
+		final LinearLayout lastEngineDebugLogLayout = (LinearLayout) findViewById(R.id.lastEngineDebugLogLayout);
+		lastEngineDebugLogLayout.setVisibility(!validState ? View.INVISIBLE : View.VISIBLE);
+		return validState;
 	}
 
 	public void openFile(String mimeType) {
@@ -124,12 +160,29 @@ public class MainActivity extends android.app.Activity {
 	}
 
 	@Override
-	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+	public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 		switch (requestCode) {
 			case ACCEPT_PERMISSIONS_REQUESTCODE:
-				if (resultCode == RESULT_CANCELED) {
-					loadScreen();
+				if (Arrays.stream(grantResults).anyMatch(i -> i != PERMISSION_GRANTED)) {
+					m_permissionErrorMessage = "You must have read and write to external storage permissions in order to use PSDK";
 				}
+				AppInstall.requestActivityPermissions(this, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE);
+				break;
+			default:
+				break;
+		}
+	}
+
+	@Override
+	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+		final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
+		switch (requestCode) {
+			case ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE:
+				if (!Environment.isExternalStorageManager()) {
+					m_permissionErrorMessage = "You must have all file access permission in order to use PSDK";
+				}
+				loadScreen();
 				break;
 			case CHOOSE_FILE_REQUESTCODE:
 				if (resultCode != RESULT_OK) {
@@ -138,8 +191,8 @@ public class MainActivity extends android.app.Activity {
 				final String path = new PathUtil(getApplicationContext()).getPathFromUri(data.getData());
 				setArchiveLocationValue(path, true);
 				break;
+			case COMPILE_GAME_REQUESTCODE:
 			case START_GAME_REQUESTCODE:
-				final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
 				if (resultCode != RESULT_OK) {
 					lastErrorLog.setText("Error starting game activity, code : " + resultCode);
 					return;
@@ -150,33 +203,28 @@ public class MainActivity extends android.app.Activity {
 		}
 	}
 
+	private boolean isValidState() {
+		return m_permissionErrorMessage == null && m_badArchiveLocation == null;
+	}
+
 	private void loadScreen() {
 		setContentView(R.layout.main);
 		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
 						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/");
 		setArchiveLocationValue(psdkLocation, true);
 
-		final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
-
-
-		final Button compileButton = findViewById(R.id.compileGame);
-		compileButton.setOnClickListener(v -> {
-			final Intent compileIntent = new Intent(this, CompileActivity.class);
-			compileIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
-			compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation);
-			startActivity(compileIntent);
-		});
-
-		final Button clickButton = findViewById(R.id.startGame);
-		clickButton.setOnClickListener(v -> {
-			if (m_badArchiveLocation) {
-				invalidGameRbMessage();
+		m_mode = computeCurrentGameState();
+		final Button startButton = findViewById(R.id.startGame);
+		startButton.setText(m_mode == Mode.START_GAME ? "start" : "compile");
+		startButton.setOnClickListener(v -> {
+			if (m_mode == Mode.COMPILE) {
+				final Intent compileIntent = new Intent(this, CompileActivity.class);
+				compileIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
+				compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation);
+				startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE);
 				return;
 			}
 
-			SharedPreferences.Editor edit = m_projectPreferences.edit();
-			edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation);
-			edit.commit();
 			final Intent switchActivityIntent = new Intent(MainActivity.this, android.app.NativeActivity.class);
 			switchActivityIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
 			switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", getFilesDir().getPath());
@@ -194,6 +242,7 @@ public class MainActivity extends android.app.Activity {
 				Toast.makeText(getApplicationContext(), e.getLocalizedMessage(), Toast.LENGTH_LONG).show();
 			}
 		});
+		startButton.setEnabled(isValidState());
 
 		final Button locatePsdkButton = (Button) findViewById(R.id.locatePSDK);
 		locatePsdkButton.setOnClickListener(v -> openFile("*/*"));
@@ -224,35 +273,42 @@ public class MainActivity extends android.app.Activity {
 		rubyPlatform.setText(RubyInfo.getRubyPlatform());
 
 		final TextView lastEngineDebugLogs = (TextView) findViewById(R.id.lastEngineDebugLogs);
-		try {
-			lastEngineDebugLogs.setText(new String(Files.readAllBytes(Paths.get(getExternalFilesDir(null).getAbsolutePath() + "/last_stdout.log")), StandardCharsets.UTF_8));
-		} catch (Exception exception) {
-			lastEngineDebugLogs.setText(exception.getLocalizedMessage());
+		Path lastStdoutLog = Paths.get(getExecutionLocation() + "/last_stdout.log");
+		if (Files.exists(lastStdoutLog)) {
+			try {
+				lastEngineDebugLogs.setText(new String(Files.readAllBytes(lastStdoutLog), StandardCharsets.UTF_8));
+			} catch (Exception exception) {
+				lastEngineDebugLogs.setText("Unable to read last stdout log: " + exception.getLocalizedMessage());
+			}
+		} else {
+			lastEngineDebugLogs.setText("No log");
 		}
 
+	}
+
+	private Mode computeCurrentGameState() {
+		Path path = Paths.get(getApplicationInfo().dataDir + "/Release");
+		return Files.exists(path) ? Mode.START_GAME : Mode.COMPILE;
 	}
 
 	private String getExecutionLocation() {
-		//return getSelectedPsdkFolderLocation();
 		return getApplicationInfo().dataDir;
 	}
 
-	private File checkFilepathValid(final String filepath) {
+	private String checkFilepathValid(final String filepath) {
 		if (filepath == null) {
-			return null;
+			return "File path not provided";
 		}
 		final File finalFile = new File(filepath);
 		if (!finalFile.exists() || !finalFile.canRead()) {
-			System.out.println("Error : file at filepath " + filepath + " does not exist or not readable");
-			return null;
+			return "Error : file at filepath " + filepath + " does not exist or not readable";
 		}
 
 		final String absPath = finalFile.getAbsolutePath();
 		final int sep = absPath.lastIndexOf(File.separator);
 		final String filename = absPath.substring(sep + 1).trim();
 		if (!filename.endsWith(".psa")) {
-			System.out.println("Error : selected file at filepath " + filepath + " is not a 'psa' file : '" + filename + "'");
-			return null;
+			return "Error : selected file at filepath " + filepath + " is not a 'psa' file : '" + filename + "'";
 		}
 
 		try {
@@ -269,22 +325,12 @@ public class MainActivity extends android.app.Activity {
 			}
 
 			if (!foundSpecial) {
-				System.out.println("pokemonsdk folder not found in the archive");
-				return null;
+				return "pokemonsdk folder not found in the archive";
 			}
-			return finalFile;
-		} catch (IOException e) {
-			System.out.println("Error while reading the archive");
 			return null;
+		} catch (IOException e) {
+			return "Error while reading the archive: " + e.getLocalizedMessage();
 		}
-	}
-
-	private void invalidGameRbMessage() {
-		Toast.makeText(getApplicationContext(), "You must select the Game.rb file at the root of your PSDK project", Toast.LENGTH_LONG).show();
-	}
-
-	private void invalidProjectCompatibilityMessage() {
-		Toast.makeText(getApplicationContext(), "Your PSDK project is incompatible with the current application engine", Toast.LENGTH_LONG).show();
 	}
 
 	private void unableToUnpackAssetsMessage(final String error) {

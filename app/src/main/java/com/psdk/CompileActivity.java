@@ -29,16 +29,12 @@ public class CompileActivity extends Activity {
         m_executionLocation = getIntent().getStringExtra("EXECUTION_LOCATION");
         m_archiveLocation = getIntent().getStringExtra("ARCHIVE_LOCATION");
 
-        Button backToMainActivity = findViewById(R.id.backToMainActivity);
-        backToMainActivity.setOnClickListener(v -> {
-            final Intent mainIntent = new Intent(this, MainActivity.class);
-            startActivity(mainIntent);
-        });
-
         TextView compilationLog = findViewById(R.id.compilationLog);
         ScrollView compilationScrollView = findViewById(R.id.compilationScrollView);
         compilationLog.setSelected(true);
         TextView compilationEndState = findViewById(R.id.compilationEndState);
+
+        final Activity self = this;
         m_psdkProcessLauncher = new PsdkProcessLauncher(m_applicationPath) {
             @Override
             protected void accept(String lineMessage) {
@@ -55,6 +51,10 @@ public class CompileActivity extends Activity {
                     compilationEndState.setText("Compilation success !");
                     // TODO: zip everything ?
                     // or create a full apk from the release ?
+
+                    final Intent mainIntent = new Intent(self, MainActivity.class);
+                    startActivity(mainIntent);
+
                 } else {
                     compilationEndState.setText("Compilation failure");
                 }

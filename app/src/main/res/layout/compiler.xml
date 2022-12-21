@@ -12,13 +12,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@+id/compilationScrollView">
 
-        <Button
-            android:id="@+id/backToMainActivity"
-            android:layout_width="match_parent"
-            android:layout_height="30dp"
-            android:layout_weight="1"
-            android:text="Back" />
-
         <TextView
             android:id="@+id/compilationEndState"
             android:layout_width="match_parent"
@@ -30,7 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:descendantFocusability="afterDescendants"
-        android:paddingTop="100dp"
+        android:paddingTop="0dp"
         android:paddingBottom="0dp"
         tools:layout_editor_absoluteX="16dp"
         tools:layout_editor_absoluteY="218dp">

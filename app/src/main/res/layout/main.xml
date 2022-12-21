@@ -30,12 +30,6 @@
                 android:layout_height="wrap_content"
                 android:text="START" />
 
-            <Button
-                android:id="@+id/compileGame"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="compile" />
-
             <TextView
                 android:id="@+id/psdkLocationTitle"
                 android:layout_width="match_parent"
@@ -49,7 +43,9 @@
                 android:layout_width="396dp"
                 android:layout_height="wrap_content"
                 android:ems="10"
-                android:inputType="textPersonName" />
+                android:hint="Path to project.psa"
+                android:inputType="textPersonName"
+                android:minHeight="48dp" />
 
             <CheckedTextView
                 android:id="@+id/psdkLocationValid"
@@ -64,6 +60,23 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Locate PSDK archive" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/textView4"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Project compatibility errors" />
+
+                <TextView
+                    android:id="@+id/projectEngineHealth"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/informationLayout"
@@ -162,23 +175,6 @@
 
         </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/textView4"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Project compatibility errors" />
-
-            <TextView
-                android:id="@+id/projectEngineHealth"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
-        </LinearLayout>
-
         <View
             android:id="@+id/divider"
             android:layout_width="match_parent"
@@ -190,6 +186,7 @@
             android:layout_height="200dp">
 
             <LinearLayout
+                android:id="@+id/lastEngineDebugLogLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
