@@ -4,12 +4,19 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
-import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 
 public class CompileActivity extends Activity {
     private PsdkProcessLauncher m_psdkProcessLauncher;
@@ -49,11 +56,26 @@ public class CompileActivity extends Activity {
             protected void onComplete(int returnCode) {
                 if (returnCode == 0) {
                     compilationEndState.setText("Compilation success !");
-                    // TODO: zip everything ?
-                    // or create a full apk from the release ?
 
-                    final Intent mainIntent = new Intent(self, MainActivity.class);
-                    startActivity(mainIntent);
+                    try {
+                        ZipUtility.zip(m_executionLocation + "/Release", m_executionLocation + "/game-compiled.zip");
+                        removeRecursivelyDirectory(m_executionLocation + "/Release");
+
+                        final InputStream gameGenericApk = self.getAssets().open("game-generic.apk");
+                        String finalApkName = m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf('/')) + "/full-game.apk";
+                        ZipUtility.addFilesToExistingZip(
+                                gameGenericApk,
+                                finalApkName,
+                                new InputStream[] { new FileInputStream(m_executionLocation + "/game-compiled.zip") },
+                                new String[] { "/assets/game-compiled.zip" });
+
+                        final Intent mainIntent = new Intent(self, MainActivity.class);
+                        mainIntent.putExtra("FULL_APK_NAME", finalApkName);
+                        startActivity(mainIntent);
+                    } catch (Exception e) {
+                        compilationEndState.setText("Unable to build the final APK: " + e.getLocalizedMessage());
+                        return;
+                    }
 
                 } else {
                     compilationEndState.setText("Compilation failure");
@@ -67,6 +89,23 @@ public class CompileActivity extends Activity {
         } catch (Exception ex) {
             Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void removeRecursivelyDirectory(String directoryPath) throws IOException {
+        Path directory = Paths.get(directoryPath);
+        Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.delete(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     @Override

@@ -2,14 +2,12 @@ package com.psdk;
 
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
-import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
@@ -20,10 +18,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.FileProvider;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,9 +30,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.List;
-import java.util.function.IntBinaryOperator;
-import java.util.function.IntPredicate;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -76,8 +72,25 @@ public class MainActivity extends android.app.Activity {
 				loadScreen();
 			}
 		} else {
-			loadScreen();
+			final String finalApkName = getIntent().getStringExtra("FULL_APK_NAME");
+			if (finalApkName != null) {
+				shareApk(finalApkName);
+			} else {
+				loadScreen();
+			}
 		}
+	}
+
+	private void shareApk(String apkPath) {
+		Intent share = new Intent(Intent.ACTION_SEND);
+		share.setType("image/jpeg");
+		Uri finalApk = FileProvider.getUriForFile(
+				MainActivity.this,
+				"com.psdk.starter.provider",
+				new File(apkPath == null ? getFullApkLocation() : apkPath));
+		share.putExtra(Intent.EXTRA_STREAM, finalApk);
+
+		startActivity(Intent.createChooser(share, "Share App"));
 	}
 
 	private void setArchiveLocationValue(String location, boolean triggerEvent) {
@@ -191,6 +204,9 @@ public class MainActivity extends android.app.Activity {
 					return;
 				}
 				final String path = new PathUtil(getApplicationContext()).getPathFromUri(data.getData());
+				m_mode = Mode.COMPILE;
+				final Button startButton = findViewById(R.id.startGame);
+				startButton.setText(m_mode == Mode.START_GAME ? "start" : "compile");
 				setArchiveLocationValue(path, true);
 				break;
 			case COMPILE_GAME_REQUESTCODE:
@@ -286,6 +302,15 @@ public class MainActivity extends android.app.Activity {
 			lastEngineDebugLogs.setText("No log");
 		}
 
+		final TextView shareApplication = (TextView) findViewById(R.id.shareApplication);
+		final File apk = new File(getFullApkLocation());
+		if (apk.exists()) {
+			shareApplication.setVisibility(View.VISIBLE);
+			shareApplication.setOnClickListener(v -> shareApk(getFullApkLocation()));
+		} else {
+			lastEngineDebugLogs.setText("No log");
+		}
+
 	}
 
 	private Mode computeCurrentGameState() {
@@ -295,6 +320,10 @@ public class MainActivity extends android.app.Activity {
 
 	private String getExecutionLocation() {
 		return getApplicationInfo().dataDir;
+	}
+
+	private String getFullApkLocation() {
+		return m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf('/')) + "/full-game.apk";
 	}
 
 	private String checkFilepathValid(final String filepath) {
