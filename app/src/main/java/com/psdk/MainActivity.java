@@ -179,8 +179,10 @@ public class MainActivity extends android.app.Activity {
 		final TextView lastErrorLog = (TextView) findViewById(R.id.projectLastError);
 		switch (requestCode) {
 			case ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE:
-				if (!Environment.isExternalStorageManager()) {
-					m_permissionErrorMessage = "You must have all file access permission in order to use PSDK";
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+					if (!Environment.isExternalStorageManager()) {
+						m_permissionErrorMessage = "You must have all file access permissions in order to use PSDK";
+					}
 				}
 				loadScreen();
 				break;

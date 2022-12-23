@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 import android.util.Log;
@@ -45,7 +46,7 @@ public class AppInstall {
 	}
 
 	public static String unpackExtraAssetsIfNeeded(Activity activity, SharedPreferences preferences) {
-		//if (preferences.getBoolean(INSTALL_NEEDED, true)) {
+		if (preferences.getBoolean(INSTALL_NEEDED, true)) {
 			final String internalWriteablePath = activity.getFilesDir().getAbsolutePath();
 
 			try {
@@ -61,16 +62,18 @@ public class AppInstall {
 				Log.e("PSDK", "Error", exception);
 				return exception.getMessage();
 			}
-		//}
+		}
 		return null;
 	}
 
 	public static boolean requestPermissionsIfNeeded(Activity activity, int requestCode, int acceptAllRequestCode) {
 		final String [] quickPermissions = new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE };
 		boolean allAccess = requestPermissionsNeeded(activity, quickPermissions, requestCode);
-		if (!Environment.isExternalStorageManager()) {
-			AppInstall.requestActivityPermissions(activity, acceptAllRequestCode);
-			allAccess = false;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+			if (!Environment.isExternalStorageManager()) {
+				AppInstall.requestActivityPermissions(activity, acceptAllRequestCode);
+				allAccess = false;
+			}
 		}
 		return allAccess;
 	}
