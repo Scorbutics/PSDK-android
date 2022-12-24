@@ -24,6 +24,7 @@ public class CompileActivity extends Activity {
     private String m_internalWriteablePath;
     private String m_executionLocation;
     private String m_archiveLocation;
+    private String m_outputArchiveLocation;
 
     private static final String SCRIPT = "compile.rb";
 
@@ -35,6 +36,7 @@ public class CompileActivity extends Activity {
         m_internalWriteablePath = getFilesDir().getPath();
         m_executionLocation = getIntent().getStringExtra("EXECUTION_LOCATION");
         m_archiveLocation = getIntent().getStringExtra("ARCHIVE_LOCATION");
+        m_outputArchiveLocation = getIntent().getStringExtra("OUTPUT_ARCHIVE_LOCATION");
 
         TextView compilationLog = findViewById(R.id.compilationLog);
         ScrollView compilationScrollView = findViewById(R.id.compilationScrollView);
@@ -58,19 +60,10 @@ public class CompileActivity extends Activity {
                     compilationEndState.setText("Compilation success !");
 
                     try {
-                        ZipUtility.zip(m_executionLocation + "/Release", m_executionLocation + "/game-compiled.zip");
-                        removeRecursivelyDirectory(m_executionLocation + "/Release");
-
-                        final InputStream gameGenericApk = self.getAssets().open("game-generic.apk");
-                        String finalApkName = m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf('/')) + "/full-game.apk";
-                        ZipUtility.addFilesToExistingZip(
-                                gameGenericApk,
-                                finalApkName,
-                                new InputStream[] { new FileInputStream(m_executionLocation + "/game-compiled.zip") },
-                                new String[] { "/assets/game-compiled.zip" });
+                        ZipUtility.zip(m_executionLocation + "/Release", m_outputArchiveLocation);
+                        //removeRecursivelyDirectory(m_executionLocation + "/Release");
 
                         final Intent mainIntent = new Intent(self, MainActivity.class);
-                        mainIntent.putExtra("FULL_APK_NAME", finalApkName);
                         startActivity(mainIntent);
                     } catch (Exception e) {
                         compilationEndState.setText("Unable to build the final APK: " + e.getLocalizedMessage());

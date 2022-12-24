@@ -68,27 +68,21 @@ public class MainActivity extends android.app.Activity {
 				unableToUnpackAssetsMessage(errorUnpackAssets);
 			}
 
-			if (AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)) {
-				loadScreen();
-			}
-		} else {
-			final String finalApkName = getIntent().getStringExtra("FULL_APK_NAME");
-			if (finalApkName != null) {
-				shareApk(finalApkName);
-			} else {
-				loadScreen();
+			if (!AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)) {
+				return;
 			}
 		}
+		loadScreen();
 	}
 
-	private void shareApk(String apkPath) {
+	private void shareApplicationOutput(String appPath) {
 		Intent share = new Intent(Intent.ACTION_SEND);
 		share.setType("image/jpeg");
-		Uri finalApk = FileProvider.getUriForFile(
+		Uri finalApp = FileProvider.getUriForFile(
 				MainActivity.this,
 				"com.psdk.starter.provider",
-				new File(apkPath == null ? getFullApkLocation() : apkPath));
-		share.putExtra(Intent.EXTRA_STREAM, finalApk);
+				new File(appPath == null ? getFullAppLocation() : appPath));
+		share.putExtra(Intent.EXTRA_STREAM, finalApp);
 
 		startActivity(Intent.createChooser(share, "Share App"));
 	}
@@ -239,6 +233,7 @@ public class MainActivity extends android.app.Activity {
 				final Intent compileIntent = new Intent(this, CompileActivity.class);
 				compileIntent.putExtra("EXECUTION_LOCATION", getExecutionLocation());
 				compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation);
+				compileIntent.putExtra("OUTPUT_ARCHIVE_LOCATION", getFullAppLocation());
 				startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE);
 				return;
 			}
@@ -303,10 +298,10 @@ public class MainActivity extends android.app.Activity {
 		}
 
 		final TextView shareApplication = (TextView) findViewById(R.id.shareApplication);
-		final File apk = new File(getFullApkLocation());
+		final File apk = new File(getFullAppLocation());
 		if (apk.exists()) {
 			shareApplication.setVisibility(View.VISIBLE);
-			shareApplication.setOnClickListener(v -> shareApk(getFullApkLocation()));
+			shareApplication.setOnClickListener(v -> shareApplicationOutput(getFullAppLocation()));
 		} else {
 			lastEngineDebugLogs.setText("No log");
 		}
@@ -322,8 +317,8 @@ public class MainActivity extends android.app.Activity {
 		return getApplicationInfo().dataDir;
 	}
 
-	private String getFullApkLocation() {
-		return m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf('/')) + "/full-game.apk";
+	private String getFullAppLocation() {
+		return getExecutionLocation() + "/game-compiled.zip";
 	}
 
 	private String checkFilepathValid(final String filepath) {
