@@ -76,12 +76,14 @@ public class MainActivity extends android.app.Activity {
 	}
 
 	private void shareApplicationOutput(String appPath) {
+		String path = appPath == null ? getFullAppLocation() : appPath;
+		if (path == null) { return; }
 		Intent share = new Intent(Intent.ACTION_SEND);
 		share.setType("image/jpeg");
 		Uri finalApp = FileProvider.getUriForFile(
 				MainActivity.this,
 				"com.psdk.starter.provider",
-				new File(appPath == null ? getFullAppLocation() : appPath));
+				new File(path));
 		share.putExtra(Intent.EXTRA_STREAM, finalApp);
 
 		startActivity(Intent.createChooser(share, "Share App"));
@@ -298,8 +300,8 @@ public class MainActivity extends android.app.Activity {
 		}
 
 		final TextView shareApplication = (TextView) findViewById(R.id.shareApplication);
-		final File apk = new File(getFullAppLocation());
-		if (apk.exists()) {
+		final File app = new File(getFullAppLocation());
+		if (app.exists()) {
 			shareApplication.setVisibility(View.VISIBLE);
 			shareApplication.setOnClickListener(v -> shareApplicationOutput(getFullAppLocation()));
 		} else {
@@ -318,7 +320,7 @@ public class MainActivity extends android.app.Activity {
 	}
 
 	private String getFullAppLocation() {
-		return getExecutionLocation() + "/game-compiled.zip";
+		return m_archiveLocation != null ? m_archiveLocation.substring(0, m_archiveLocation.lastIndexOf('/')) + "/game-compiled.zip" : null;
 	}
 
 	private String checkFilepathValid(final String filepath) {

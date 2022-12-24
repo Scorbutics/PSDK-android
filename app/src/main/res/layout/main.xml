@@ -185,7 +185,7 @@
             android:id="@+id/shareApplication"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="share apk"
+            android:text="share compiled game"
             android:visibility="invisible" />
 
         <androidx.core.widget.NestedScrollView

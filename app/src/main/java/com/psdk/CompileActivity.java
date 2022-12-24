@@ -66,7 +66,7 @@ public class CompileActivity extends Activity {
                         final Intent mainIntent = new Intent(self, MainActivity.class);
                         startActivity(mainIntent);
                     } catch (Exception e) {
-                        compilationEndState.setText("Unable to build the final APK: " + e.getLocalizedMessage());
+                        compilationEndState.setText("Unable to build the final archive: " + e.getLocalizedMessage());
                         return;
                     }
 
