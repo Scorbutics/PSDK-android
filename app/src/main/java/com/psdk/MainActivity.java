@@ -54,6 +54,7 @@ public class MainActivity extends android.app.Activity {
 	private String m_archiveLocation;
 	private String m_badArchiveLocation;
 	private SharedPreferences m_projectPreferences;
+	private boolean m_noExternalPermissions = false;
 	private static final String PROJECT_KEY = "PROJECT";
 	private static final String PROJECT_LOCATION_STRING = "location";
 
@@ -68,8 +69,10 @@ public class MainActivity extends android.app.Activity {
 				unableToUnpackAssetsMessage(errorUnpackAssets);
 			}
 
-			if (!AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)) {
-				return;
+			// We do not really need those permissions...
+			// So why always keep asking for them ?
+			if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+				m_noExternalPermissions = !AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE);
 			}
 		}
 		loadScreen();

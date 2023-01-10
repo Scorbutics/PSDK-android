@@ -67,8 +67,15 @@ public class AppInstall {
 	}
 
 	public static boolean requestPermissionsIfNeeded(Activity activity, int requestCode, int acceptAllRequestCode) {
-		final String [] quickPermissions = new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE };
-		boolean allAccess = requestPermissionsNeeded(activity, quickPermissions, requestCode);
+		final List<String> quickPermissions = new ArrayList<>();
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+			quickPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+				quickPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+			}
+		}
+
+		boolean allAccess = requestPermissionsNeeded(activity, quickPermissions.toArray(new String[0]), requestCode);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
 			if (!Environment.isExternalStorageManager()) {
 				AppInstall.requestActivityPermissions(activity, acceptAllRequestCode);
@@ -78,7 +85,7 @@ public class AppInstall {
 		return allAccess;
 	}
 
-	public static List<String> checkNotGrantedPermissions(Activity activity, String[] permissions) {
+	private static List<String> checkNotGrantedPermissions(Activity activity, String[] permissions) {
 		final List<String> notGrantedPermissions = new ArrayList<>();
 		for (final String permission : permissions) {
 			if (ContextCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
