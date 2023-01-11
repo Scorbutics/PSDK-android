@@ -31,6 +31,18 @@ class ::File
     return false
   end
 
+  Old_file_directory_ = method(:directory?)
+  def File.OldDirectory?(filename)
+    return Old_file_directory_.call(filename)
+  end
+
+  def File.directory?(filename)
+    return true if Old_file_directory_.call(filename)
+    asset_file_path = path_in_assets(filename)
+    return LiteRGSS::AssetFile::is_directory? asset_file_path if !asset_file_path.nil?
+    return false
+  end
+
   Old_file_read_ = method(:read)
   def File.read(filename)
     begin
@@ -104,12 +116,14 @@ class ::File
       end
       return file
     rescue Exception
-      puts $!.message
+      STDERR.puts $!.message
     end
   end
 
     def File.copy_stream(src, dst)
       content = File.read(src)
+      dest_dir = File.dirname(dst)
+      system("mkdir -p #{dest_dir}") if (!File.OldDirectory?(dest_dir))
       Old_file_open_.call(dst, 'w') { |file| file.write(content) }
       return 0
     end
@@ -125,7 +139,7 @@ class ::Dir
 
   Old_dir_chdir_ = method(:chdir)
   def Dir.chdir(path)
-    if File.directory?(path)
+    if File.OldDirectory?(path)
         return Old_dir_chdir_.call(path)
     end
     old_path = @@_Physfs_virtual_pwd
@@ -150,7 +164,7 @@ class ::Dir
         search = search_pattern.sub(directory_path, "").sub("/", "")
     end
     supp_files = []
-    if File.directory?(directory_path)
+    if File.OldDirectory?(directory_path)
       #STDERR.puts "REAL DIRECTORY #{directory_path} (#{search_pattern})"
       # By default, we add files from real FS to the zip FS
       supp_files = Old_dir_square_.call(search_pattern)
@@ -174,7 +188,7 @@ class ::Dir
             if LiteRGSS::AssetFile::is_directory? dir
                 final_search = dir + "/" + search + search_append
                 #STDERR.puts "GO RECURSIVE SEARCH #{final_search} in #{directory_path} (#{search_pattern})"
-                final_files << Dir[final_search]
+                final_files = final_files.concat(Dir[final_search])
             else
                 #STDERR.puts "Not a directory #{dir}"
                 final_files << dir
@@ -207,6 +221,12 @@ class ::Dir
     end
   end
 
+end
+
+class ::IO
+    def IO.copy_stream(src, dst)
+      return File.copy_stream(src, dst)
+    end
 end
 
 def global_require(moduleName)

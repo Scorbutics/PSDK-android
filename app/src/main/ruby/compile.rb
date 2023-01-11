@@ -9,6 +9,7 @@ begin
   ARGV << "skip_lib"
   ARGV << "skip_binary"
 
+  FileUtils.mkdir_p "./Data/Events/Battle"
   require 'ruby_physfs_patch.rb'
   require './Game.rb'
 rescue => error
