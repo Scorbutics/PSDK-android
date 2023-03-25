@@ -15,6 +15,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -52,6 +53,9 @@ public class AppInstall {
 			try {
 				final InputStream appInternalData = activity.getAssets().open("app-internal.zip");
 				UnzipUtility.unzip(appInternalData, internalWriteablePath);
+				final File rubyArchive = new File(internalWriteablePath + "/ruby.zip");
+				UnzipUtility.unzip(new FileInputStream(rubyArchive), internalWriteablePath);
+				rubyArchive.delete();
 
 				copyAsset(activity, internalWriteablePath, "ruby_physfs_patch.rb");
 

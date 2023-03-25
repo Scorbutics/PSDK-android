@@ -56,6 +56,19 @@ android {
     namespace 'com.psdk'
 }
 
+task appInternalDistribution(type: Zip) {
+    archiveFileName = "app-internal.zip"
+    destinationDirectory = file("./src/main/assets")
+    var input = "./src/main/ext-native-libs/lib"
+
+    inputs.dir(input)
+    outputs.file("$destinationDirectory/$archiveFileName")
+
+    from input
+}
+
+preBuild.dependsOn appInternalDistribution
+
 dependencies {
     implementation fileTree(dir: 'libs', include: '*.jar')
     implementation 'androidx.appcompat:appcompat:1.5.1'

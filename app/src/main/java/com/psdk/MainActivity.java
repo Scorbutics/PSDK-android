@@ -61,9 +61,10 @@ public class MainActivity extends android.app.Activity {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-		if (isTaskRoot()) {
+		if (m_projectPreferences == null) {
 			m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE);
-
+		}
+		if (isTaskRoot()) {
 			final String errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences);
 			if (errorUnpackAssets != null) {
 				unableToUnpackAssetsMessage(errorUnpackAssets);
@@ -226,6 +227,9 @@ public class MainActivity extends android.app.Activity {
 
 	private void loadScreen() {
 		setContentView(R.layout.main);
+		if (m_projectPreferences == null) {
+			throw new NullPointerException("Bad application initialization: unable to get valid project preferences");
+		}
 		final String psdkLocation = m_projectPreferences.getString(PROJECT_LOCATION_STRING,
 						Environment.getExternalStorageDirectory().getAbsolutePath() + "/PSDK/");
 		setArchiveLocationValue(psdkLocation, true);

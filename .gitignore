@@ -3,3 +3,4 @@
 .cxx
 app/build
 local.properties
+app/src/main/assets/app-internal.zip
