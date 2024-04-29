@@ -8,9 +8,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +25,7 @@ public class CompileActivity extends Activity {
     private String m_outputArchiveLocation;
 
     private static final String SCRIPT = "compile.rb";
+    private static final String CHECK_ENGINE_SCRIPT = "check_engine.rb";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -55,30 +54,41 @@ public class CompileActivity extends Activity {
             }
 
             @Override
-            protected void onComplete(int returnCode) {
-                if (returnCode == 0) {
-                    compilationEndState.setText("Compilation success !");
+            protected void onLogError(Exception error) {
+                Toast.makeText(getApplicationContext(), error.getLocalizedMessage(), Toast.LENGTH_LONG).show();
+            }
+        };
 
-                    try {
-                        ZipUtility.zip(m_executionLocation + "/Release", m_outputArchiveLocation);
-                        //removeRecursivelyDirectory(m_executionLocation + "/Release");
+        CompletionTask onCompleteCompilation = returnCode -> {
+            if (returnCode == 0) {
+                compilationEndState.setText("Compilation success !");
 
-                        final Intent mainIntent = new Intent(self, MainActivity.class);
-                        startActivity(mainIntent);
-                    } catch (Exception e) {
-                        compilationEndState.setText("Unable to build the final archive: " + e.getLocalizedMessage());
-                        return;
-                    }
+                try {
+                    ZipUtility.zip(m_executionLocation + "/Release", m_outputArchiveLocation);
+                    //removeRecursivelyDirectory(m_executionLocation + "/Release");
 
-                } else {
-                    compilationEndState.setText("Compilation failure");
+                    final Intent mainIntent = new Intent(self, MainActivity.class);
+                    startActivity(mainIntent);
+                } catch (Exception e) {
+                    compilationEndState.setText("Unable to build the final archive: " + e.getLocalizedMessage());
+                    return;
                 }
 
+            } else {
+                compilationEndState.setText("Compilation failure");
+            }
+        };
+
+        CompletionTask onCompleteCheckEngine = returnCode -> {
+            if (returnCode != 0) {
+                compilationEndState.setText("Check engine failure");
             }
         };
 
         try {
-            m_psdkProcessLauncher.run(new PsdkProcess(this, SCRIPT), buildPsdkProcessData());
+            //m_psdkProcessLauncher.runAsync(new PsdkProcess(this, CHECK_ENGINE_SCRIPT), buildPsdkProcessData(), onCompleteCheckEngine);
+            m_psdkProcessLauncher.join();
+            m_psdkProcessLauncher.runAsync(new PsdkProcess(this, SCRIPT), buildPsdkProcessData(), onCompleteCompilation);
         } catch (Exception ex) {
             Toast.makeText(getApplicationContext(), ex.getLocalizedMessage(), Toast.LENGTH_LONG).show();
         }

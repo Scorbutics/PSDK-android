@@ -7,27 +7,31 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 
+interface CompletionTask {
+    void onComplete(int returnCode);
+}
+
 public abstract class PsdkProcessLauncher {
     private static String FIFO_NAME = "psdk_fifo";
 
     private final String applicationPath;
 
-    private Thread compilerThread;
+    private Thread mainThread;
     private Thread loggingThread;
 
     public PsdkProcessLauncher(String applicationPath) {
         this.applicationPath = applicationPath;
     }
 
-    public void run(PsdkProcess process, PsdkProcess.InputData processData) {
+    public void runAsync(PsdkProcess process, PsdkProcess.InputData processData, CompletionTask onComplete) {
         String fifoFilename = applicationPath + "/" + FIFO_NAME;
 
         File fifo = new File(fifoFilename);
         if (fifo.exists()) { fifo.delete(); }
 
-        compilerThread = new Thread(() -> {
+        mainThread = new Thread(() -> {
             int returnCode = process.run(fifoFilename, processData);
-            onComplete(returnCode);
+            onComplete.onComplete(returnCode);
         });
         loggingThread = new Thread(() -> {
             try {
@@ -44,12 +48,12 @@ public abstract class PsdkProcessLauncher {
                 throw new RuntimeException(e);
             }
         });
-        compilerThread.start();
+        mainThread.start();
         loggingThread.start();
     }
 
     public boolean isAlive() {
-        return compilerThread != null && compilerThread.isAlive();
+        return mainThread != null && mainThread.isAlive();
     }
 
     public void killCurrentProcess() {
@@ -57,15 +61,16 @@ public abstract class PsdkProcessLauncher {
     }
 
     public void join() throws InterruptedException {
-        if (compilerThread != null) {
-            compilerThread.join();
+        if (mainThread != null) {
+            mainThread.join();
+            mainThread = null;
         }
         if (loggingThread != null) {
             loggingThread.join();
+            loggingThread = null;
         }
     }
 
     protected abstract void accept(String lineMessage);
-    protected void onComplete(int returnCode) {}
     protected void onLogError(Exception e) {}
 }
