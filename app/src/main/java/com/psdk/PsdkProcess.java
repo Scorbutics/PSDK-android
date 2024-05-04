@@ -9,9 +9,9 @@ import java.io.InputStreamReader;
 public class PsdkProcess {
 
     static class InputData {
-        private String internalWriteablePath;
-        private String executionLocation;
-        private String archiveLocation;
+        private final String internalWriteablePath;
+        private final String executionLocation;
+        private final String archiveLocation;
 
         public InputData(String internalWriteablePath, String executionLocation, String archiveLocation) {
             this.internalWriteablePath = internalWriteablePath;
@@ -20,11 +20,9 @@ public class PsdkProcess {
         }
     }
 
-    private final String assetScriptName;
     private final String scriptContent;
 
     PsdkProcess(Context context, String assetScriptName) throws IOException {
-        this.assetScriptName = assetScriptName;
         this.scriptContent = readFromAssets(context, assetScriptName);
     }
 
@@ -37,10 +35,10 @@ public class PsdkProcess {
     public static String readFromAssets(Context context, String assetScriptName) throws IOException {
         BufferedReader asset = new BufferedReader(new InputStreamReader(context.getAssets().open(assetScriptName)));
 
-        StringBuffer scriptContent = new StringBuffer();
+        StringBuilder scriptContent = new StringBuilder();
         String s;
         while ((s = asset.readLine()) != null) {
-            scriptContent.append(s + "\n");
+            scriptContent.append(s).append("\n");
         }
         return scriptContent.toString();
     }

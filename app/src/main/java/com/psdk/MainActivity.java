@@ -133,7 +133,7 @@ public class MainActivity extends android.app.Activity {
 		} else {
 			SharedPreferences.Editor edit = m_projectPreferences.edit();
 			edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation);
-			edit.commit();
+			edit.apply();
 		}
 
 		final TextView projectEngineHealth = findViewById(R.id.projectEngineHealth);
