@@ -1,0 +1,17 @@
+[versions]
+apkzlib = "8.3.0"
+bcpkix-jdk15on = "1.70"
+apksig = "8.3.0"
+appcompat = "1.5.1"
+material = "1.7.0"
+constraintlayout = "2.1.4"
+legacy = "1.0.0"
+
+[libraries]
+appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+material = { module = "com.google.android.material:material", version.ref = "material" }
+constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "constraintlayout" }
+legacy = { module = "androidx.legacy:legacy-support-v4", version.ref = "legacy" }
+apkzlib = { module = "com.android.tools.build:apkzlib", version.ref = "apkzlib" }
+bcpkix-jdk15on = { module = "org.bouncycastle:bcpkix-jdk15on", version.ref = "bcpkix-jdk15on" }
+apksig = { module = "com.android.tools.build:apksig", version.ref = "apksig" }

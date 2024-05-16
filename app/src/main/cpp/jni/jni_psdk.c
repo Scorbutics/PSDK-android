@@ -12,7 +12,7 @@
 
 static int is_logging_init = 0;
 
-JNIEXPORT jint JNICALL Java_com_psdk_PsdkProcess_exec(JNIEnv* env, jclass clazz, jstring scriptContent, jstring fifo,
+JNIEXPORT jint JNICALL Java_com_psdk_PsdkProcess_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifo,
                                                         jstring internalWriteablePath, jstring executionLocation, jstring additionalParam) {
     (void) clazz;
 

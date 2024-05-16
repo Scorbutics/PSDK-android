@@ -4,6 +4,7 @@ begin
   ARGV << "--scale=4"
 
   ENV['PSDK_SHADER_IMPL'] = 'glsl_es'
+  ENV['PSDK_SHADER_VERSION'] = ''
 
   require './Game.rb'
 rescue => error
