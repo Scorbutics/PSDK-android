@@ -1,24 +1,23 @@
 package com.psdk
 
-import android.os.Build
-import android.os.Environment
 import android.app.Activity
+import android.app.NativeActivity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import androidx.core.content.FileProvider
-import android.content.ActivityNotFoundException
-import android.app.NativeActivity
-import android.text.TextWatcher
+import android.os.Environment
+import android.provider.Settings
 import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.*
+import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
 import java.io.*
-import java.lang.Exception
-import java.lang.NullPointerException
-import java.lang.NumberFormatException
-import java.lang.StringBuilder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -143,7 +142,7 @@ class MainActivity : Activity() {
         intent.type = "*/*"
         val chooseFile = Intent.createChooser(intent, "Choose a file")
         try {
-            startActivityForResult(chooseFile, CHOOSE_FILE_REQUESTCODE)
+            startActivityForResult(chooseFile, CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE)
         } catch (ex: ActivityNotFoundException) {
             Toast.makeText(applicationContext, "No suitable File Manager was found.", Toast.LENGTH_LONG).show()
         }
@@ -173,10 +172,20 @@ class MainActivity : Activity() {
                 }
                 loadScreen()
             }
-            CHOOSE_FILE_REQUESTCODE -> {
+            CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE -> {
                 if (resultCode != RESULT_OK) {
                     return
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    val uri: Uri = Uri.fromParts("package", packageName, null)
+                    intent.data = uri
+                    startActivityForResult(intent, CHOOSE_FILE_REQUESTCODE)
+                } else {
+                    onActivityResult(CHOOSE_FILE_REQUESTCODE, 0, data)
+                }
+            }
+            CHOOSE_FILE_REQUESTCODE -> {
                 val path = PathUtil(applicationContext).getPathFromUri(data.data)
                 m_mode = Mode.COMPILE
                 val startButton = findViewById<Button>(R.id.startGame)
@@ -328,7 +337,8 @@ class MainActivity : Activity() {
             System.loadLibrary("jni")
         }
 
-        private const val CHOOSE_FILE_REQUESTCODE = 8777
+        private const val CHOOSE_FILE_REQUESTCODE = 8778
+        private const val CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE = 8777
         private const val START_GAME_REQUESTCODE = 8700
         private const val COMPILE_GAME_REQUESTCODE = 8000
         private const val ACCEPT_PERMISSIONS_REQUESTCODE = 8007
