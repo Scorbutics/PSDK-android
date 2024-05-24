@@ -64,8 +64,10 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
     }
 
     fun runAsync(script: RubyScript, onComplete: CompletionTask) {
+        var init = false
         val scriptThread = Thread {
             try {
+                init = true
                 while (!fifoReturnFile!!.exists()) {
                 }
                 val `in` = BufferedReader(FileReader(fifoReturnFile!!))
@@ -85,6 +87,7 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         }
 
         scriptThread.start()
+        while(!init) {}
         val writer = FileWriter(fifoCommands)
         writer.append(script.getContent())
         writer.close()
