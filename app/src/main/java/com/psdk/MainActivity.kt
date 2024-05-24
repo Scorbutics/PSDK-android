@@ -58,8 +58,13 @@ class MainActivity : Activity() {
     }
 
     private fun shareApplicationOutput(appPath: String) {
-        // TODO
-        signApk(File("/storage/emulated/0/Download/app_debug.apk"), File("/storage/emulated/0/Download/psdk_output.apk"))
+        /* TODO
+            1. embed an execution only apk
+            2. add the compiled game as an asset
+            3. sign the apk
+         */
+        // Test
+        // signApk(File("/storage/emulated/0/Download/app-debug.apk"), File("/storage/emulated/0/Download/psdk_output.apk"))
         val share = Intent(Intent.ACTION_SEND)
         share.type = "image/jpeg"
         val finalApp = FileProvider.getUriForFile(
