@@ -54,26 +54,30 @@ class CompileActivity : Activity() {
         m_rubyInterpreter = rubyInterpreter
 
         val onCompleteCompilation: CompletionTask = { returnCode: Int ->
-            if (returnCode == 0) {
-                compilationEndState.text = "Compilation success !"
-                try {
-                    ZipUtility.zip("$m_executionLocation/Release", m_outputArchiveLocation)
-                    // TODO when the app will be only a compiler, we won't need the release anymore, only the exported zip file
-                    //removeRecursivelyDirectory(m_executionLocation + "/Release");
-                    val mainIntent = Intent(self, MainActivity::class.java)
-                    startActivity(mainIntent)
-                } catch (e: Exception) {
-                    compilationEndState.text =
-                        "Unable to build the final archive: " + e.localizedMessage
+            runOnUiThread {
+                if (returnCode == 0) {
+                    compilationEndState.text = "Compilation success !"
+                    try {
+                        ZipUtility.zip("$m_executionLocation/Release", m_outputArchiveLocation)
+                        // TODO when the app will be only a compiler, we won't need the release anymore, only the exported zip file
+                        //removeRecursivelyDirectory(m_executionLocation + "/Release");
+                        val mainIntent = Intent(self, MainActivity::class.java)
+                        startActivity(mainIntent)
+                    } catch (e: Exception) {
+                        compilationEndState.text =
+                            "Unable to build the final archive: " + e.localizedMessage
+                    }
+                } else {
+                    compilationEndState.text = "Compilation failure"
                 }
-            } else {
-                compilationEndState.text = "Compilation failure"
             }
         }
 
         val onCompleteCheck: CompletionTask = { returnCode: Int ->
             if (returnCode != 0) {
-                compilationEndState.text = "Check engine failure"
+                runOnUiThread {
+                    compilationEndState.text = "Check engine failure"
+                }
             } else {
                 rubyInterpreter.runAsync(RubyScript(assets, SCRIPT), onCompleteCompilation)
             }
