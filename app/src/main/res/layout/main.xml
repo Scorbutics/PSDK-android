@@ -14,7 +14,7 @@
             android:id="@+id/textView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="PSDK for Android v0.2-SNAPSHOT"
+            android:text="PSDK for Android v0.3-SNAPSHOT"
             android:textAlignment="center"
             android:textSize="16sp"
             android:textStyle="bold" />
@@ -30,11 +30,24 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <Button
-                android:id="@+id/startGame"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="START" />
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/startGame"
+                    android:layout_width="200dp"
+                    android:layout_height="wrap_content"
+                    android:text="START" />
+
+                <Button
+                    android:id="@+id/compileGame"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="COMPILE" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/psdkLocationTitle"

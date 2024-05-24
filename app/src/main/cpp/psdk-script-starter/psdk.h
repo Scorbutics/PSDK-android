@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-int ExecPSDKScript(const char* scriptContent, const char* fifoOrFilename, const char* internalWriteablePath,
-                   const char* executionLocation, const char* additionalParam, int isFifoRealFile);
+int ExecMainRubyVM(const char* scriptContent, const char* fifoLogsOrFilename, const char* fifoCommands, const char* fifoReturn,
+                   const char* internalWriteablePath, const char* executionLocation, const char* additionalParam, int isFifoRealFile);
 
 #ifdef __cplusplus
 }

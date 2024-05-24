@@ -46,7 +46,7 @@ static void SetupRubyEnv(const char* baseDirectory)
 #include "ruby/ruby.h"
 #pragma GCC diagnostic pop
 
-int ExecRubyVM(const char* baseDirectory, const char* script, int fromFilename)
+int ExecRubyVM(const char* baseDirectory, const char* scriptContent, int fromFilename)
 {
     SetupRubyEnv(baseDirectory);
     int argc_ = fromFilename == 0 ? 3 : 2;
@@ -55,10 +55,10 @@ int ExecRubyVM(const char* baseDirectory, const char* script, int fromFilename)
     if (fromFilename == 0) {
         argv_[0] = strdup("");
         argv_[1] = strdup("-e");
-        argv_[2] = strdup(script);
+        argv_[2] = strdup(scriptContent);
     } else {
         argv_[0] = strdup("");
-        argv_[1] = strdup(script);
+        argv_[1] = strdup(scriptContent);
     }
     ruby_sysinit(&argc_, &argv_);
 

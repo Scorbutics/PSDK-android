@@ -1,4 +1,4 @@
-package com.psdk
+package com.psdk.elf
 
 import java.io.File
 import java.lang.Exception
@@ -20,7 +20,7 @@ object DisplayElfInfo {
             initializeMap()
         }
         try {
-            val elf: ReadElf = ReadElf.Companion.read(libFile)
+            val elf: ReadElf = ReadElf.read(libFile)
             if (elf.type == 3) {
                 val archCode = elf.arch
                 elf.close()

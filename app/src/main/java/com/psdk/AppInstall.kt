@@ -12,6 +12,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
+import com.psdk.zip.UnzipUtility
 import java.io.*
 import java.lang.Exception
 import java.util.ArrayList
@@ -35,7 +36,7 @@ object AppInstall {
 
     fun unpackExtraAssetsIfNeeded(activity: Activity, preferences: SharedPreferences?): String? {
         if (preferences != null) {
-            if (preferences.getBoolean(INSTALL_NEEDED, true)) {
+            //if (preferences.getBoolean(INSTALL_NEEDED, true)) {
                 val internalWriteablePath = activity.filesDir.absolutePath
                 try {
                     val appInternalData = activity.assets.open("app-internal.zip")
@@ -51,7 +52,7 @@ object AppInstall {
                     Log.e("PSDK", "Error", exception)
                     return exception.message
                 }
-            }
+            //}
         }
         return null
     }

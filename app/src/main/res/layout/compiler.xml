@@ -33,7 +33,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:descendantFocusability="beforeDescendants"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:translationY="20dp">
 
             <TextView
                 android:id="@+id/compilationLog"

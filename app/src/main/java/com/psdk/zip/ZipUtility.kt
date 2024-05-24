@@ -1,4 +1,4 @@
-package com.psdk
+package com.psdk.zip
 
 import java.io.*
 import java.lang.Exception

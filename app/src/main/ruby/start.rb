@@ -7,7 +7,7 @@ begin
   ENV['PSDK_SHADER_VERSION'] = ''
 
   require './Game.rb'
-rescue => error
+rescue Exception => error
   STDERR.puts error
   STDERR.puts error.backtrace.join("\n\t")
 end

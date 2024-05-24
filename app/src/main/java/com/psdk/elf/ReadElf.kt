@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.psdk
+package com.psdk.elf
 
 import java.io.File
 import java.io.IOException
@@ -176,7 +176,8 @@ class ReadElf private constructor(file: File) : AutoCloseable {
                 e_machine == EM_X86_64 && elfClass != ELFCLASS64 ||
                 e_machine == EM_AARCH64 && elfClass != ELFCLASS64 ||
                 e_machine == EM_ARM && elfClass != ELFCLASS32 ||
-                e_machine == EM_QDSP6 && elfClass != ELFCLASS32) {
+                e_machine == EM_QDSP6 && elfClass != ELFCLASS32
+        ) {
             throw IOException("Invalid e_machine/EI_CLASS ELF combination: " +
                     e_machine + "/" + elfClass + ": " + mPath)
         }

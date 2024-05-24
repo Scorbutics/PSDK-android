@@ -8,8 +8,8 @@ extern "C" {
 #include <jni.h>
 #include <android/native_activity.h>
 
-JNIEXPORT jint JNICALL Java_com_psdk_PsdkProcess_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifo,
-                                                        jstring internalWriteablePath, jstring executionLocation, jstring additionalParam);
+JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommand,
+                                                                jstring fifoReturn, jstring internalWriteablePath, jstring executionLocation, jstring additionalParam);
 
 int StartGameFromNativeActivity(ANativeActivity* activity);
 

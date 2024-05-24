@@ -1,4 +1,4 @@
-package com.psdk
+package com.psdk.signing
 
 import android.app.Application
 import android.content.Context

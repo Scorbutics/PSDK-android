@@ -1,4 +1,4 @@
-package com.psdk
+package com.psdk.ruby
 
 object RubyInfo {
     val rubyVersion: String?

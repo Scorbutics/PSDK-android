@@ -1,4 +1,4 @@
-package com.psdk
+package com.psdk.signing
 
 import android.util.Log
 import com.android.apksig.ApkSigner

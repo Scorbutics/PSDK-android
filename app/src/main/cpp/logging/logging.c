@@ -1,4 +1,3 @@
-#ifndef NDEBUG
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -162,7 +161,7 @@ int LoggingThreadRun(const char* appname, const char* extraLogFile, int realLogF
 	dup2(pfd[1], STDERR_FILENO);
 	dup2(pfd[1], STDOUT_FILENO);
 
-	if (pthread_create(&g_logging_thread, 0, loggingFunctionThread, 0) == -1) {
+	if (pthread_create(&g_logging_thread, 0, loggingFunctionThread, 0) != 0) {
 		LogNative(LOG_WARN, log_tag == NULL ? "UNKNOWN" : log_tag,
 											"Cannot spawn logging thread : logging from stdout / stderr won't show in logcat");
 		return -1;
@@ -170,4 +169,3 @@ int LoggingThreadRun(const char* appname, const char* extraLogFile, int realLogF
 	LogNative(LOG_DEBUG, log_tag == NULL ? "UNKNOWN" : log_tag, "Logging thread started");
 	return 0;
 }
-#endif

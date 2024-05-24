@@ -15,8 +15,11 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
 import android.widget.*
-import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import com.psdk.ruby.RubyInfo
+import com.psdk.ruby.vm.RubyScript
+import com.psdk.signing.Signer
+import com.psdk.signing.buildDefaultSigningOptions
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -56,7 +59,7 @@ class MainActivity : Activity() {
 
     private fun shareApplicationOutput(appPath: String) {
         // TODO
-        //signApk(appPath)
+        signApk(File("/storage/emulated/0/Download/app_debug.apk"), File("/storage/emulated/0/Download/psdk_output.apk"))
         val share = Intent(Intent.ACTION_SEND)
         share.type = "image/jpeg"
         val finalApp = FileProvider.getUriForFile(
@@ -189,7 +192,7 @@ class MainActivity : Activity() {
                 val path = PathUtil(applicationContext).getPathFromUri(data.data)
                 m_mode = Mode.COMPILE
                 val startButton = findViewById<Button>(R.id.startGame)
-                startButton.text = if (m_mode == Mode.START_GAME) "start" else "compile"
+                startButton.visibility = View.INVISIBLE
                 setArchiveLocationValue(path, true)
             }
             COMPILE_GAME_REQUESTCODE, START_GAME_REQUESTCODE -> if (resultCode != RESULT_OK) {
@@ -213,16 +216,19 @@ class MainActivity : Activity() {
         setArchiveLocationValue(psdkLocation, true)
         m_mode = computeCurrentGameState()
         val startButton = findViewById<Button>(R.id.startGame)
-        startButton.text = if (m_mode == Mode.START_GAME) "start" else "compile"
+        startButton.visibility = if (m_mode == Mode.START_GAME) View.VISIBLE else View.INVISIBLE
+        val compileButton = findViewById<Button>(R.id.compileGame)
+        compileButton.setOnClickListener { v: View? ->
+            m_mode = Mode.COMPILE
+            val compileIntent = Intent(this, CompileActivity::class.java)
+            compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
+            compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
+            compileIntent.putExtra("OUTPUT_ARCHIVE_LOCATION", fullAppLocation)
+            startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE)
+            return@setOnClickListener
+        }
+
         startButton.setOnClickListener { v: View? ->
-            if (m_mode == Mode.COMPILE) {
-                val compileIntent = Intent(this, CompileActivity::class.java)
-                compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
-                compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
-                compileIntent.putExtra("OUTPUT_ARCHIVE_LOCATION", fullAppLocation)
-                startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE)
-                return@setOnClickListener
-            }
             val switchActivityIntent = Intent(this@MainActivity, NativeActivity::class.java)
             switchActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
             switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
@@ -232,7 +238,7 @@ class MainActivity : Activity() {
             try {
                 val fw = FileWriter(outputFilename, false)
                 fw.flush()
-                val startScript: String = PsdkProcess.Companion.readFromAssets(this, "start.rb")
+                val startScript: String = RubyScript.Companion.readFromAssets(assets, "start.rb")
                 switchActivityIntent.putExtra("START_SCRIPT", startScript)
                 this@MainActivity.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE)
             } catch (e: Exception) {

@@ -1,4 +1,4 @@
-package com.psdk.old
+package com.psdk.signing.old
 
 import com.android.apksig.ApkSigner.SignerConfig
 import com.android.tools.build.apkzlib.sign.SigningExtension
