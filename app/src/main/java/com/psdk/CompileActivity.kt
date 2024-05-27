@@ -54,22 +54,23 @@ class CompileActivity : Activity() {
         m_rubyInterpreter = rubyInterpreter
 
         val onCompleteCompilation: CompletionTask = { returnCode: Int ->
-            runOnUiThread {
-                if (returnCode == 0) {
-                    compilationEndState.text = "Compilation success !"
-                    try {
-                        ZipUtility.zip("$m_executionLocation/Release", m_outputArchiveLocation)
-                        // TODO when the app will be only a compiler, we won't need the release anymore, only the exported zip file
-                        //removeRecursivelyDirectory(m_executionLocation + "/Release");
-                        val mainIntent = Intent(self, MainActivity::class.java)
-                        startActivity(mainIntent)
-                    } catch (e: Exception) {
-                        compilationEndState.text =
-                            "Unable to build the final archive: " + e.localizedMessage
-                    }
-                } else {
-                    compilationEndState.text = "Compilation failure"
+            var resultText: String;
+            if (returnCode == 0) {
+                resultText = "Compilation success !"
+                try {
+                    ZipUtility.zip("$m_executionLocation/Release", m_outputArchiveLocation)
+                    // TODO when the app will be only a compiler, we won't need the release anymore, only the exported zip file
+                    //removeRecursivelyDirectory(m_executionLocation + "/Release");
+                    val mainIntent = Intent(self, MainActivity::class.java)
+                    startActivity(mainIntent)
+                } catch (e: Exception) {
+                    resultText = "Unable to build the final archive: " + e.localizedMessage
                 }
+            } else {
+                resultText = "Compilation failure"
+            }
+            runOnUiThread {
+                compilationEndState.text = resultText
             }
         }
 

@@ -11,7 +11,7 @@ import java.lang.RuntimeException
 abstract class RubyVM(private val applicationPath: String?, private val main: RubyScript):
     LogListener {
     private var mainThread: Thread? = null
-    private var loggingThread: Thread? = null
+    private var logReaderThread: Thread? = null
 
     private var fifoCommands: File? = null
     private var fifoReturnFile: File? = null
@@ -40,7 +40,7 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         mainThread = Thread {
             exec(main.getContent(), fifoLogsFilename, fifoCommandsFilename, fifoReturnFilename, location.internalWriteablePath, location.executionLocation, location.archiveLocation)
         }
-        loggingThread = Thread {
+        logReaderThread = Thread {
             try {
                 while (!fifoLogs!!.exists()) {
                 }
@@ -60,16 +60,14 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
             }
         }
         mainThread!!.start()
-        loggingThread!!.start()
+        logReaderThread!!.start()
+
+        while(!fifoReturnFile!!.exists() || !fifoCommands!!.exists()) {}
     }
 
     fun runAsync(script: RubyScript, onComplete: CompletionTask) {
-        var init = false
         val scriptThread = Thread {
             try {
-                init = true
-                while (!fifoReturnFile!!.exists()) {
-                }
                 val `in` = BufferedReader(FileReader(fifoReturnFile!!))
                 // First line sent => script EOF reached, we quit
                 var resultLine: String? = null;
@@ -87,7 +85,6 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         }
 
         scriptThread.start()
-        while(!init) {}
         val writer = FileWriter(fifoCommands)
         writer.append(script.getContent())
         writer.close()

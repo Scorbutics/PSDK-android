@@ -10,8 +10,6 @@
 #include "get_activity_parameters.h"
 #include "logging.h"
 
-static int is_logging_init = 0;
-
 JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommands, jstring fifoReturn,
                                                                 jstring internalWriteablePath, jstring executionLocation, jstring additionalParam) {
     (void) clazz;
@@ -24,7 +22,7 @@ JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* 
     const char *executionLocation_c = (*env)->GetStringUTFChars(env, executionLocation, 0);
     const char *additionalParam_c = (*env)->GetStringUTFChars(env, additionalParam, 0);
 
-    if (!is_logging_init) { LoggingSetNativeLoggingFunction(__android_log_write); is_logging_init = 1;}
+    LoggingSetNativeLoggingFunction(__android_log_write);
     const int result = ExecMainRubyVM(scriptContent_c, fifoLogs_c, fifoCommands_c, fifoReturn_c,
                                       internalWriteablePath_c, executionLocation_c,
                                       additionalParam_c, 0);
@@ -47,7 +45,7 @@ int StartGameFromNativeActivity(ANativeActivity* activity) {
     const char* outputFilename = GetNewNativeActivityParameter(activity, "OUTPUT_FILENAME");
     const char* startScriptContent = GetNewNativeActivityParameter(activity, "START_SCRIPT");
 
-    if (!is_logging_init) { LoggingSetNativeLoggingFunction(__android_log_write); is_logging_init = 1;}
+    LoggingSetNativeLoggingFunction(__android_log_write);
     const int result = ExecMainRubyVM(startScriptContent, outputFilename, NULL, NULL,
                                       internalWriteablePath,
                                       executionLocation, NULL, 1);

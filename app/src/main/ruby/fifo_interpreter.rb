@@ -2,33 +2,31 @@ begin
     fifo_command = ENV['ANDROID_FIFO_COMMAND_INPUT']
     fifo_return = ENV['ANDROID_FIFO_COMMAND_OUTPUT']
 
+    while !File.exists?(fifo_return) do
+        puts "Waiting for fifo output"
+        sleep 1
+    end
     loop do
         while !File.exists?(fifo_command) do
-            puts "Waiting for fifo"
+            puts "Waiting for fifo input"
             sleep 1
         end
         begin
             content = File.read(fifo_command)
-        rescue IOError => error
-            puts error
-        end
-
-        begin
             lambda do
                 eval content + "\n"
+                File.open(fifo_return, "w") { |output|
+                    output.write("0\n")
+                }
             end.call
-            File.open(fifo_return, "w") { |output|
-              output.write("0\n")
-              output.flush
-            }
         rescue Exception => error
             STDERR.puts error
             File.open(fifo_return, "w") { |output|
-              output.write("1\n")
-              output.flush
+                output.write("1\n")
             }
         end
     end
+
 rescue Exception => error
     STDERR.puts error
     STDERR.puts error.backtrace.join("\n\t")
