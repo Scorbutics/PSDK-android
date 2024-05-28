@@ -20,6 +20,8 @@ import com.psdk.ruby.RubyInfo
 import com.psdk.ruby.vm.RubyScript
 import com.psdk.signing.Signer
 import com.psdk.signing.buildDefaultSigningOptions
+import net.lingala.zip4j.ZipFile
+import net.lingala.zip4j.model.ZipParameters
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -45,32 +47,48 @@ class MainActivity : Activity() {
             m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
         }
         if (isTaskRoot) {
-            val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
-            errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
+            val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this)
+            if (shouldAutoStart) {
 
-            // We do not really need those permissions...
-            // So why always keep asking for them ?
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                m_noExternalPermissions = !AppInstall.requestPermissionsIfNeeded(this, ACCEPT_PERMISSIONS_REQUESTCODE, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)
+            } else {
+                val errorUnpackAssets =
+                    AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
+                errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
+
+                // We do not really need those permissions...
+                // So why always keep asking for them ?
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    m_noExternalPermissions = !AppInstall.requestPermissionsIfNeeded(
+                        this,
+                        ACCEPT_PERMISSIONS_REQUESTCODE,
+                        ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE
+                    )
+                }
             }
         }
         loadScreen()
     }
 
-    private fun shareApplicationOutput(appPath: String) {
+    private fun shareApplicationOutput(appFolder: File) {
         /* TODO
             1. embed an execution only apk
             2. add the compiled game as an asset
             3. sign the apk
          */
+        val outApk = File(outputApkLocation!!)
+        File(applicationContext.applicationInfo.publicSourceDir).copyTo(outApk, true)
         // Test
-        // signApk(File("/storage/emulated/0/Download/app-debug.apk"), File("/storage/emulated/0/Download/psdk_output.apk"))
+        val zipParameters = ZipParameters()
+        zipParameters.rootFolderNameInZip = "assets"
+        ZipFile(outApk).addFolder(appFolder, zipParameters)
+        val resultSignedApk = File(m_archiveLocation!!.substring(0, m_archiveLocation!!.lastIndexOf('/')) + "/signed-app-output.apk")
+        signApk(outApk, resultSignedApk)
         val share = Intent(Intent.ACTION_SEND)
         share.type = "image/jpeg"
         val finalApp = FileProvider.getUriForFile(
                 this@MainActivity,
                 "com.psdk.starter.provider",
-                File(appPath))
+            resultSignedApk)
         share.putExtra(Intent.EXTRA_STREAM, finalApp)
         startActivity(Intent.createChooser(share, "Share App"))
     }
@@ -211,6 +229,20 @@ class MainActivity : Activity() {
     private val isValidState: Boolean
         get() = m_permissionErrorMessage == null && m_badArchiveLocation == null
 
+    private fun startGame() {
+        val switchActivityIntent = Intent(this@MainActivity, NativeActivity::class.java)
+        switchActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
+        switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
+        switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)
+        val outputFilename = "$executionLocation/last_stdout.log"
+        switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename)
+        val fw = FileWriter(outputFilename, false)
+        fw.flush()
+        val startScript: String = RubyScript.Companion.readFromAssets(assets, "start.rb")
+        switchActivityIntent.putExtra("START_SCRIPT", startScript)
+        this@MainActivity.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE)
+    }
+
     private fun loadScreen() {
         setContentView(R.layout.main)
         if (m_projectPreferences == null) {
@@ -228,24 +260,13 @@ class MainActivity : Activity() {
             val compileIntent = Intent(this, CompileActivity::class.java)
             compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
             compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
-            compileIntent.putExtra("OUTPUT_ARCHIVE_LOCATION", fullAppLocation)
             startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE)
             return@setOnClickListener
         }
 
         startButton.setOnClickListener { v: View? ->
-            val switchActivityIntent = Intent(this@MainActivity, NativeActivity::class.java)
-            switchActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
-            switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
-            switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)
-            val outputFilename = "$executionLocation/last_stdout.log"
-            switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename)
             try {
-                val fw = FileWriter(outputFilename, false)
-                fw.flush()
-                val startScript: String = RubyScript.Companion.readFromAssets(assets, "start.rb")
-                switchActivityIntent.putExtra("START_SCRIPT", startScript)
-                this@MainActivity.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE)
+                startGame()
             } catch (e: Exception) {
                 Toast.makeText(applicationContext, e.localizedMessage, Toast.LENGTH_LONG).show()
             }
@@ -285,15 +306,15 @@ class MainActivity : Activity() {
         }
         val shareApplication = findViewById<View>(R.id.shareApplication) as TextView
 
-        fullAppLocation?.let {
-            val app = File(it)
-            if (app.exists()) {
+
+            val appFolder = File("$executionLocation/Release")
+            if (appFolder.exists()) {
                 shareApplication.visibility = View.VISIBLE
-                shareApplication.setOnClickListener { v: View? -> shareApplicationOutput(it) }
+                shareApplication.setOnClickListener { v: View? -> shareApplicationOutput(appFolder) }
             } else {
                 lastEngineDebugLogs.text = "No log"
             }
-        }
+
     }
 
     private fun computeCurrentGameState(): Mode {
@@ -303,8 +324,8 @@ class MainActivity : Activity() {
 
     private val executionLocation: String
         get() = applicationInfo.dataDir
-    private val fullAppLocation: String?
-        get() = if (m_archiveLocation != null) m_archiveLocation!!.substring(0, m_archiveLocation!!.lastIndexOf('/')) + "/game-compiled.zip" else null
+    private val outputApkLocation: String?
+        get() = if (m_archiveLocation != null) m_archiveLocation!!.substring(0, m_archiveLocation!!.lastIndexOf('/')) + "/app-output.apk" else null
 
     private fun checkFilepathValid(filepath: String?): String? {
         if (filepath == null) {

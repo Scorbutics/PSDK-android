@@ -11,7 +11,6 @@ import android.widget.ScrollView
 import com.psdk.ruby.vm.CompletionTask
 import com.psdk.ruby.vm.RubyInterpreter
 import com.psdk.ruby.vm.RubyScript
-import com.psdk.zip.ZipUtility
 import java.io.IOException
 import java.lang.Exception
 import java.nio.file.*
@@ -23,7 +22,6 @@ class CompileActivity : Activity() {
     private var m_internalWriteablePath: String? = null
     private var m_executionLocation: String? = null
     private var m_archiveLocation: String? = null
-    private var m_outputArchiveLocation: String? = null
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,7 +30,6 @@ class CompileActivity : Activity() {
         m_internalWriteablePath = filesDir.path
         m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_archiveLocation = intent.getStringExtra("ARCHIVE_LOCATION")
-        m_outputArchiveLocation = intent.getStringExtra("OUTPUT_ARCHIVE_LOCATION")
         val compilationLog = findViewById<TextView>(R.id.compilationLog)
         val compilationScrollView = findViewById<ScrollView>(R.id.compilationScrollView)
         compilationLog.isSelected = true
@@ -58,9 +55,6 @@ class CompileActivity : Activity() {
             if (returnCode == 0) {
                 resultText = "Compilation success !"
                 try {
-                    ZipUtility.zip("$m_executionLocation/Release", m_outputArchiveLocation)
-                    // TODO when the app will be only a compiler, we won't need the release anymore, only the exported zip file
-                    //removeRecursivelyDirectory(m_executionLocation + "/Release");
                     val mainIntent = Intent(self, MainActivity::class.java)
                     startActivity(mainIntent)
                 } catch (e: Exception) {

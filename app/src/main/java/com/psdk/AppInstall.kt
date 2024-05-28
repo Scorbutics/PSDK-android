@@ -16,6 +16,7 @@ import com.psdk.zip.UnzipUtility
 import java.io.*
 import java.lang.Exception
 import java.util.ArrayList
+import java.util.Arrays
 
 object AppInstall {
     private const val INSTALL_NEEDED = "APP_INSTALL_NEEDED"
@@ -32,6 +33,22 @@ object AppInstall {
         `in`.close()
         out.flush()
         out.close()
+    }
+
+    fun unpackToStartGameIfRelease(activity: Activity): Boolean {
+        try {
+            val gameFiles = activity.assets.list("Release") ?: return false
+            if (gameFiles.isEmpty()) {
+                return false
+            }
+            val dataDir = activity.application.applicationInfo.dataDir
+            Arrays.stream(gameFiles).forEach { assertFileName ->
+                copyAsset(activity, dataDir, assertFileName)
+            }
+            return true
+        } catch (exception: IOException) {
+            return false
+        }
     }
 
     fun unpackExtraAssetsIfNeeded(activity: Activity, preferences: SharedPreferences?): String? {
