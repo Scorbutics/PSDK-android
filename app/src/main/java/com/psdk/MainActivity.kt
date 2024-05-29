@@ -105,16 +105,16 @@ class MainActivity : Activity() {
             psdkLocation.setText(m_archiveLocation)
         }
         m_badArchiveLocation = checkFilepathValid(m_archiveLocation)
+        val lastErrorLog = findViewById<View>(R.id.projectLastError) as TextView
+        try {
+            val encoded = Files.readAllBytes(Paths.get(applicationInfo.dataDir + "/Release/Error.log"))
+            lastErrorLog.text = String(encoded, StandardCharsets.UTF_8)
+        } catch (e: IOException) {
+            // File does not exist
+            lastErrorLog.text = "No log"
+        }
         val validState = lockScreenIfInvalidState()
         if (!validState) {
-            val lastErrorLog = findViewById<View>(R.id.projectLastError) as TextView
-            try {
-                val encoded = Files.readAllBytes(Paths.get(applicationInfo.dataDir + "/Release/Error.log"))
-                lastErrorLog.text = String(encoded, StandardCharsets.UTF_8)
-            } catch (e: IOException) {
-                // File does not exist
-                lastErrorLog.text = "No log"
-            }
             val projectVersion = findViewById<View>(R.id.projectVersion) as TextView
             if (m_mode == Mode.COMPILE) {
                 projectVersion.text = "Unknown (game uncompiled)"
