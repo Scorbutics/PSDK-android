@@ -49,7 +49,7 @@ class MainActivity : Activity() {
         if (isTaskRoot) {
             val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this)
             if (shouldAutoStart) {
-
+                startGame()
             } else {
                 val errorUnpackAssets =
                     AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
