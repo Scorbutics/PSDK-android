@@ -14,4 +14,3 @@ require 'LiteRGSS'
 LiteRGSS::Shader.available = false
 require 'ruby_physfs_patch.rb'
 require './Game.rb'
-STDOUT.flush

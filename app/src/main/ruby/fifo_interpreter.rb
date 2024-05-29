@@ -15,11 +15,13 @@ begin
             content = File.read(fifo_command)
             lambda do
                 eval content + "\n"
+                STDOUT.flush
                 File.open(fifo_return, "w") { |output|
                     output.write("0\n")
                 }
             end.call
         rescue Exception => error
+            STDOUT.flush
             STDERR.puts error
             File.open(fifo_return, "w") { |output|
                 output.write("1\n")
@@ -28,6 +30,7 @@ begin
     end
 
 rescue Exception => error
+    STDOUT.flush
     STDERR.puts error
     STDERR.puts error.backtrace.join("\n\t")
 end
