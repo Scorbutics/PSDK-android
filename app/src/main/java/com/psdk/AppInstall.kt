@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import android.content.Intent
+import android.content.res.AssetManager
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
@@ -21,8 +22,8 @@ import java.util.Arrays
 object AppInstall {
     private const val INSTALL_NEEDED = "APP_INSTALL_NEEDED"
     @Throws(IOException::class)
-    private fun copyAsset(activity: Activity, internalWriteablePath: String, filename: String) {
-        val `in` = activity.assets.open(filename)
+    private fun copyAsset(assetManager: AssetManager, internalWriteablePath: String, filename: String) {
+        val `in` = assetManager.open(filename)
         val outFile = File(internalWriteablePath, filename)
         val out: OutputStream = FileOutputStream(outFile)
         val buffer = ByteArray(1024)
@@ -41,9 +42,12 @@ object AppInstall {
             if (gameFiles.isEmpty()) {
                 return false
             }
-            val dataDir = activity.application.applicationInfo.dataDir
+            val dataDir = File(activity.application.applicationInfo.dataDir + "/Release")
+            if (!dataDir.exists()) {
+                dataDir.mkdir()
+            }
             Arrays.stream(gameFiles).forEach { assertFileName ->
-                copyAsset(activity, dataDir, assertFileName)
+                copyAsset(activity.assets, dataDir.path, assertFileName)
             }
             return true
         } catch (exception: IOException) {
@@ -61,7 +65,7 @@ object AppInstall {
                     val rubyArchive = File("$internalWriteablePath/ruby.zip")
                     UnzipUtility.unzip(FileInputStream(rubyArchive), internalWriteablePath)
                     rubyArchive.delete()
-                    copyAsset(activity, internalWriteablePath, "ruby_physfs_patch.rb")
+                    copyAsset(activity.assets, internalWriteablePath, "ruby_physfs_patch.rb")
                     val edit = preferences!!.edit()
                     edit.putBoolean(INSTALL_NEEDED, false)
                     edit.apply()

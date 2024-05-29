@@ -47,14 +47,14 @@ class MainActivity : Activity() {
             m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
         }
         if (isTaskRoot) {
+            val errorUnpackAssets =
+                AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
+            errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
             val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this)
             if (shouldAutoStart) {
                 startGame()
+                return
             } else {
-                val errorUnpackAssets =
-                    AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
-                errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
-
                 // We do not really need those permissions...
                 // So why always keep asking for them ?
                 if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
@@ -305,15 +305,13 @@ class MainActivity : Activity() {
             lastEngineDebugLogs.text = "No log"
         }
         val shareApplication = findViewById<View>(R.id.shareApplication) as TextView
-
-
-            val appFolder = File("$executionLocation/Release")
-            if (appFolder.exists()) {
-                shareApplication.visibility = View.VISIBLE
-                shareApplication.setOnClickListener { v: View? -> shareApplicationOutput(appFolder) }
-            } else {
-                lastEngineDebugLogs.text = "No log"
-            }
+        val appFolder = File("$executionLocation/Release")
+        if (appFolder.exists()) {
+            shareApplication.visibility = View.VISIBLE
+            shareApplication.setOnClickListener { v: View? -> shareApplicationOutput(appFolder) }
+        } else {
+            lastEngineDebugLogs.text = "No log"
+        }
 
     }
 
