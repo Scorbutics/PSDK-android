@@ -5,7 +5,7 @@
 #include "ruby/config.h"
 #include "ruby/version.h"
 
-static void SetupRubyEnv(const char* baseDirectory)
+static void SetupRubyEnv(const char* baseDirectory, const char* extraLoadPath)
 {
 #define RUBY_BUFFER_PATH_SIZE (256)
 #define RUBY_NUM_PATH_IN_RUBYLIB_ENV_VAR (3)
@@ -29,7 +29,7 @@ static void SetupRubyEnv(const char* baseDirectory)
     strncat(rubyBufferDir, "specifications/", maxRubyDirBufferSize);
     setenv("GEM_SPEC_CACHE", rubyBufferDir, 1);
 
-    snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s:%s/ruby/%s/:%s/ruby/%s/"RUBY_PLATFORM"/", baseDirectory, baseDirectory, rubyVersion, baseDirectory, rubyVersion);
+    snprintf(rubyBufferDir, maxRubyDirBufferSize, "%s:%s/ruby/%s/:%s/ruby/%s/"RUBY_PLATFORM"/:%s", baseDirectory, baseDirectory, rubyVersion, baseDirectory, rubyVersion, extraLoadPath);
     setenv("RUBYLIB", rubyBufferDir, 1);
 
 #ifndef NDEBUG
@@ -46,9 +46,9 @@ static void SetupRubyEnv(const char* baseDirectory)
 #include "ruby/ruby.h"
 #pragma GCC diagnostic pop
 
-int ExecRubyVM(const char* baseDirectory, const char* scriptContent, int fromFilename)
+int ExecRubyVM(const char* baseDirectory, const char* rubyExtraLoadPath, const char* scriptContent, int fromFilename)
 {
-    SetupRubyEnv(baseDirectory);
+    SetupRubyEnv(baseDirectory, rubyExtraLoadPath);
     int argc_ = fromFilename == 0 ? 3 : 2;
     char **argv_ = (char **) malloc(sizeof(char *) * (argc_));
 

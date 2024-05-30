@@ -50,6 +50,7 @@ class MainActivity : Activity() {
             val errorUnpackAssets =
                 AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
             errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
+            System.loadLibrary("jni")
             val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this)
             if (shouldAutoStart) {
                 startGame()
@@ -234,6 +235,7 @@ class MainActivity : Activity() {
         switchActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
         switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
         switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)
+        switchActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
         val outputFilename = "$executionLocation/last_stdout.log"
         switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename)
         val fw = FileWriter(outputFilename, false)
@@ -363,9 +365,6 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        init {
-            System.loadLibrary("jni")
-        }
 
         private const val CHOOSE_FILE_REQUESTCODE = 8778
         private const val CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE = 8777

@@ -103,7 +103,7 @@ class CompileActivity : Activity() {
     }
 
     private fun buildPsdkProcessData(): ScriptCurrentLocation {
-        return ScriptCurrentLocation(m_internalWriteablePath, m_executionLocation, m_archiveLocation)
+        return ScriptCurrentLocation(m_internalWriteablePath, m_executionLocation, applicationInfo.nativeLibraryDir, m_archiveLocation)
     }
 
     companion object {

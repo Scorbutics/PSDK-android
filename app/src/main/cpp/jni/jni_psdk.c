@@ -11,7 +11,7 @@
 #include "logging.h"
 
 JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommands, jstring fifoReturn,
-                                                                jstring internalWriteablePath, jstring executionLocation, jstring additionalParam) {
+                                                                jstring internalWriteablePath, jstring executionLocation, jstring nativeLibsDirLocation, jstring additionalParam) {
     (void) clazz;
 
     const char* scriptContent_c = (*env)->GetStringUTFChars(env, scriptContent, 0);
@@ -21,12 +21,14 @@ JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* 
     const char *internalWriteablePath_c = (*env)->GetStringUTFChars(env, internalWriteablePath, 0);
     const char *executionLocation_c = (*env)->GetStringUTFChars(env, executionLocation, 0);
     const char *additionalParam_c = (*env)->GetStringUTFChars(env, additionalParam, 0);
+    const char *nativeLibsDirLocation_c = (*env)->GetStringUTFChars(env, nativeLibsDirLocation, 0);
 
     LoggingSetNativeLoggingFunction(__android_log_write);
     const int result = ExecMainRubyVM(scriptContent_c, fifoLogs_c, fifoCommands_c, fifoReturn_c,
                                       internalWriteablePath_c, executionLocation_c,
-                                      additionalParam_c, 0);
+                                      nativeLibsDirLocation_c, additionalParam_c, 0);
 
+    (*env)->ReleaseStringUTFChars(env, nativeLibsDirLocation, nativeLibsDirLocation_c);
     (*env)->ReleaseStringUTFChars(env, additionalParam, additionalParam_c);
     (*env)->ReleaseStringUTFChars(env, scriptContent, scriptContent_c);
     (*env)->ReleaseStringUTFChars(env, fifoLogs, fifoLogs_c);
@@ -44,12 +46,16 @@ int StartGameFromNativeActivity(ANativeActivity* activity) {
     const char* executionLocation = GetNewNativeActivityParameter(activity, "EXECUTION_LOCATION");
     const char* outputFilename = GetNewNativeActivityParameter(activity, "OUTPUT_FILENAME");
     const char* startScriptContent = GetNewNativeActivityParameter(activity, "START_SCRIPT");
+    const char* nativeLibsDirLocation = GetNewNativeActivityParameter(activity, "NATIVE_LIBS_LOCATION");
 
     LoggingSetNativeLoggingFunction(__android_log_write);
     const int result = ExecMainRubyVM(startScriptContent, outputFilename, NULL, NULL,
                                       internalWriteablePath,
-                                      executionLocation, NULL, 1);
+                                      executionLocation,
+                                      nativeLibsDirLocation,
+                                      NULL, 1);
 
+    free((void*)nativeLibsDirLocation);
     free((void*)outputFilename);
     free((void*)startScriptContent);
     free((void*)executionLocation);

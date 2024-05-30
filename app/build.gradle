@@ -10,6 +10,7 @@ android {
     sourceSets {
         main {
             assets.srcDirs += ['src/main/ruby']
+            jniLibs.srcDir('jniLibs')
         }
     }
 
@@ -30,8 +31,8 @@ android {
             }
         }
         ndk {
+            //noinspection ChromeOsAbiSupport
             abiFilters 'arm64-v8a'
-            debugSymbolLevel 'FULL'
         }
     }
 
@@ -39,6 +40,19 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+            externalNativeBuild {
+                cmake {
+                    arguments "-DCMAKE_BUILD_TYPE=Release"
+                }
+            }
+        }
+        debug {
+            ndk {
+                //noinspection ChromeOsAbiSupport
+                abiFilters 'arm64-v8a'
+                debugSymbolLevel 'FULL'
+            }
         }
     }
     externalNativeBuild {
@@ -54,23 +68,11 @@ android {
     }
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
     ndkVersion '25.0.8775105'
     namespace 'com.psdk'
 }
-
-task appInternalDistribution(type: Zip) {
-    archiveFileName = "app-internal.zip"
-    destinationDirectory = file("./src/main/assets")
-    var input = "./src/main/ext-native-libs/lib"
-
-    inputs.dir(input)
-    outputs.file("$destinationDirectory/$archiveFileName")
-
-    from input
-}
-
-preBuild.dependsOn appInternalDistribution
 
 dependencies {
     implementation fileTree(dir: 'libs', include: '*.jar')

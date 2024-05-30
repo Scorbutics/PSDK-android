@@ -5,3 +5,4 @@ app/build
 app/release
 local.properties
 app/src/main/assets/app-internal.zip
+build/

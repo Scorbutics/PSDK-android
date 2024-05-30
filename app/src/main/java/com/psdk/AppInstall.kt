@@ -12,7 +12,6 @@ import android.content.Intent
 import android.content.res.AssetManager
 import android.net.Uri
 import android.provider.Settings
-import android.util.Log
 import com.psdk.zip.UnzipUtility
 import java.io.*
 import java.lang.Exception
@@ -59,20 +58,14 @@ object AppInstall {
         if (preferences != null) {
             //if (preferences.getBoolean(INSTALL_NEEDED, true)) {
                 val internalWriteablePath = activity.filesDir.absolutePath
-                try {
-                    val appInternalData = activity.assets.open("app-internal.zip")
-                    UnzipUtility.unzip(appInternalData, internalWriteablePath)
-                    val rubyArchive = File("$internalWriteablePath/ruby.zip")
-                    UnzipUtility.unzip(FileInputStream(rubyArchive), internalWriteablePath)
-                    rubyArchive.delete()
-                    copyAsset(activity.assets, internalWriteablePath, "ruby_physfs_patch.rb")
-                    val edit = preferences!!.edit()
-                    edit.putBoolean(INSTALL_NEEDED, false)
-                    edit.apply()
-                } catch (exception: IOException) {
-                    Log.e("PSDK", "Error", exception)
-                    return exception.message
-                }
+                //val appInternalData = activity.assets.open("app-internal.zip")
+                //UnzipUtility.unzip(appInternalData, internalWriteablePath)
+                val rubyArchive = activity.assets.open("ruby-stdlib.zip")
+                UnzipUtility.unzip(rubyArchive, internalWriteablePath)
+                copyAsset(activity.assets, internalWriteablePath, "ruby_physfs_patch.rb")
+                val edit = preferences!!.edit()
+                edit.putBoolean(INSTALL_NEEDED, false)
+                edit.apply()
             //}
         }
         return null

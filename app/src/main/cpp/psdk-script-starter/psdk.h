@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 int ExecMainRubyVM(const char* scriptContent, const char* fifoLogsOrFilename, const char* fifoCommands, const char* fifoReturn,
-                   const char* internalWriteablePath, const char* executionLocation, const char* additionalParam, int isFifoRealFile);
+                   const char* internalWriteablePath, const char* executionLocation, const char* nativeLibsDirLocation, const char* additionalParam, int isFifoRealFile);
 
 #ifdef __cplusplus
 }

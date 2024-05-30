@@ -7,4 +7,4 @@ set_target_properties(jni PROPERTIES COMPILE_FLAGS "-Wall -Wextra -Werror")
 target_link_libraries(jni psdk-script-starter logging
         ${log-lib} ${zlib-lib}
         ${libs_sfml_dependencies})
-target_include_directories(jni PRIVATE ${IMPORT_DIR}/include ${LOGGING_DIR} ${PSDK_SCRIPT_STARTER_DIR})
+target_include_directories(jni PRIVATE ${IMPORT_DIR} ${LOGGING_DIR} ${PSDK_SCRIPT_STARTER_DIR})

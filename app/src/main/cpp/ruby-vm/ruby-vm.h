@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-int ExecRubyVM(const char* baseDirectory, const char* scriptContent, int fromFilename);
+int ExecRubyVM(const char* baseDirectory, const char* rubyExtraLoadPath, const char* scriptContent, int fromFilename);
 
 #ifdef __cplusplus
 }

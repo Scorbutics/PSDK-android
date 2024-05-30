@@ -9,7 +9,7 @@ extern "C" {
 #include <android/native_activity.h>
 
 JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommand,
-                                                                jstring fifoReturn, jstring internalWriteablePath, jstring executionLocation, jstring additionalParam);
+                                                                jstring fifoReturn, jstring internalWriteablePath, jstring executionLocation, jstring nativeLibsDirLocation, jstring additionalParam);
 
 int StartGameFromNativeActivity(ANativeActivity* activity);
 
