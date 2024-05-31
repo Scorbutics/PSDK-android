@@ -10,7 +10,7 @@ ARGV << "skip_binary"
 
 FileUtils.mkdir_p "./Data/Events/Battle"
 
-require 'LiteRGSS'
+require 'libLiteRGSS'
 LiteRGSS::Shader.available = false
 require 'ruby_physfs_patch.rb'
 require './Game.rb'

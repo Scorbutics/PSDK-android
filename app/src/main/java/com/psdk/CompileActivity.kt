@@ -54,12 +54,8 @@ class CompileActivity : Activity() {
             var resultText: String;
             if (returnCode == 0) {
                 resultText = "Compilation success !"
-                try {
-                    val mainIntent = Intent(self, MainActivity::class.java)
-                    startActivity(mainIntent)
-                } catch (e: Exception) {
-                    resultText = "Unable to build the final archive: " + e.localizedMessage
-                }
+                val mainIntent = Intent(self, MainActivity::class.java)
+                startActivity(mainIntent)
             } else {
                 resultText = "Compilation failure"
             }
@@ -72,6 +68,8 @@ class CompileActivity : Activity() {
             if (returnCode != 0) {
                 runOnUiThread {
                     compilationEndState.text = "Check engine failure"
+                    val mainIntent = Intent(self, MainActivity::class.java)
+                    startActivity(mainIntent)
                 }
             } else {
                 rubyInterpreter.runAsync(RubyScript(assets, SCRIPT), onCompleteCompilation)
@@ -103,6 +101,7 @@ class CompileActivity : Activity() {
     }
 
     private fun buildPsdkProcessData(): ScriptCurrentLocation {
+        System.out.println(applicationInfo.nativeLibraryDir)
         return ScriptCurrentLocation(m_internalWriteablePath, m_executionLocation, applicationInfo.nativeLibraryDir, m_archiveLocation)
     }
 

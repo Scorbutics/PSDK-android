@@ -1,4 +1,4 @@
-require 'LiteRGSS'
+require 'libLiteRGSS'
 
 Project_path = Dir.pwd
 PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
