@@ -22,6 +22,7 @@ import com.psdk.signing.Signer
 import com.psdk.signing.buildDefaultSigningOptions
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
+import org.bouncycastle.crypto.params.Blake3Parameters.context
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -29,6 +30,7 @@ import java.nio.file.Paths
 import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+
 
 class MainActivity : Activity() {
     internal enum class Mode {
@@ -72,20 +74,21 @@ class MainActivity : Activity() {
 
     private fun shareApplicationOutput(appFolder: File) {
         /* TODO
-            1. embed an execution only apk
-            2. add the compiled game as an asset
-            3. sign the apk
+            1. add possibility to edit the logo (replace the logo.png inside the archive)
+            2. add a way to change the application name in strings.xml inside the archive (using XmlPullParser to parse and edit)
+            3. change the applicationId
          */
-        val outApk = File(outputApkLocation!!)
-        File(applicationContext.applicationInfo.publicSourceDir).copyTo(outApk, true)
+        val tmpResultApkUnsigned = File.createTempFile("app-output-unsigned", ".apk", applicationContext.cacheDir)
+        File(applicationContext.applicationInfo.publicSourceDir).copyTo(tmpResultApkUnsigned, true)
         // Test
         val zipParameters = ZipParameters()
         zipParameters.rootFolderNameInZip = "assets"
-        ZipFile(outApk).addFolder(appFolder, zipParameters)
-        val resultSignedApk = File(m_archiveLocation!!.substring(0, m_archiveLocation!!.lastIndexOf('/')) + "/signed-app-output.apk")
-        signApk(outApk, resultSignedApk)
+        ZipFile(tmpResultApkUnsigned).addFolder(appFolder, zipParameters)
+
+        val resultSignedApk = File.createTempFile("app-output-signed", ".apk", applicationContext.cacheDir)
+        signApk(tmpResultApkUnsigned, resultSignedApk)
         val share = Intent(Intent.ACTION_SEND)
-        share.type = "image/jpeg"
+        share.type = "application/vnd.android.package-archive"
         val finalApp = FileProvider.getUriForFile(
                 this@MainActivity,
                 "com.psdk.starter.provider",
@@ -324,8 +327,6 @@ class MainActivity : Activity() {
 
     private val executionLocation: String
         get() = applicationInfo.dataDir
-    private val outputApkLocation: String?
-        get() = if (m_archiveLocation != null) m_archiveLocation!!.substring(0, m_archiveLocation!!.lastIndexOf('/')) + "/app-output.apk" else null
 
     private fun checkFilepathValid(filepath: String?): String? {
         if (filepath == null) {
