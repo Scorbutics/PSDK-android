@@ -16,6 +16,7 @@
             android:id="@+id/compilationEndState"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
+
     </LinearLayout>
 
     <ScrollView
@@ -40,7 +41,8 @@
                 android:id="@+id/compilationLog"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Compilation log" />
+                android:text="Compilation log"
+                android:textSize="20sp" />
         </LinearLayout>
     </ScrollView>
 
