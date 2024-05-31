@@ -151,7 +151,7 @@ class MainActivity : Activity() {
         psdkLocation.setBackgroundResource(if (!validState) R.drawable.edterr else R.drawable.edtnormal)
         val psdkLocationValid = findViewById<View>(R.id.psdkLocationValid) as CheckedTextView
         psdkLocationValid.isChecked = validState
-        val clickButton = findViewById<View>(R.id.startGame) as Button
+        val clickButton = findViewById<View>(R.id.compileGame) as Button
         clickButton.isEnabled = validState
         val projectInfoLayout = findViewById<View>(R.id.informationLayout) as LinearLayout
         projectInfoLayout.visibility = if (!validState) View.INVISIBLE else View.VISIBLE

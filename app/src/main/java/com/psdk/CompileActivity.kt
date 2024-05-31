@@ -35,6 +35,7 @@ class CompileActivity : Activity() {
         compilationLog.isSelected = true
         val compilationEndState = findViewById<TextView>(R.id.compilationEndState)
         val self: Activity = this
+        compilationLog.append("\n")
         val rubyInterpreter = object : RubyInterpreter(assets, applicationInfo.dataDir, buildPsdkProcessData()) {
             override fun accept(lineMessage: String?) {
                 runOnUiThread {
