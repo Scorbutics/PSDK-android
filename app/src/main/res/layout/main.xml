@@ -7,7 +7,7 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical">
 
         <TextView
@@ -201,56 +201,12 @@
             android:text="share compiled game"
             android:visibility="invisible" />
 
-        <androidx.core.widget.NestedScrollView
+        <Button
+            android:id="@+id/showLogDetails"
             android:layout_width="match_parent"
-            android:layout_height="200dp">
-
-            <LinearLayout
-                android:id="@+id/lastEngineDebugLogLayout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/textView9"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Last engine debug logs"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/lastEngineDebugLogs"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-        </androidx.core.widget.NestedScrollView>
-
-        <androidx.core.widget.NestedScrollView
-            android:layout_width="match_parent"
-            android:layout_height="200dp">
-
-            <LinearLayout
-                android:id="@+id/compilationLogLayout"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:descendantFocusability="beforeDescendants"
-                android:focusableInTouchMode="true"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/projectLastErrorTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Last error log"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/projectLastError"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
-
-            </LinearLayout>
-        </androidx.core.widget.NestedScrollView>
+            android:layout_height="wrap_content"
+            android:text="show log details"
+            android:visibility="visible" />
 
     </LinearLayout>
 

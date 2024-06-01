@@ -43,6 +43,21 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".BuildApkActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BUILD_APK" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".ReadLogDetailsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.READ_LOG_DETAILS" />
+            </intent-filter>
+        </activity>
+
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.psdk.starter.provider"

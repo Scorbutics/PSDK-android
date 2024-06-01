@@ -1,6 +1,6 @@
 package com.psdk
 
-import android.app.Activity
+import android.Manifest
 import android.app.NativeActivity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -15,14 +15,12 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
 import android.widget.*
-import androidx.core.content.FileProvider
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import com.psdk.ruby.RubyInfo
 import com.psdk.ruby.vm.RubyScript
-import com.psdk.signing.Signer
-import com.psdk.signing.buildDefaultSigningOptions
-import net.lingala.zip4j.ZipFile
-import net.lingala.zip4j.model.ZipParameters
-import org.bouncycastle.crypto.params.Blake3Parameters.context
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -32,9 +30,13 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     internal enum class Mode {
         START_GAME, COMPILE
+    }
+
+    init {
+        System.loadLibrary("jni")
     }
 
     private var m_mode = Mode.COMPILE
@@ -42,64 +44,21 @@ class MainActivity : Activity() {
     private var m_archiveLocation: String? = null
     private var m_badArchiveLocation: String? = null
     private var m_projectPreferences: SharedPreferences? = null
-    private var m_noExternalPermissions = false
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (m_projectPreferences == null) {
             m_projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
         }
         if (isTaskRoot) {
-            val errorUnpackAssets =
-                AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
+            val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
             errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
-            System.loadLibrary("jni")
             val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this)
             if (shouldAutoStart) {
                 startGame()
                 return
-            } else {
-                // We do not really need those permissions...
-                // So why always keep asking for them ?
-                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                    m_noExternalPermissions = !AppInstall.requestPermissionsIfNeeded(
-                        this,
-                        ACCEPT_PERMISSIONS_REQUESTCODE,
-                        ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE
-                    )
-                }
             }
         }
         loadScreen()
-    }
-
-    private fun shareApplicationOutput(appFolder: File) {
-        /* TODO
-            1. add possibility to edit the logo (replace the logo.png inside the archive)
-            2. add a way to change the application name in strings.xml inside the archive (using XmlPullParser to parse and edit)
-            3. change the applicationId
-         */
-        val tmpResultApkUnsigned = File.createTempFile("app-output-unsigned", ".apk", applicationContext.cacheDir)
-        File(applicationContext.applicationInfo.publicSourceDir).copyTo(tmpResultApkUnsigned, true)
-        // Test
-        val zipParameters = ZipParameters()
-        zipParameters.rootFolderNameInZip = "assets"
-        ZipFile(tmpResultApkUnsigned).addFolder(appFolder, zipParameters)
-
-        val resultSignedApk = File.createTempFile("app-output-signed", ".apk", applicationContext.cacheDir)
-        signApk(tmpResultApkUnsigned, resultSignedApk)
-        val share = Intent(Intent.ACTION_SEND)
-        share.type = "application/vnd.android.package-archive"
-        val finalApp = FileProvider.getUriForFile(
-                this@MainActivity,
-                "com.psdk.starter.provider",
-            resultSignedApk)
-        share.putExtra(Intent.EXTRA_STREAM, finalApp)
-        startActivity(Intent.createChooser(share, "Share App"))
-    }
-
-    private fun signApk(apk: File, outApk: File) {
-        val signingOptions = buildDefaultSigningOptions(application)
-        Signer(signingOptions).signApk(apk, outApk)
     }
 
     private fun setArchiveLocationValue(location: String?, triggerEvent: Boolean) {
@@ -109,14 +68,6 @@ class MainActivity : Activity() {
             psdkLocation.setText(m_archiveLocation)
         }
         m_badArchiveLocation = checkFilepathValid(m_archiveLocation)
-        val lastErrorLog = findViewById<View>(R.id.projectLastError) as TextView
-        try {
-            val encoded = Files.readAllBytes(Paths.get(applicationInfo.dataDir + "/Release/Error.log"))
-            lastErrorLog.text = String(encoded, StandardCharsets.UTF_8)
-        } catch (e: IOException) {
-            // File does not exist
-            lastErrorLog.text = "No log"
-        }
         val validState = lockScreenIfInvalidState()
         if (!validState) {
             val projectVersion = findViewById<View>(R.id.projectVersion) as TextView
@@ -158,21 +109,16 @@ class MainActivity : Activity() {
         clickButton.isEnabled = validState
         val projectInfoLayout = findViewById<View>(R.id.informationLayout) as LinearLayout
         projectInfoLayout.visibility = if (!validState) View.INVISIBLE else View.VISIBLE
-        val errorLogLayout = findViewById<View>(R.id.compilationLogLayout) as LinearLayout
-        errorLogLayout.visibility = if (!validState) View.INVISIBLE else View.VISIBLE
-        val lastEngineDebugLogLayout = findViewById<View>(R.id.lastEngineDebugLogLayout) as LinearLayout
-        lastEngineDebugLogLayout.visibility = if (!validState) View.INVISIBLE else View.VISIBLE
         return validState
     }
 
-    private fun openFile(mimeType: String?) {
+    private fun selectProjectFile() {
         val intent = Intent(Intent.ACTION_GET_CONTENT)
-        intent.type = mimeType
-        intent.addCategory(Intent.CATEGORY_OPENABLE)
         intent.type = "*/*"
+        intent.addCategory(Intent.CATEGORY_OPENABLE)
         val chooseFile = Intent.createChooser(intent, "Choose a file")
         try {
-            startActivityForResult(chooseFile, CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE)
+            askForExternalStorageAndThen { chooseProjectFileActivityResultLauncher.launch(chooseFile) }
         } catch (ex: ActivityNotFoundException) {
             Toast.makeText(applicationContext, "No suitable File Manager was found.", Toast.LENGTH_LONG).show()
         }
@@ -181,52 +127,94 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
-            ACCEPT_PERMISSIONS_REQUESTCODE -> {
-                if (Arrays.stream(grantResults).anyMatch { i: Int -> i != PackageManager.PERMISSION_GRANTED }) {
-                    m_permissionErrorMessage = "You must have read and write to external storage permissions in order to use PSDK"
-                }
-                AppInstall.requestActivityPermissions(this, ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE)
+            STORAGE_PERMISSION_CODE -> {
+                handlePermissionsRequestResult(grantResults)
             }
             else -> {}
         }
     }
+    private fun handlePermissionsRequestResult(grantResults: IntArray) {
+        if (Arrays.stream(grantResults).anyMatch { i: Int -> i != PackageManager.PERMISSION_GRANTED }) {
+            m_permissionErrorMessage = "You must have read and write to external storage permissions in order to use PSDK"
+        }
+    }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent) {
-        val lastErrorLog = findViewById<View>(R.id.projectLastError) as TextView
-        when (requestCode) {
-            ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    if (!Environment.isExternalStorageManager()) {
-                        m_permissionErrorMessage = "You must have all file access permissions in order to use PSDK"
-                    }
-                }
-                loadScreen()
+    private fun askForExternalStorageAndThen(callback: (Boolean) -> Unit) {
+        //Android is 11 (R) or above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent()
+                intent.setAction(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                val uri = Uri.fromParts("package", this.packageName, null)
+                intent.setData(uri)
+                buildStorageActivityResultLauncher(callback).launch(intent)
+            } catch (e: java.lang.Exception) {
+                val intent = Intent()
+                intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                buildStorageActivityResultLauncher(callback).launch(intent)
             }
-            CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE -> {
-                if (resultCode != RESULT_OK) {
-                    return
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    val uri: Uri = Uri.fromParts("package", packageName, null)
-                    intent.data = uri
-                    startActivityForResult(intent, CHOOSE_FILE_REQUESTCODE)
+        } else {
+            //Below android 11
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf<String>(
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ),
+                STORAGE_PERMISSION_CODE
+            )
+        }
+
+    }
+
+    private val buildApkActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+        ) {}
+
+    private val compileGameActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private val startGameActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private val readLogDetailsActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private val chooseProjectFileActivityResultLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val path = PathUtil(applicationContext).getPathFromUri(result.data?.data)
+            m_mode = Mode.COMPILE
+            val startButton = findViewById<Button>(R.id.startGame)
+            startButton.visibility = View.INVISIBLE
+            setArchiveLocationValue(path, true)
+        }
+
+    private fun buildStorageActivityResultLauncher(callback: (Boolean) -> Unit): ActivityResultLauncher<Intent> {
+        return registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                //Android is 11 (R) or above
+                if (Environment.isExternalStorageManager()) {
+                    //Manage External Storage Permissions Granted
+                    callback(true)
                 } else {
-                    onActivityResult(CHOOSE_FILE_REQUESTCODE, 0, data)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Storage Permissions Denied",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    callback(false)
                 }
+            } else {
+                //Below android 11, just bypass it
+                callback(true)
             }
-            CHOOSE_FILE_REQUESTCODE -> {
-                val path = PathUtil(applicationContext).getPathFromUri(data.data)
-                m_mode = Mode.COMPILE
-                val startButton = findViewById<Button>(R.id.startGame)
-                startButton.visibility = View.INVISIBLE
-                setArchiveLocationValue(path, true)
-            }
-            COMPILE_GAME_REQUESTCODE, START_GAME_REQUESTCODE -> if (resultCode != RESULT_OK) {
-                lastErrorLog.text = "Error starting game activity, code : $resultCode"
-                return
-            }
-            else -> {}
         }
     }
 
@@ -239,13 +227,11 @@ class MainActivity : Activity() {
         switchActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
         switchActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)
         switchActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
-        val outputFilename = "$executionLocation/last_stdout.log"
-        switchActivityIntent.putExtra("OUTPUT_FILENAME", outputFilename)
-        val fw = FileWriter(outputFilename, false)
-        fw.flush()
+        switchActivityIntent.putExtra("OUTPUT_FILENAME", gameLogOutputFile)
+        FileWriter(gameLogOutputFile, false).flush()
         val startScript: String = RubyScript.Companion.readFromAssets(assets, "start.rb")
         switchActivityIntent.putExtra("START_SCRIPT", startScript)
-        this@MainActivity.startActivityForResult(switchActivityIntent, START_GAME_REQUESTCODE)
+        startGameActivityResultLauncher.launch(switchActivityIntent)
     }
 
     private fun loadScreen() {
@@ -265,7 +251,7 @@ class MainActivity : Activity() {
             val compileIntent = Intent(this, CompileActivity::class.java)
             compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
             compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
-            startActivityForResult(compileIntent, COMPILE_GAME_REQUESTCODE)
+            compileGameActivityResultLauncher.launch(compileIntent)
             return@setOnClickListener
         }
 
@@ -278,7 +264,7 @@ class MainActivity : Activity() {
         }
         startButton.isEnabled = isValidState
         val locatePsdkButton = findViewById<View>(R.id.locatePSDK) as Button
-        locatePsdkButton.setOnClickListener { v: View? -> openFile("*/*") }
+        locatePsdkButton.setOnClickListener { v: View? -> selectProjectFile() }
         val psdkLocationText = findViewById<View>(R.id.psdkLocation) as EditText
         psdkLocationText.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
@@ -298,26 +284,27 @@ class MainActivity : Activity() {
         rubyVersion.text = RubyInfo.rubyVersion
         val rubyPlatform = findViewById<View>(R.id.engineRubyPlatform) as TextView
         rubyPlatform.text = RubyInfo.rubyPlatform
-        val lastEngineDebugLogs = findViewById<View>(R.id.lastEngineDebugLogs) as TextView
-        val lastStdoutLog = Paths.get("$executionLocation/last_stdout.log")
-        if (Files.exists(lastStdoutLog)) {
-            try {
-                lastEngineDebugLogs.text = String(Files.readAllBytes(lastStdoutLog), StandardCharsets.UTF_8)
-            } catch (exception: Exception) {
-                lastEngineDebugLogs.text = "Unable to read last stdout log: " + exception.localizedMessage
-            }
-        } else {
-            lastEngineDebugLogs.text = "No log"
-        }
+
         val shareApplication = findViewById<View>(R.id.shareApplication) as TextView
         val appFolder = File("$executionLocation/Release")
         if (appFolder.exists()) {
             shareApplication.visibility = View.VISIBLE
-            shareApplication.setOnClickListener { v: View? -> shareApplicationOutput(appFolder) }
-        } else {
-            lastEngineDebugLogs.text = "No log"
+            shareApplication.setOnClickListener{ v: View? ->
+                val buildApkIntent = Intent(this, BuildApkActivity::class.java)
+                buildApkIntent.putExtra("APK_FOLDER_LOCATION", appFolder.path)
+                buildApkActivityResultLauncher.launch(buildApkIntent)
+                return@setOnClickListener
+            }
         }
 
+        val readLogDetails = findViewById<View>(R.id.showLogDetails) as TextView
+        readLogDetails.setOnClickListener{ v: View? ->
+            val readLogDetailsIntent = Intent(this, ReadLogDetailsActivity::class.java)
+            readLogDetailsIntent.putExtra("GAME_LOG_FILE_LOCATION", gameLogOutputFile)
+            readLogDetailsIntent.putExtra("GAME_ERROR_LOG_FILE_LOCATION", gameErrorLogOutputFile)
+            readLogDetailsActivityResultLauncher.launch(readLogDetailsIntent)
+            return@setOnClickListener
+        }
     }
 
     private fun computeCurrentGameState(): Mode {
@@ -327,6 +314,12 @@ class MainActivity : Activity() {
 
     private val executionLocation: String
         get() = applicationInfo.dataDir
+
+    private val gameLogOutputFile: String
+        get() = "$executionLocation/last_stdout.log"
+
+    private val gameErrorLogOutputFile: String
+        get() = applicationInfo.dataDir + "/Release/Error.log"
 
     private fun checkFilepathValid(filepath: String?): String? {
         if (filepath == null) {
@@ -366,13 +359,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
-
-        private const val CHOOSE_FILE_REQUESTCODE = 8778
-        private const val CHOOSE_FILE_REQUEST_PERMISSION_REQUESTCODE = 8777
-        private const val START_GAME_REQUESTCODE = 8700
-        private const val COMPILE_GAME_REQUESTCODE = 8000
-        private const val ACCEPT_PERMISSIONS_REQUESTCODE = 8007
-        private const val ACTIVITY_ACCEPT_ALL_PERMISSIONS_REQUESTCODE = 8070
+        private const val STORAGE_PERMISSION_CODE = 23
         private const val PROJECT_KEY = "PROJECT"
         private const val PROJECT_LOCATION_STRING = "location"
     }

@@ -1,22 +1,24 @@
 package com.psdk
 
-import android.app.Activity
-import android.content.Intent
-import com.psdk.ruby.vm.RubyScript.ScriptCurrentLocation
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.view.View
-import android.widget.ScrollView
+import androidx.activity.ComponentActivity
 import com.psdk.ruby.vm.CompletionTask
 import com.psdk.ruby.vm.RubyInterpreter
 import com.psdk.ruby.vm.RubyScript
+import com.psdk.ruby.vm.RubyScript.ScriptCurrentLocation
 import java.io.IOException
-import java.lang.Exception
 import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
 
-class CompileActivity : Activity() {
+class CompileActivity : ComponentActivity() {
     private var m_rubyInterpreter: RubyInterpreter? = null
     private var m_applicationPath: String? = null
     private var m_internalWriteablePath: String? = null
@@ -31,17 +33,18 @@ class CompileActivity : Activity() {
         m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_archiveLocation = intent.getStringExtra("ARCHIVE_LOCATION")
         val compilationLog = findViewById<TextView>(R.id.compilationLog)
+        val progressBarCompilation = findViewById<ProgressBar>(R.id.progressBarCompilation)
+        progressBarCompilation.visibility = View.VISIBLE
+        val compilationEndState = findViewById<TextView>(R.id.compilationEndState)
+        compilationEndState.visibility = View.GONE
         val compilationScrollView = findViewById<ScrollView>(R.id.compilationScrollView)
         compilationLog.isSelected = true
-        val compilationEndState = findViewById<TextView>(R.id.compilationEndState)
-        val self: Activity = this
-        compilationLog.append("\n")
         val rubyInterpreter = object : RubyInterpreter(assets, applicationInfo.dataDir, buildPsdkProcessData()) {
             override fun accept(lineMessage: String?) {
                 runOnUiThread {
                     compilationLog.append(lineMessage)
                     compilationLog.append("\n")
-                    compilationScrollView.fullScroll(View.FOCUS_DOWN)
+                    compilationScrollView.post{ compilationScrollView.fullScroll(View.FOCUS_DOWN) }
                 }
             }
 
@@ -52,27 +55,36 @@ class CompileActivity : Activity() {
         m_rubyInterpreter = rubyInterpreter
 
         val onCompleteCompilation: CompletionTask = { returnCode: Int ->
-            var resultText: String;
+            val resultText: String;
             if (returnCode == 0) {
                 resultText = "Compilation success !"
-                val mainIntent = Intent(self, MainActivity::class.java)
-                startActivity(mainIntent)
             } else {
                 resultText = "Compilation failure"
             }
             runOnUiThread {
+                progressBarCompilation.visibility = View.INVISIBLE
+                compilationEndState.visibility = View.VISIBLE
                 compilationEndState.text = resultText
+                compilationEndState.setTextColor(if (returnCode == 0) Color.GREEN else Color.RED)
             }
+            Thread.sleep(2000)
+            setResult(returnCode)
+            finish()
         }
 
         val onCompleteCheck: CompletionTask = { returnCode: Int ->
             if (returnCode != 0) {
                 runOnUiThread {
+                    progressBarCompilation.visibility = View.INVISIBLE
                     compilationEndState.text = "Check engine failure"
-                    val mainIntent = Intent(self, MainActivity::class.java)
-                    startActivity(mainIntent)
                 }
+                Thread.sleep(2000)
+                setResult(returnCode)
+                finish()
             } else {
+                runOnUiThread{
+                    compilationLog.append("-------------------------\n")
+                }
                 rubyInterpreter.runAsync(RubyScript(assets, SCRIPT), onCompleteCompilation)
             }
         }
