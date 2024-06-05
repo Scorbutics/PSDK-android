@@ -65,7 +65,7 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         while(!fifoReturnFile!!.exists() || !fifoCommands!!.exists()) {}
     }
 
-    fun runAsync(script: RubyScript, onComplete: CompletionTask) {
+    fun enqueue(script: RubyScript, onComplete: CompletionTask) {
         val scriptThread = Thread {
             try {
                 val `in` = BufferedReader(FileReader(fifoReturnFile!!))

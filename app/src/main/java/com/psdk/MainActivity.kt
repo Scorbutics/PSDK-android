@@ -69,27 +69,23 @@ class MainActivity : ComponentActivity() {
         }
         m_badArchiveLocation = checkFilepathValid(m_archiveLocation)
         val validState = lockScreenIfInvalidState()
-        if (!validState) {
-            val projectVersion = findViewById<View>(R.id.projectVersion) as TextView
-            if (m_mode == Mode.COMPILE) {
-                projectVersion.text = "Unknown (game uncompiled)"
-            } else {
-                try {
-                    val encoded = Files.readAllBytes(Paths.get(applicationInfo.dataDir + "/Release/pokemonsdk/version.txt"))
-                    var versionNumeric: Long = 0
-                    try {
-                        versionNumeric = java.lang.Long.valueOf(String(encoded, StandardCharsets.UTF_8).trim { it <= ' ' })
-                    } catch (nfe: NumberFormatException) {
-                        projectVersion.text = "INVALID"
-                    }
-                    val majorVersion = versionNumeric shr 8
-                    val versionStr = majorVersion.toString() + "." + (versionNumeric - (majorVersion shl 8) - 256).toString()
-                    projectVersion.text = versionStr
-                } catch (e: IOException) {
-                    projectVersion.text = "INVALID"
-                }
+        val projectVersion = findViewById<View>(R.id.projectVersion) as TextView
+        try {
+            val encoded = Files.readAllBytes(Paths.get(applicationInfo.dataDir + "/Release/pokemonsdk/version.txt"))
+            var versionNumeric: Long = 0
+            try {
+                versionNumeric = java.lang.Long.valueOf(String(encoded, StandardCharsets.UTF_8).trim { it <= ' ' })
+            } catch (nfe: NumberFormatException) {
+                projectVersion.text = "INVALID"
             }
-        } else {
+            val majorVersion = versionNumeric shr 8
+            val versionStr = majorVersion.toString() + "." + (versionNumeric - (majorVersion shl 8)).toString()
+            projectVersion.text = versionStr
+        } catch (e: IOException) {
+            projectVersion.text = "INVALID"
+        }
+
+        if (validState) {
             val edit = m_projectPreferences!!.edit()
             edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation)
             edit.apply()

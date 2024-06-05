@@ -40,7 +40,8 @@ static void LogNative(int prio, const char* tag, const char* text) {
 static void WriteFullLogLine(const char* line) {
 	LogNative(LOG_INFO, log_tag == NULL ? "UNKNOWN" : log_tag, line);
 	if (logFd > 0) {
-		write(logFd, line, strlen(line));
+        const size_t lineSize = strlen(line);
+		write(logFd, line, lineSize);
 	}
 }
 
@@ -104,9 +105,9 @@ static void* loggingFunctionThread(void* unused) {
 			if (buf[index] == '\n') {
 				/* When a line break, we append everything to the globalBuffer and then log it */
 				AppendLogToBuffer(buf + remainingLineStartBufIndex, &globalBuffer, &globalBufferCapacity,
-								  &globalBufferSize, index - remainingLineStartBufIndex);
+								  &globalBufferSize, index - remainingLineStartBufIndex + 1);
 				SendBufferToOutputAsLine(globalBuffer, &globalBufferSize);
-				remainingLineStartBufIndex = index;
+				remainingLineStartBufIndex = index + 1;
 			}
 		}
 

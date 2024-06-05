@@ -8,18 +8,18 @@ typealias CompletionTask = (Int) -> Unit;
 abstract class RubyInterpreter(private val assets: AssetManager, private val applicationPath: String, private val location: RubyScript.ScriptCurrentLocation):
     LogListener {
 
-    fun runAsync(script: RubyScript, onComplete: CompletionTask) {
+    fun enqueue(script: RubyScript, onComplete: CompletionTask) {
         if (vm == null) {
             vm = buildMainScript(applicationPath, assets, location)
         }
-        vm!!.runAsync(script, onComplete)
+        vm!!.enqueue(script, onComplete)
     }
 
     private fun buildMainScript(applicationPath: String, assets: AssetManager, location: RubyScript.ScriptCurrentLocation): RubyVM {
         val script = RubyScript(assets, FIFO_INTERPRETER_SCRIPT)
         val self = this
         val launcher = object : RubyVM(applicationPath, script) {
-            override fun accept(lineMessage: String?) {
+            override fun accept(lineMessage: String) {
                 self.accept(lineMessage)
             }
 

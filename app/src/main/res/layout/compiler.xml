@@ -6,29 +6,12 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <ScrollView
-        android:id="@+id/compilationScrollView"
+    <ExpandableListView
+        android:id="@+id/compilationStepsView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:descendantFocusability="afterDescendants"
-        android:paddingTop="0dp"
-        android:paddingBottom="50dp">
-
-        <LinearLayout
-            android:id="@+id/compilationLogLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:descendantFocusability="beforeDescendants"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/compilationLog"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="14sp" />
-        </LinearLayout>
-    </ScrollView>
+        android:layout_height="0dp"
+        android:transcriptMode="alwaysScroll"
+        android:layout_weight="1" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -37,12 +20,19 @@
 
         <TextView
             android:id="@+id/compilationEndState"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:textAlignment="center"
             android:textColor="@color/purple_200"
             android:textSize="24sp"
             android:textStyle="bold"
+            tools:visibility="gone" />
+
+        <Button
+            android:id="@+id/backToMainScreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Back to main screen"
             tools:visibility="gone" />
 
         <ProgressBar
