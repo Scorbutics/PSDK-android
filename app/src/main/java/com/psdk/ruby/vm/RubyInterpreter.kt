@@ -10,29 +10,32 @@ abstract class RubyInterpreter(private val assets: AssetManager, private val app
 
     fun enqueue(script: RubyScript, onComplete: CompletionTask) {
         if (vm == null) {
-            vm = buildMainScript(applicationPath, assets, location)
+            vm = buildMainScript(applicationPath, assets, location, this)
+        } else {
+            vm!!.listener = this
         }
         vm!!.enqueue(script, onComplete)
     }
 
-    private fun buildMainScript(applicationPath: String, assets: AssetManager, location: RubyScript.ScriptCurrentLocation): RubyVM {
+    private fun buildMainScript(applicationPath: String, assets: AssetManager, location: RubyScript.ScriptCurrentLocation, listener: LogListener): ListenerRubyVM {
         val script = RubyScript(assets, FIFO_INTERPRETER_SCRIPT)
-        val self = this
-        val launcher = object : RubyVM(applicationPath, script) {
-            override fun accept(lineMessage: String) {
-                self.accept(lineMessage)
-            }
-
-            override fun onLogError(e: Exception) {
-                self.onLogError(e)
-            }
-        }
+        val launcher = ListenerRubyVM(applicationPath, script, listener)
         launcher.startVM(location)
         return launcher
     }
     companion object {
         private const val FIFO_INTERPRETER_SCRIPT = "fifo_interpreter.rb"
-        private var vm: RubyVM? = null
+        private var vm: ListenerRubyVM? = null
     }
 
+    class ListenerRubyVM(applicationPath: String, main: RubyScript, var listener: LogListener): RubyVM(applicationPath, main) {
+        override fun accept(lineMessage: String) {
+            listener.accept(lineMessage)
+        }
+
+        override fun onLogError(e: Exception) {
+            listener.onLogError(e)
+        }
+
+    }
 }

@@ -1,18 +1,16 @@
 package com.psdk
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseExpandableListAdapter
-import android.widget.ScrollView
 import android.widget.TextView
 
 
-class CompileStepListAdapter(
+class CompileProcessStepListAdapter(
     private val context: Context, private val expandableListTitle: List<CompileStepData>,
     private val expandableListDetail: Map<CompileStepData, List<StringBuilder>>
 ) : BaseExpandableListAdapter() {
@@ -38,7 +36,6 @@ class CompileStepListAdapter(
         val expandedListTextView = convertViewV!!.findViewById<TextView>(R.id.compilation_item_step)
         expandedListTextView.text = expandedListText
 
-        //val scrollView = convertViewV.findViewById<ScrollView>(R.id.compilation_item_step_scroll)
         convertViewV.isSelected = true
 
         return convertViewV

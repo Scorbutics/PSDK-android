@@ -36,6 +36,13 @@
             <meta-data android:name="sfml.app.lib_name" android:value="psdk-app" />
         </activity>
 
+        <activity android:name=".CompileProcessActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.COMPILE_PROCESS" />
+            </intent-filter>
+        </activity>
+
         <activity android:name=".CompileActivity"
             android:exported="true">
             <intent-filter>

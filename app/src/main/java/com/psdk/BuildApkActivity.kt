@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import com.psdk.signing.Signer
 import com.psdk.signing.buildDefaultSigningOptions
@@ -40,7 +41,13 @@ class BuildApkActivity: ComponentActivity()  {
             stringId
         )
     }
+    private fun deleteRecursive(fileOrDirectory: File) {
+        if (fileOrDirectory.isDirectory) for (child in fileOrDirectory.listFiles()!!) deleteRecursive(
+            child
+        )
 
+        fileOrDirectory.delete()
+    }
     private fun shareApplicationOutput(appFolder: File) {
         /* TODO
             1. add possibility to edit the logo (replace the logo.png inside the archive)
@@ -51,25 +58,32 @@ class BuildApkActivity: ComponentActivity()  {
         val progressBarTitle = findViewById<View>(R.id.progressBarTitle) as TextView
         val progressBar = findViewById<View>(R.id.progressBar) as ProgressBar
         progressBarContainer.visibility = View.VISIBLE
+
+        val tmpCacheExportDirectory = File(applicationContext.cacheDir.path + "/exports")
+        if (tmpCacheExportDirectory.exists()) {
+            deleteRecursive(tmpCacheExportDirectory)
+        }
+        tmpCacheExportDirectory.mkdir()
+
         val thread: Thread = object : Thread() {
             override fun run() {
                 try {
-                    runOnUiThread{
-                        progressBarTitle.setText("Copying myself into temporary Apk")
+                    runOnUiThread {
+                        progressBarTitle.setText("Copying myself into a temporary Apk")
                         progressBar.setProgress(10, true)
                     }
                     sleep(500)
                     val tmpResultApkUnsigned = File.createTempFile(
                         "app-output-unsigned",
                         ".apk",
-                        applicationContext.cacheDir
+                        tmpCacheExportDirectory
                     )
                     File(applicationContext.applicationInfo.publicSourceDir).copyTo(
                         tmpResultApkUnsigned,
                         true
                     )
 
-                    runOnUiThread{
+                    runOnUiThread {
                         progressBarTitle.setText("Bundling compiled game")
                         progressBar.setProgress(40, true)
                     }
@@ -78,19 +92,19 @@ class BuildApkActivity: ComponentActivity()  {
                     zipParameters.rootFolderNameInZip = "assets"
                     ZipFile(tmpResultApkUnsigned).addFolder(appFolder, zipParameters)
 
-                    runOnUiThread{
-                        progressBarTitle.setText("Signing final apk")
+                    runOnUiThread {
+                        progressBarTitle.setText("Signing the final apk")
                         progressBar.setProgress(80, true)
                     }
 
                     val resultSignedApk = File.createTempFile(
                         "app-output-signed",
                         ".apk",
-                        applicationContext.cacheDir
+                        tmpCacheExportDirectory
                     )
                     signApk(tmpResultApkUnsigned, resultSignedApk)
 
-                    runOnUiThread{
+                    runOnUiThread {
                         progressBarTitle.setText("Starting export intent")
                         progressBar.setProgress(100, true)
                     }
@@ -106,7 +120,7 @@ class BuildApkActivity: ComponentActivity()  {
                             resultSignedApk
                         )
                         share.putExtra(Intent.EXTRA_STREAM, finalApp)
-                        startActivity(Intent.createChooser(share, "Share App"))
+                        shareGameAppActivityResultLauncher.launch(Intent.createChooser(share, "Share App"))
                     }
                 } finally {
                     runOnUiThread {
@@ -117,6 +131,10 @@ class BuildApkActivity: ComponentActivity()  {
         }
         thread.start()
     }
+
+    private val shareGameAppActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
 
     private fun signApk(apk: File, outApk: File) {
         val signingOptions = buildDefaultSigningOptions(application)

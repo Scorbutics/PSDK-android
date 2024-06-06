@@ -1,124 +1,259 @@
 package com.psdk
 
-import android.graphics.Color
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
-import android.widget.ExpandableListView
-import android.widget.ProgressBar
+import android.widget.Button
+import android.widget.CheckedTextView
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import com.psdk.ruby.vm.CompletionTask
-import com.psdk.ruby.vm.RubyInterpreter
-import com.psdk.ruby.vm.RubyScript
-import com.psdk.ruby.vm.RubyScript.ScriptCurrentLocation
-import java.nio.file.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
+import java.util.Arrays
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 
+class CompileActivity: ComponentActivity() {
 
-class CompileActivity : ComponentActivity() {
-    private var m_rubyInterpreter: RubyInterpreter? = null
-    private var m_applicationPath: String? = null
-    private var m_internalWriteablePath: String? = null
-    private var m_executionLocation: String? = null
+    private var m_permissionErrorMessage: String? = null
     private var m_archiveLocation: String? = null
-    private var currentLogs: CompileStepLogs? = null
+    private var m_badArchiveLocation: String? = null
+    private var m_projectPreferences: SharedPreferences? = null
+    private var m_releaseLocation: String? = null
+    private var m_withSavedArchive: Boolean = false
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.compiler)
-        m_applicationPath = applicationInfo.dataDir
-        m_internalWriteablePath = filesDir.path
-        m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
-        m_archiveLocation = intent.getStringExtra("ARCHIVE_LOCATION")
-
-        val compilationStepsView = findViewById<ExpandableListView>(R.id.compilationStepsView)
-        val progressBarCompilation = findViewById<ProgressBar>(R.id.progressBarCompilation)
-        progressBarCompilation.visibility = View.VISIBLE
-        val compilationEndState = findViewById<TextView>(R.id.compilationEndState)
-        val backToMainScreen = findViewById<TextView>(R.id.backToMainScreen)
-        compilationEndState.visibility = View.GONE
-        backToMainScreen.visibility = View.GONE
-
-        backToMainScreen.setOnClickListener {
-            finish()
+        if (m_projectPreferences == null) {
+            m_projectPreferences = getSharedPreferences(MainActivity.PROJECT_KEY, MODE_PRIVATE)
         }
 
-        val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder());
-        val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder());
+        val executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
+        m_releaseLocation = intent.getStringExtra("RELEASE_LOCATION")
 
-        val compilationStepsDetails = mapOf(Pair(checkEngineLogs.step, listOf(checkEngineLogs.logs)), Pair(compilationLogs.step, listOf(compilationLogs.logs)))
-        val compilationStepsTitles = ArrayList<CompileStepData>(compilationStepsDetails.keys)
-        val expandableListAdapter = CompileStepListAdapter(this, compilationStepsTitles, compilationStepsDetails)
-        compilationStepsView.setAdapter(expandableListAdapter)
-        compilationStepsView.expandGroup(0, true)
-        val rubyInterpreter = object : RubyInterpreter(assets, applicationInfo.dataDir, buildPsdkProcessData()) {
-            override fun accept(lineMessage: String) {
-                currentLogs?.logs?.appendLine(lineMessage)
-                runOnUiThread {
-                    expandableListAdapter.notifyDataSetChanged()
+        val psdkLocation = m_projectPreferences!!.getString(PROJECT_LOCATION_STRING,"")
+        m_withSavedArchive = psdkLocation?.isNotEmpty() ?: false
+        setArchiveLocationValue(psdkLocation, true)
+
+        val compileButton = findViewById<Button>(R.id.compileGame)
+        compileButton.setOnClickListener { v: View? ->
+            val compileIntent = Intent(this, CompileProcessActivity::class.java)
+            compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
+            compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
+            compileGameActivityResultLauncher.launch(compileIntent)
+            return@setOnClickListener
+        }
+
+        val locatePsdkButton = findViewById<View>(R.id.locatePSDK) as Button
+        locatePsdkButton.setOnClickListener { v: View? -> selectProjectFile() }
+        val psdkLocationText = findViewById<View>(R.id.psdkLocation) as EditText
+        psdkLocationText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {
+                m_withSavedArchive = false
+                setArchiveLocationValue(psdkLocationText.text.toString(), false)
+            }
+
+            override fun afterTextChanged(s: Editable) {}
+        })
+    }
+
+    private fun checkFilepathValid(filepath: String?): String? {
+        if (filepath == null) {
+            return "File path not provided"
+        }
+        val finalFile = File(filepath)
+        if (!finalFile.exists() || !finalFile.canRead()) {
+            return "Error : file at filepath $filepath does not exist or not readable"
+        }
+        val absPath = finalFile.absolutePath
+        val sep = absPath.lastIndexOf(File.separator)
+        val filename = absPath.substring(sep + 1).trim { it <= ' ' }
+        return if (!filename.endsWith(".psa")) {
+            "Error : selected file at filepath $filepath is not a 'psa' file : '$filename'"
+        } else try {
+            val bufIn = BufferedInputStream(FileInputStream(finalFile))
+            bufIn.mark(512)
+            val zipIn = ZipInputStream(bufIn)
+            var foundSpecial = false
+            var entry: ZipEntry
+            while (zipIn.nextEntry.also { entry = it } != null) {
+                if ("pokemonsdk/version.txt" == entry.name) {
+                    foundSpecial = true
+                    break
                 }
             }
-
-            override fun onLogError(e: Exception) {
-                Toast.makeText(applicationContext, e.localizedMessage, Toast.LENGTH_LONG).show()
-            }
+            if (!foundSpecial) {
+                "pokemonsdk folder not found in the archive"
+            } else null
+        } catch (e: IOException) {
+            "Error while reading the archive: " + e.localizedMessage
         }
-        m_rubyInterpreter = rubyInterpreter
+    }
 
-        val onCompleteCompilation: CompletionTask = { returnCode: Int ->
-            val resultText: String;
-            if (returnCode == 0) {
-                resultText = "Compilation success !"
+    private fun setArchiveLocationValue(location: String?, triggerEvent: Boolean) {
+        m_archiveLocation = location?.trim { it <= ' ' }
+        val psdkLocation = findViewById<View>(R.id.psdkLocation) as EditText
+        if (triggerEvent) {
+            psdkLocation.setText(m_archiveLocation)
+        }
+
+        val projectEngineHealth = findViewById<TextView>(R.id.projectEngineHealth)
+        if (m_withSavedArchive) {
+            lockScreenIfInvalidState(true)
+            projectEngineHealth.text = "Archive is valid"
+        } else {
+            projectEngineHealth.text = "Processing archive..."
+            lockScreenIfInvalidState(false)
+            val thread: Thread = object : Thread() {
+                override fun run() {
+                    m_badArchiveLocation = checkFilepathValid(m_archiveLocation)
+                    runOnUiThread {
+                        val validState = lockScreenIfInvalidState(isValidState)
+                        if (validState) {
+                            val edit = m_projectPreferences!!.edit()
+                            edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation)
+                            edit.apply()
+                            projectEngineHealth.text = "Archive is valid"
+                        } else {
+                            projectEngineHealth.text =
+                                "$m_permissionErrorMessage $m_badArchiveLocation"
+                        }
+                    }
+                }
+            }
+            thread.start()
+        }
+    }
+
+    private fun lockScreenIfInvalidState(validState: Boolean): Boolean {
+        val psdkLocationValid = findViewById<CheckedTextView>(R.id.psdkLocationValid)
+        psdkLocationValid.isChecked = validState
+        val clickButton = findViewById<Button>(R.id.compileGame)
+        clickButton.isEnabled = validState
+        return validState
+    }
+    private fun handlePermissionsRequestResult(grantResults: IntArray) {
+        if (Arrays.stream(grantResults).anyMatch { i: Int -> i != PackageManager.PERMISSION_GRANTED }) {
+            m_permissionErrorMessage = "You must have read and write to external storage permissions in order to use PSDK"
+        }
+    }
+
+    private fun askForExternalStorageAndChooseFile() {
+        //Android is 11 (R) or above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                chooseProjectFile()
             } else {
-                resultText = "Compilation failure"
+                try {
+                    val intent = Intent()
+                    intent.setAction(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    val uri = Uri.fromParts("package", this.packageName, null)
+                    intent.setData(uri)
+                    storageActivityForFileSelectionResultLauncher.launch(intent)
+                } catch (e: java.lang.Exception) {
+                    val intent = Intent()
+                    intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    storageActivityForFileSelectionResultLauncher.launch(intent)
+                }
             }
-            currentLogs?.step?.status = if (returnCode == 0) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
-            currentLogs = null
-            runOnUiThread {
-                progressBarCompilation.visibility = View.INVISIBLE
-                compilationEndState.visibility = View.VISIBLE
-                backToMainScreen.visibility = View.VISIBLE
-                compilationEndState.text = resultText
-                compilationEndState.setTextColor(if (returnCode == 0) Color.GREEN else Color.RED)
-            }
-            Thread.sleep(2000)
-            setResult(returnCode)
+        } else {
+            //Below android 11
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf<String>(
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ),
+                STORAGE_PERMISSION_CODE
+            )
+            chooseProjectFile()
         }
 
-        val onCompleteCheck: CompletionTask = { returnCode: Int ->
-            Thread.sleep(1000)
-            if (returnCode != 0) {
-                runOnUiThread {
-                    progressBarCompilation.visibility = View.INVISIBLE
-                    compilationEndState.text = "Check engine failure"
-                }
-                Thread.sleep(2000)
-                setResult(returnCode)
-            } else {
-                currentLogs?.step?.status = CompileStepStatus.SUCCESS
-                currentLogs = compilationLogs
-                currentLogs?.step?.status = CompileStepStatus.IN_PROGRESS
-                runOnUiThread {
-                    compilationStepsView.collapseGroup(0)
-                    compilationStepsView.expandGroup(1, true)
-                }
-                rubyInterpreter.enqueue(RubyScript(assets, SCRIPT), onCompleteCompilation)
-            }
-        }
+    }
+
+    private fun selectProjectFile() {
         try {
-            currentLogs = checkEngineLogs
-            rubyInterpreter.enqueue(RubyScript(assets, CHECK_ENGINE_SCRIPT), onCompleteCheck);
-        } catch (ex: Exception) {
-            Toast.makeText(applicationContext, ex.localizedMessage, Toast.LENGTH_LONG).show()
+            askForExternalStorageAndChooseFile()
+        } catch (ex: ActivityNotFoundException) {
+            Toast.makeText(applicationContext, "No suitable File Manager was found.", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun buildPsdkProcessData(): ScriptCurrentLocation {
-        return ScriptCurrentLocation(m_internalWriteablePath, m_executionLocation, applicationInfo.nativeLibraryDir, m_archiveLocation)
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            STORAGE_PERMISSION_CODE -> {
+                handlePermissionsRequestResult(grantResults)
+            }
+            else -> {}
+        }
     }
+
+    private fun chooseProjectFile() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+        intent.type = "*/*"
+        intent.addCategory(Intent.CATEGORY_OPENABLE)
+        val chooseFile = Intent.createChooser(intent, "Choose a file")
+        chooseProjectFileActivityResultLauncher.launch(chooseFile)
+    }
+
+    private val compileGameActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private val chooseProjectFileActivityResultLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val path = PathUtil(applicationContext).getPathFromUri(result.data?.data)
+            m_withSavedArchive = false
+            setArchiveLocationValue(path, true)
+        }
+
+    private val storageActivityForFileSelectionResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            //Android is 11 (R) or above
+            if (Environment.isExternalStorageManager()) {
+                //Manage External Storage Permissions Granted
+                chooseProjectFile()
+            } else {
+                Toast.makeText(
+                    this@CompileActivity,
+                    "Storage Permissions Denied",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            //Below android 11, just bypass it
+            chooseProjectFile()
+        }
+    }
+
+    private val isValidState: Boolean
+        get() = m_permissionErrorMessage == null && m_badArchiveLocation == null
 
     companion object {
-        private const val SCRIPT = "compile.rb"
-        private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
+        private const val STORAGE_PERMISSION_CODE = 23
+        private const val PROJECT_LOCATION_STRING = "location"
     }
 }

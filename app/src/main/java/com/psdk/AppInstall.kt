@@ -37,14 +37,13 @@ object AppInstall {
         }
     }
 
-    fun unpackToStartGameIfRelease(activity: Activity): Boolean {
+    fun unpackToStartGameIfRelease(activity: Activity, releaseFolderInAssets: String, releaseLocation: String): Boolean {
         try {
-            val gameDir = "Release"
-            val gameFiles = recursivelyListAllFiles(activity.assets, gameDir) ?: return false
+            val gameFiles = recursivelyListAllFiles(activity.assets, releaseFolderInAssets, 0)
             if (gameFiles.isEmpty()) {
                 return false
             }
-            val dataDir = File(activity.application.applicationInfo.dataDir + "/" + gameDir)
+            val dataDir = File(releaseLocation)
             if (!dataDir.exists()) {
                 dataDir.mkdir()
             }
@@ -57,18 +56,20 @@ object AppInstall {
         }
     }
 
-    private fun recursivelyListAllFiles(assetManager: AssetManager, dir: String): List<String> {
-        val gameFiles = assetManager.list(dir)
+    private fun recursivelyListAllFiles(assetManager: AssetManager, dirOrFile: String, depth: Int): List<String> {
+        val gameFiles = assetManager.list(dirOrFile)
         if (gameFiles.isNullOrEmpty()) {
-            return listOf(dir)
+            // File
+            return if (depth == 0) listOf() else listOf(dirOrFile)
         }
+        // Directory
         return Arrays.stream(gameFiles).flatMap { file ->
-            recursivelyListAllFiles(assetManager, "$dir/$file").stream()
+            recursivelyListAllFiles(assetManager, "$dirOrFile/$file", depth + 1).stream()
         }.toList()
     }
 
-    fun unpackExtraAssetsIfNeeded(activity: Activity, preferences: SharedPreferences?): String? {
-        if (preferences != null && preferences.getBoolean(INSTALL_NEEDED, true)) {
+    fun unpackExtraAssetsIfNeeded(activity: Activity, preferences: SharedPreferences): String? {
+        if (preferences.getBoolean(INSTALL_NEEDED, true)) {
             val internalWriteablePath = activity.filesDir.absolutePath
             val rubyArchive = activity.assets.open("ruby-stdlib.zip")
             UnzipUtility.unzip(rubyArchive, internalWriteablePath)

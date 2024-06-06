@@ -80,7 +80,6 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
                 e.printStackTrace()
                 onLogError(e)
                 onComplete.invoke(1)
-                throw RuntimeException(e)
             }
         }
 

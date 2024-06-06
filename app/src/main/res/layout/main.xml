@@ -14,7 +14,7 @@
             android:id="@+id/textView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="PSDK for Android v0.3-SNAPSHOT"
+            android:text="PSDK Builder v1.0-SNAPSHOT"
             android:textAlignment="center"
             android:textSize="16sp"
             android:textStyle="bold" />
@@ -29,73 +29,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/startGame"
-                    android:layout_width="200dp"
-                    android:layout_height="wrap_content"
-                    android:text="START" />
-
-                <Button
-                    android:id="@+id/compileGame"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="COMPILE" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/psdkLocationTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="PSDK Archive location"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <EditText
-                android:id="@+id/psdkLocation"
-                android:layout_width="396dp"
-                android:layout_height="wrap_content"
-                android:ems="10"
-                android:hint="Path to project.psa"
-                android:inputType="textPersonName"
-                android:minHeight="48dp" />
-
-            <CheckedTextView
-                android:id="@+id/psdkLocationValid"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:checkMark="@drawable/check_mark"
-                android:checked="true"
-                android:text="PSDK Location validity" />
-
-            <Button
-                android:id="@+id/locatePSDK"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Locate PSDK archive" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/textView4"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Project compatibility errors" />
-
-                <TextView
-                    android:id="@+id/projectEngineHealth"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/informationLayout"
@@ -192,20 +125,39 @@
 
             </LinearLayout>
 
+            <Button
+                android:id="@+id/startGame"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Test game" />
+
+            <Button
+                android:id="@+id/compileGame"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="COMPILE" />
+
+            <Button
+                android:id="@+id/shareApplication"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="export"
+                android:visibility="gone" />
+
         </LinearLayout>
 
-        <Button
-            android:id="@+id/shareApplication"
+        <TextView
+            android:id="@+id/textView11"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="share compiled game"
-            android:visibility="invisible" />
+            android:text="Extra actions" />
 
         <Button
             android:id="@+id/showLogDetails"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="show log details"
+            android:text="game log details"
             android:visibility="visible" />
 
     </LinearLayout>
