@@ -80,6 +80,11 @@ dependencies {
     implementation fileTree(dir: 'libs', include: '*.jar')
     implementation(libs.apkzlib)
     implementation(libs.apksig)
+    implementation(libs.axml) {
+        version {
+            branch = 'master'
+        }
+    }
     implementation(libs.bcpkix.jdk15on)
     implementation(libs.appcompat)
     implementation(libs.material)
