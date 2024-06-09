@@ -10,23 +10,17 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
-import com.apk.axml.aXMLDecoder
-import com.apk.axml.aXMLEncoder
+import com.iyxan23.zipalignjava.ZipAlign
 import com.psdk.signing.Signer
 import com.psdk.signing.buildDefaultSigningOptions
+import com.reandroid.apk.ApkModule
+import com.reandroid.app.AndroidManifest
+import com.reandroid.arsc.chunk.xml.ResXmlElement
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
+import java.io.RandomAccessFile
 import java.security.SecureRandom
-import javax.xml.parsers.DocumentBuilderFactory
-import javax.xml.transform.OutputKeys
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.stream.StreamResult
 
 
 class BuildApkActivity: ComponentActivity()  {
@@ -95,11 +89,11 @@ class BuildApkActivity: ComponentActivity()  {
         }
         tmpCacheExportDirectory.mkdir()
 
-        val totalSteps = 5
+        val totalSteps = 6
         val leftOver = 5.0
         val progressIncrement = (100.0 - leftOver) / totalSteps
         var progressValue = 0
-        val thread: Thread = object : Thread() {
+        val thread: Thread = object : Thread(null, null, "Thread-export-PSDK", 4096) {
             override fun run() {
                 try {
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
@@ -109,7 +103,9 @@ class BuildApkActivity: ComponentActivity()  {
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
                     bundleCompiledGame(progressBarTitle, appFolder, tmpResultApkUnsigned)
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
-                    val resultSignedApk = signApk(progressBarTitle, tmpResultApkUnsigned, tmpCacheExportDirectory, newPackageName)
+                    val tmpAlignedApk = zipalign(progressBarTitle, tmpResultApkUnsigned, tmpCacheExportDirectory)
+                    progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
+                    val resultSignedApk = signApk(progressBarTitle, tmpAlignedApk, tmpCacheExportDirectory, newPackageName)
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
                     shareApk(progressBarTitle, resultSignedApk)
                 } finally {
@@ -120,6 +116,21 @@ class BuildApkActivity: ComponentActivity()  {
             }
         }
         thread.start()
+    }
+
+    private fun zipalign(progressBarTitle: TextView, apk: File, tmpCacheExportDirectory: File): File {
+        runOnUiThread {
+            progressBarTitle.setText("Zip aligning")
+        }
+
+        val alignedApk = File.createTempFile(
+            "app-output-aligned",
+            ".apk",
+            tmpCacheExportDirectory
+        )
+
+        ZipAlign.alignZip(RandomAccessFile(apk, "r"), alignedApk.outputStream(), 4);
+        return alignedApk;
     }
 
     private fun incrementProgress(progressBar: ProgressBar, progressValue: Int, progressIncrement: Double): Int {
@@ -139,46 +150,37 @@ class BuildApkActivity: ComponentActivity()  {
             progressBarTitle.setText("Modifying application identifier")
         }
 
-        val manifestFilename = "AndroidManifest.xml"
-        val zipFile = ZipFile(tmpResultApkUnsigned.path)
-        val fileHeader = zipFile.getFileHeader(manifestFilename)
-        val androidManifestStream: InputStream = zipFile.getInputStream(fileHeader)
-        val decodedManifest = aXMLDecoder().decode(androidManifestStream)
-        val editedManifest = parseAndReplaceApplicationId(decodedManifest, newPackageName)
-        val recodedManifest = aXMLEncoder().encodeString(this.applicationContext, editedManifest)
+        // Note: applicationId == package name (when compiled)
+        val apkModule = ApkModule.loadApkFile(tmpResultApkUnsigned)
+        val oldPackageName = apkModule.androidManifest.packageName
 
-        val resultManifest = File.createTempFile("manifest", null, tmpCacheExportDirectory);
-        Files.write(resultManifest.toPath(), recodedManifest)
-        val zipParameters = ZipParameters()
-        zipParameters.fileNameInZip  = manifestFilename
-        zipParameters.isOverrideExistingFilesInZip = true
-        zipFile.addFile(resultManifest)
-        resultManifest.delete()
-    }
+        // Resetting package name in AndroidManifest.xml
+        apkModule.androidManifest.packageName = newPackageName
 
-    private fun parseAndReplaceApplicationId(decodedManifest: String, newPackageName: String): String {
-        val builder = DocumentBuilderFactory.newInstance().newDocumentBuilder()
-        val doc = builder.parse(decodedManifest.byteInputStream(Charsets.UTF_8))
-        // Normalize the XML structure
-        doc.documentElement.normalize()
-        // Get the manifest element
-        val manifestElement = doc.getElementsByTagName("manifest").item(0)
-
-        // Replace the package attribute
-        if (manifestElement != null && manifestElement.attributes != null) {
-            val packageNode = manifestElement.attributes.getNamedItem("package")
-            packageNode.nodeValue = newPackageName
+        // Resetting package name in the table block of resources.arsc
+        apkModule.tableBlock.listPackages().filter {
+            packageBlock -> packageBlock.name == oldPackageName
+        }.forEach { packageBlock ->
+            packageBlock.name = newPackageName
         }
 
-        // Write the updated document back to the buffer
-        val transformerFactory = TransformerFactory.newInstance()
-        val transformer = transformerFactory.newTransformer()
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes")
-        val source = DOMSource(doc)
-        val buffer = ByteArrayOutputStream()
-        transformer.transform(source, StreamResult(buffer))
-        val bytes = buffer.toByteArray()
-        return String(bytes, StandardCharsets.UTF_8)
+        // Updating every file provider to start with the new package name
+        val itProvider = apkModule.androidManifest.applicationElement.getElements("provider")
+        while (itProvider.hasNext()) {
+            val provider = itProvider.next()
+            val authorities = provider.listAttributes().find { attribute -> attribute.name == "authorities" }
+            if (authorities != null && authorities.valueString.startsWith(oldPackageName)) {
+                authorities.valueAsString = authorities.valueString.replace(oldPackageName, newPackageName)
+            }
+        }
+
+        apkModule.androidManifest.setApplicationLabel("LOL")
+
+        val icon = apkModule.tableBlock.getResource(newPackageName, "drawable", "logo")
+
+
+        // Write the modifications to the current zip file
+        apkModule.writeApk(tmpResultApkUnsigned)
     }
 
     private fun bundleCompiledGame(progressBarTitle: TextView, appFolder: File, tmpResultApkUnsigned: File) {
@@ -188,7 +190,9 @@ class BuildApkActivity: ComponentActivity()  {
 
         val zipParameters = ZipParameters()
         zipParameters.rootFolderNameInZip = "assets"
-        ZipFile(tmpResultApkUnsigned).addFolder(appFolder, zipParameters)
+        val bundledApk = ZipFile(tmpResultApkUnsigned)
+        bundledApk.addFolder(appFolder, zipParameters)
+        bundledApk.close()
     }
 
     private fun copySelfApkIntoTmpApk(progressBarTitle: TextView, tmpCacheExportDirectory: File): File {
@@ -224,7 +228,7 @@ class BuildApkActivity: ComponentActivity()  {
             share.type = "application/vnd.android.package-archive"
             val finalApp = FileProvider.getUriForFile(
                 this@BuildApkActivity,
-                "com.psdk.starter.provider",
+                applicationContext.packageName + ".provider",
                 signedApk
             )
             share.putExtra(Intent.EXTRA_STREAM, finalApp)
