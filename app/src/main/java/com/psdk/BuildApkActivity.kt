@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
@@ -14,23 +16,32 @@ import com.iyxan23.zipalignjava.ZipAlign
 import com.psdk.signing.Signer
 import com.psdk.signing.buildDefaultSigningOptions
 import com.reandroid.apk.ApkModule
-import com.reandroid.app.AndroidManifest
-import com.reandroid.arsc.chunk.xml.ResXmlElement
+import com.reandroid.archive.ByteInputSource
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.security.SecureRandom
 
 
 class BuildApkActivity: ComponentActivity()  {
 
+    private var m_applicationLogo: File? = null
+
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.builder)
-        val changeApplicationName = findViewById<View>(R.id.changeApplicationName) as TextView
-        changeApplicationName.setText(getApplicationName(applicationContext))
-        val progressBarContainer = findViewById<View>(R.id.progressBarContainer) as LinearLayout
+
+        val changeApplicationLogo = findViewById<ImageButton>(R.id.changeApplicationLogo)
+        changeApplicationLogo.setOnClickListener {
+            chooseApplicationLogo()
+        }
+        val changeApplicationName = findViewById<TextView>(R.id.changeApplicationName)
+        changeApplicationName.setText(getApplicationName(applicationContext) + " fan game")
+        val progressBarContainer = findViewById<LinearLayout>(R.id.progressBarContainer)
         progressBarContainer.visibility = View.INVISIBLE
         val exportGameButton = findViewById<View>(R.id.export) as TextView
         val appFolder = intent.getStringExtra("APK_FOLDER_LOCATION")
@@ -67,15 +78,12 @@ class BuildApkActivity: ComponentActivity()  {
     }
 
     private fun shareApplicationOutput(appFolder: File) {
-        /* TODO
-            1. add possibility to edit the logo (replace the logo.png inside the archive)
-            2. add a way to change the application name in strings.xml inside the archive
-         */
         val progressBarContainer = findViewById<View>(R.id.progressBarContainer) as LinearLayout
         val progressBarTitle = findViewById<View>(R.id.progressBarTitle) as TextView
         val progressBar = findViewById<View>(R.id.progressBar) as ProgressBar
         val newApplicationName = findViewById<TextView>(R.id.changeApplicationName)
-        var newPackageName = newApplicationName.text.toString().lowercase().replace("[^a-zA-Z0-9]", "")
+
+        var newPackageName = newApplicationName.text.toString().lowercase().replace(Regex("[^a-z0-9]"), "")
         if (newPackageName.isEmpty() || newApplicationName.text.toString().equals(getApplicationName(applicationContext))) {
             newPackageName = generateRandomString(10)
         }
@@ -89,18 +97,32 @@ class BuildApkActivity: ComponentActivity()  {
         }
         tmpCacheExportDirectory.mkdir()
 
-        val totalSteps = 6
+        val totalSteps = 7
         val leftOver = 5.0
         val progressIncrement = (100.0 - leftOver) / totalSteps
         var progressValue = 0
-        val thread: Thread = object : Thread(null, null, "Thread-export-PSDK", 4096) {
+        val thread: Thread = object : Thread(null, null, "Thread-export-PSDK", 4096 * 2) {
             override fun run() {
                 try {
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
                     val tmpResultApkUnsigned = copySelfApkIntoTmpApk(progressBarTitle, tmpCacheExportDirectory)
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
-                    changeApplicationId(progressBarTitle, newPackageName, tmpResultApkUnsigned, tmpCacheExportDirectory)
+
+                    val apkModule = ApkModule.loadApkFile(tmpResultApkUnsigned)
+                    changeApplicationId(progressBarTitle, newPackageName, apkModule)
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
+                    changeApplicationNameAndLogo(
+                        progressBarTitle,
+                        apkModule,
+                        newPackageName,
+                        newApplicationName.text.toString(),
+                        m_applicationLogo?.inputStream()
+                    )
+                    progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
+                    // Write the modifications to the current zip file
+                    apkModule.writeApk(tmpResultApkUnsigned)
+                    apkModule.close()
+
                     bundleCompiledGame(progressBarTitle, appFolder, tmpResultApkUnsigned)
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
                     val tmpAlignedApk = zipalign(progressBarTitle, tmpResultApkUnsigned, tmpCacheExportDirectory)
@@ -145,15 +167,45 @@ class BuildApkActivity: ComponentActivity()  {
         return result
     }
 
-    private fun changeApplicationId(progressBarTitle: TextView, newPackageName:String, tmpResultApkUnsigned: File, tmpCacheExportDirectory: File) {
+    private fun changeApplicationNameAndLogo(progressBarTitle: TextView, apkModule: ApkModule, newPackageName: String, newLabel: String, newLogo: InputStream?) {
+        runOnUiThread {
+            progressBarTitle.setText("Modifying application name and logo")
+        }
+
+        apkModule.androidManifest.setApplicationLabel(newLabel)
+        apkModule.tableBlock.listPackages().filter {
+                packageBlock -> packageBlock.name == newPackageName
+        }.forEach { packageBlock ->
+            val appName = packageBlock.getOrCreate("", "string", "app_name")
+            appName.setValueAsString(newLabel)
+        }
+
+        val logo = apkModule.tableBlock.getResource(newPackageName, "drawable", "logo")
+        val logoFilePath = logo.get().resValue
+        val logoSource = apkModule.zipEntryMap.getInputSource(logoFilePath.valueAsString)
+
+        // If logo is null, just copy the actual app icon
+        val byteStream = ByteArrayOutputStream()
+        streamToStream(if (newLogo == null) logoSource.openStream() else newLogo, byteStream)
+
+        // Build the logo
+        val newLogoSource = ByteInputSource(byteStream.toByteArray(), logoFilePath.valueAsString)
+
+        // Remove the old logo
+        apkModule.zipEntryMap.remove(logoSource)
+
+        // Add the new logo
+        apkModule.add(newLogoSource)
+    }
+
+    private fun changeApplicationId(progressBarTitle: TextView, newPackageName:String, apkModule: ApkModule) {
         runOnUiThread {
             progressBarTitle.setText("Modifying application identifier")
         }
 
         // Note: applicationId == package name (when compiled)
-        val apkModule = ApkModule.loadApkFile(tmpResultApkUnsigned)
-        val oldPackageName = apkModule.androidManifest.packageName
 
+        val oldPackageName = apkModule.androidManifest.packageName
         // Resetting package name in AndroidManifest.xml
         apkModule.androidManifest.packageName = newPackageName
 
@@ -174,13 +226,15 @@ class BuildApkActivity: ComponentActivity()  {
             }
         }
 
-        apkModule.androidManifest.setApplicationLabel("LOL")
+    }
 
-        val icon = apkModule.tableBlock.getResource(newPackageName, "drawable", "logo")
-
-
-        // Write the modifications to the current zip file
-        apkModule.writeApk(tmpResultApkUnsigned)
+    private fun streamToStream(ins: InputStream, out: OutputStream) {
+        val buffer = ByteArray(1024)
+        var len: Int = ins.read(buffer)
+        while (len != -1) {
+            out.write(buffer, 0, len)
+            len = ins.read(buffer)
+        }
     }
 
     private fun bundleCompiledGame(progressBarTitle: TextView, appFolder: File, tmpResultApkUnsigned: File) {
@@ -235,6 +289,27 @@ class BuildApkActivity: ComponentActivity()  {
             shareGameAppActivityResultLauncher.launch(Intent.createChooser(share, "Share App"))
         }
     }
+
+    private fun chooseApplicationLogo() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+        intent.type = "image/*"
+        intent.addCategory(Intent.CATEGORY_OPENABLE)
+        val chooseFile = Intent.createChooser(intent, "Choose a logo")
+        chooseApplicationLogoActivityResultLauncher.launch(chooseFile)
+    }
+
+    private val chooseApplicationLogoActivityResultLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.data?.data != null) {
+                val changeApplicationLogo = findViewById<ImageButton>(R.id.changeApplicationLogo)
+                changeApplicationLogo.setImageURI(result.data?.data)
+                m_applicationLogo = File(PathUtil(applicationContext).getPathFromUri(result.data?.data)!!)
+            } else {
+                Toast.makeText(applicationContext, "No file selected", Toast.LENGTH_LONG).show()
+            }
+        }
 
     private fun signApk(progressBarTitle: TextView, inApk: File, tmpCacheExportDirectory: File, outputName: String): File {
         runOnUiThread {
