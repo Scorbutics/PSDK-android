@@ -21,7 +21,7 @@ static int MakeFifo(const char* fifo) {
 }
 
 int ExecMainRubyVM(const char* scriptContent, const char* fifoLogsOrFilename, const char* fifoCommands, const char* fifoReturn,
-                   const char* internalWriteablePath, const char* executionLocation, const char* nativeLibsDirLocation, const char* additionalParam, int isFifoRealFile)
+                   const char* rubyDirectoryPath, const char* executionLocation, const char* nativeLibsDirLocation, const char* additionalParam, int isFifoRealFile)
 {
     if (fifoLogsOrFilename != NULL) {
         LoggingThreadRun("com.psdk.starter", fifoLogsOrFilename, isFifoRealFile);
@@ -46,7 +46,7 @@ int ExecMainRubyVM(const char* scriptContent, const char* fifoLogsOrFilename, co
             return 4;
         }
     }
-    const int rubyReturn = ExecRubyVM(internalWriteablePath, nativeLibsDirLocation, scriptContent, 0);
+    const int rubyReturn = ExecRubyVM(rubyDirectoryPath, nativeLibsDirLocation, scriptContent, 0);
 
     if (fifoLogsOrFilename != NULL) {
         g_logging_thread_continue = 0;

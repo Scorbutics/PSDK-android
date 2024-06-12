@@ -9,8 +9,8 @@ import java.util.UUID
 
 @Dao
 interface ProjectDao {
-    @Query("SELECT * FROM project")
-    fun getAll(): List<Project>
+    @Query("SELECT * FROM project where rootDirectoryId = :rootDirectoryId")
+    fun getAllByDirectory(rootDirectoryId: String): List<Project>
 
     @Query("SELECT * FROM project WHERE id = :projectId")
     fun findById(projectId: UUID): Project

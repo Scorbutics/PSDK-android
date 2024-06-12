@@ -1,5 +1,6 @@
 package com.psdk
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.SharedPreferences
@@ -24,19 +25,20 @@ class CompileActivity: ComponentActivity() {
 
     private var m_archiveLocation: String? = null
     private var m_badArchiveLocation: String? = null
-    private var m_projectPreferences: SharedPreferences? = null
+    private lateinit var m_projectPreferences: SharedPreferences
     private var m_releaseLocation: String? = null
     private var m_withSavedArchive: Boolean = false
+    private var m_executionLocation: String? = null
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.compiler)
-        if (m_projectPreferences == null) {
-            m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
-        }
+        m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
 
-        val executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
+        m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_releaseLocation = intent.getStringExtra("RELEASE_LOCATION")
+        val rubyBaseDir = intent.getStringExtra("RUBY_BASEDIR")
+        val nativeLibsDir = intent.getStringExtra("NATIVE_LIBS_LOCATION")
 
         val psdkLocation = m_projectPreferences!!.getString(PROJECT_LOCATION_STRING,"")
         m_withSavedArchive = psdkLocation?.isNotEmpty() ?: false
@@ -45,7 +47,9 @@ class CompileActivity: ComponentActivity() {
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener { v: View? ->
             val compileIntent = Intent(this, CompileProcessActivity::class.java)
-            compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
+            compileIntent.putExtra("RUBY_BASEDIR", rubyBaseDir)
+            compileIntent.putExtra("NATIVE_LIBS_LOCATION", nativeLibsDir)
+            compileIntent.putExtra("EXECUTION_LOCATION", m_executionLocation)
             compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
             compileGameActivityResultLauncher.launch(compileIntent)
             return@setOnClickListener
@@ -142,42 +146,34 @@ class CompileActivity: ComponentActivity() {
         chooseProjectFileActivityResultLauncher.launch(chooseFile)
     }
 
-    private val compileGameActivityResultLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {}
-
     private val chooseProjectFileActivityResultLauncher =
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            val path = PathUtil(applicationContext).getPathFromUri(result.data?.data)
-            m_withSavedArchive = false
-            setArchiveLocationValue(path)
+            if (result.resultCode == Activity.RESULT_OK) {
+                val uri = result.data?.data!!
+                if (!importedFile.exists()) {
+                    importedFile.createNewFile()
+                }
+                val out = importedFile.outputStream()
+                val input = contentResolver.openInputStream(uri)
+                input?.copyTo(out)
+                input?.close()
+                out.close()
+                m_withSavedArchive = false
+                setArchiveLocationValue(importedFile.path)
+            }
         }
 
-    private val storageActivityForFileSelectionResultLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            //Android is 11 (R) or above
-            if (Environment.isExternalStorageManager()) {
-                //Manage External Storage Permissions Granted
-                chooseProjectFile()
-            } else {
-                Toast.makeText(
-                    this@CompileActivity,
-                    "Storage Permissions Denied",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        } else {
-            //Below android 11, just bypass it
-            chooseProjectFile()
-        }
-    }
+    private val compileGameActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
 
     private val isValidState: Boolean
         get() = m_badArchiveLocation == null
+
+    private val importedFile: File
+        get() = File("$m_executionLocation/archive.psa")
 
     companion object {
         private const val PROJECT_LOCATION_STRING = "location"

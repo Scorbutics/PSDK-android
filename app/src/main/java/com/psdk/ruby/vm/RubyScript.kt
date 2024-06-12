@@ -6,7 +6,7 @@ import java.io.*
 import java.lang.StringBuilder
 
 class RubyScript internal constructor(assetManager: AssetManager, assetScriptName: String?) {
-    class ScriptCurrentLocation(val internalWriteablePath: String?, val executionLocation: String?, val nativeLibsLocation: String?, val archiveLocation: String?)
+    class ScriptCurrentLocation(val rubyBaseDirectory: String?, val executionLocation: String?, val nativeLibsLocation: String?, val archiveLocation: String?)
 
     private val scriptContent: String
 

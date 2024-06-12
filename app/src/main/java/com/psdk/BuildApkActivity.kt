@@ -1,5 +1,6 @@
 package com.psdk
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -29,7 +30,7 @@ import java.security.SecureRandom
 
 class BuildApkActivity: ComponentActivity()  {
 
-    private var m_applicationLogo: File? = null
+    private var m_applicationLogo: InputStream? = null
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,7 +88,7 @@ class BuildApkActivity: ComponentActivity()  {
         if (newPackageName.isEmpty() || newApplicationName.text.toString().equals(getApplicationName(applicationContext))) {
             newPackageName = generateRandomString(10)
         }
-        newPackageName = "com.psdk." + newPackageName
+        newPackageName = "com.psdk.$newPackageName"
 
         progressBarContainer.visibility = View.VISIBLE
 
@@ -116,7 +117,7 @@ class BuildApkActivity: ComponentActivity()  {
                         apkModule,
                         newPackageName,
                         newApplicationName.text.toString(),
-                        m_applicationLogo?.inputStream()
+                        m_applicationLogo
                     )
                     progressValue = incrementProgress(progressBar, progressValue, progressIncrement)
                     // Write the modifications to the current zip file
@@ -186,7 +187,7 @@ class BuildApkActivity: ComponentActivity()  {
 
         // If logo is null, just copy the actual app icon
         val byteStream = ByteArrayOutputStream()
-        streamToStream(if (newLogo == null) logoSource.openStream() else newLogo, byteStream)
+        streamToStream(newLogo ?: logoSource.openStream(), byteStream)
 
         // Build the logo
         val newLogoSource = ByteInputSource(byteStream.toByteArray(), logoFilePath.valueAsString)
@@ -302,10 +303,12 @@ class BuildApkActivity: ComponentActivity()  {
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            if (result.data?.data != null) {
+            if (result.resultCode == Activity.RESULT_OK && result.data?.data != null) {
                 val changeApplicationLogo = findViewById<ImageButton>(R.id.changeApplicationLogo)
-                changeApplicationLogo.setImageURI(result.data?.data)
-                m_applicationLogo = File(PathUtil(applicationContext).getPathFromUri(result.data?.data)!!)
+                val uri = result.data?.data!!
+                changeApplicationLogo.setImageURI(uri)
+                m_applicationLogo?.close()
+                m_applicationLogo = contentResolver.openInputStream(uri)
             } else {
                 Toast.makeText(applicationContext, "No file selected", Toast.LENGTH_LONG).show()
             }

@@ -15,17 +15,17 @@ import com.psdk.ruby.vm.RubyScript.ScriptCurrentLocation
 
 
 class CompileProcessActivity : ComponentActivity() {
-    private var m_applicationPath: String? = null
-    private var m_internalWriteablePath: String? = null
+    private var m_rubyBaseDirectory: String? = null
     private var m_executionLocation: String? = null
     private var m_archiveLocation: String? = null
+    private var m_nativeLibsLocation: String? = null
     private var m_currentLogs: CompileStepLogs? = null
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.compiler_process)
-        m_applicationPath = applicationInfo.dataDir
-        m_internalWriteablePath = filesDir.path
+        m_nativeLibsLocation = intent.getStringExtra("NATIVE_LIBS_LOCATION")
+        m_rubyBaseDirectory = intent.getStringExtra("RUBY_BASEDIR")
         m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_archiveLocation = intent.getStringExtra("ARCHIVE_LOCATION")
 
@@ -111,7 +111,7 @@ class CompileProcessActivity : ComponentActivity() {
     }
 
     private fun buildPsdkProcessData(): ScriptCurrentLocation {
-        return ScriptCurrentLocation(m_internalWriteablePath, m_executionLocation, applicationInfo.nativeLibraryDir, m_archiveLocation)
+        return ScriptCurrentLocation(m_rubyBaseDirectory, m_executionLocation, m_nativeLibsLocation, m_archiveLocation)
     }
 
     companion object {

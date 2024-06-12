@@ -38,7 +38,7 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         }
 
         mainThread = Thread {
-            exec(main.getContent(), fifoLogsFilename, fifoCommandsFilename, fifoReturnFilename, location.internalWriteablePath, location.executionLocation, location.nativeLibsLocation, location.archiveLocation)
+            exec(main.getContent(), fifoLogsFilename, fifoCommandsFilename, fifoReturnFilename, location.rubyBaseDirectory, location.executionLocation, location.nativeLibsLocation, location.archiveLocation)
         }
         logReaderThread = Thread {
             try {
@@ -90,7 +90,7 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
     }
 
     companion object {
-        private external fun exec(scriptContent: String, fifoLogs: String, fifoCommands: String, fifoReturn: String, internalWriteablePath: String?, executionLocation: String?, nativeLibsDirLocation: String?, additionalParam: String?): Int
+        private external fun exec(scriptContent: String, fifoLogs: String, fifoCommands: String, fifoReturn: String, rubyBaseDirectory: String?, executionLocation: String?, nativeLibsDirLocation: String?, additionalParam: String?): Int
         private const val FIFO_LOGS_NAME = "psdk_fifo_logs"
         private const val FIFO_COMMANDS_NAME = "psdk_fifo_commands"
     }

@@ -33,14 +33,7 @@ class ProjectMainActivity : ComponentActivity() {
         m_database = AppDatabase.getInstance(this)
         val projectDao = m_database.projectDao()
         val projectId = intent.getStringExtra("PROJECT_ID")
-        if (projectId == null || projectId == "") {
-            val newProjectName = intent.getStringExtra("PROJECT_NAME") ?: "New project"
-            val newProjectId = UUID.randomUUID()
-            m_project = Project(newProjectName, newProjectId)
-            projectDao.insertAll(m_project)
-        } else {
-            m_project = projectDao.findById(UUID.fromString(projectId))
-        }
+        m_project = projectDao.findById(UUID.fromString(projectId))
 
         val projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
         val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, projectPreferences)
@@ -59,6 +52,8 @@ class ProjectMainActivity : ComponentActivity() {
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener {
             val compileIntent = Intent(this, CompileActivity::class.java)
+            compileIntent.putExtra("RUBY_BASEDIR", rubyBaseDirectory)
+            compileIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
             compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
             compileIntent.putExtra("RELEASE_LOCATION", releaseLocation)
             compileActivityResultLauncher.launch(compileIntent)
@@ -138,10 +133,9 @@ class ProjectMainActivity : ComponentActivity() {
 
     private fun startGame() {
         val startGameActivityIntent = Intent(this@ProjectMainActivity, NativeActivity::class.java)
-        startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
-        startGameActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
-        startGameActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)
+        startGameActivityIntent.putExtra("RUBY_BASEDIR", rubyBaseDirectory)
         startGameActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
+        startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
         startGameActivityIntent.putExtra("OUTPUT_FILENAME", gameLogOutputFile)
         FileWriter(gameLogOutputFile, false).flush()
         val startScript: String = RubyScript.readFromAssets(assets, "start.rb")
@@ -150,7 +144,10 @@ class ProjectMainActivity : ComponentActivity() {
     }
 
     private val executionLocation: String
-        get() = applicationInfo.dataDir
+        get() = m_project.directory
+
+    private val rubyBaseDirectory: String
+        get() = filesDir.path
 
     private val gameLogOutputFile: String
         get() = "$executionLocation/last_stdout.log"

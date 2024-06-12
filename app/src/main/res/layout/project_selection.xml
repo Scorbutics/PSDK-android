@@ -92,10 +92,17 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"></LinearLayout>
 
-    <Button
-        android:id="@+id/newProject"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="New project" />
+    <RelativeLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <ImageButton
+            android:id="@+id/newProject"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:contentDescription="Create new project"
+            android:src="@android:drawable/ic_menu_add" />
+    </RelativeLayout>
 
 </LinearLayout>
