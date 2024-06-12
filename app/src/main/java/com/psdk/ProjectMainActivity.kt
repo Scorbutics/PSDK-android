@@ -2,31 +2,45 @@ package com.psdk
 
 import android.app.NativeActivity
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import com.psdk.ruby.RubyInfo
+import com.psdk.db.AppDatabase
+import com.psdk.db.entities.Project
 import com.psdk.ruby.vm.RubyScript
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.UUID
 
 
-class MainActivity : ComponentActivity() {
+class ProjectMainActivity : ComponentActivity() {
+    private lateinit var m_project: Project
+    private lateinit var m_database: AppDatabase
+
     internal enum class Mode {
         START_GAME, COMPILE
     }
 
-    init {
-        System.loadLibrary("jni")
-    }
-
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        m_database = AppDatabase.getInstance(this)
+        val projectDao = m_database.projectDao()
+        val projectId = intent.getStringExtra("PROJECT_ID")
+        if (projectId == null || projectId == "") {
+            val newProjectName = intent.getStringExtra("PROJECT_NAME") ?: "New project"
+            val newProjectId = UUID.randomUUID()
+            m_project = Project(newProjectName, newProjectId)
+            projectDao.insertAll(m_project)
+        } else {
+            m_project = projectDao.findById(UUID.fromString(projectId))
+        }
 
         val projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
         val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, projectPreferences)
@@ -37,7 +51,10 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        setContentView(R.layout.main)
+        setContentView(R.layout.project_main_page)
+
+        val projectHeader = findViewById<TextView>(R.id.projectHeader)
+        projectHeader.text = m_project.name
 
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener {
@@ -55,17 +72,6 @@ class MainActivity : ComponentActivity() {
             readLogDetailsActivityResultLauncher.launch(readLogDetailsIntent)
             return@setOnClickListener
         }
-
-        val sb = StringBuilder()
-        for (abi in Build.SUPPORTED_ABIS) {
-            sb.append("$abi/ ")
-        }
-        val abiVersion = findViewById<TextView>(R.id.deviceAbiVersion)
-        abiVersion.text = sb.toString()
-        val rubyVersion = findViewById<TextView>(R.id.engineRubyVersion)
-        rubyVersion.text = RubyInfo.rubyVersion
-        val rubyPlatform = findViewById<TextView>(R.id.engineRubyPlatform)
-        rubyPlatform.text = RubyInfo.rubyPlatform
 
         refreshScreenData()
     }
@@ -131,7 +137,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startGame() {
-        val startGameActivityIntent = Intent(this@MainActivity, NativeActivity::class.java)
+        val startGameActivityIntent = Intent(this@ProjectMainActivity, NativeActivity::class.java)
         startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
         startGameActivityIntent.putExtra("INTERNAL_STORAGE_LOCATION", filesDir.path)
         startGameActivityIntent.putExtra("EXTERNAL_STORAGE_LOCATION", getExternalFilesDir(null)!!.path)

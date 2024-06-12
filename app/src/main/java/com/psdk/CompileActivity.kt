@@ -1,37 +1,27 @@
 package com.psdk
 
-import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
 import android.widget.Button
 import android.widget.CheckedTextView
-import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.ActivityCompat
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
-import java.util.Arrays
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
 class CompileActivity: ComponentActivity() {
 
-    private var m_permissionErrorMessage: String? = null
     private var m_archiveLocation: String? = null
     private var m_badArchiveLocation: String? = null
     private var m_projectPreferences: SharedPreferences? = null
@@ -42,7 +32,7 @@ class CompileActivity: ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.compiler)
         if (m_projectPreferences == null) {
-            m_projectPreferences = getSharedPreferences(MainActivity.PROJECT_KEY, MODE_PRIVATE)
+            m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
         }
 
         val executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
@@ -50,7 +40,7 @@ class CompileActivity: ComponentActivity() {
 
         val psdkLocation = m_projectPreferences!!.getString(PROJECT_LOCATION_STRING,"")
         m_withSavedArchive = psdkLocation?.isNotEmpty() ?: false
-        setArchiveLocationValue(psdkLocation, true)
+        setArchiveLocationValue(psdkLocation)
 
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener { v: View? ->
@@ -63,16 +53,6 @@ class CompileActivity: ComponentActivity() {
 
         val locatePsdkButton = findViewById<View>(R.id.locatePSDK) as Button
         locatePsdkButton.setOnClickListener { v: View? -> selectProjectFile() }
-        val psdkLocationText = findViewById<View>(R.id.psdkLocation) as EditText
-        psdkLocationText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence, start: Int, before: Int, count: Int) {
-                m_withSavedArchive = false
-                setArchiveLocationValue(psdkLocationText.text.toString(), false)
-            }
-
-            override fun afterTextChanged(s: Editable) {}
-        })
     }
 
     private fun checkFilepathValid(filepath: String?): String? {
@@ -108,12 +88,8 @@ class CompileActivity: ComponentActivity() {
         }
     }
 
-    private fun setArchiveLocationValue(location: String?, triggerEvent: Boolean) {
+    private fun setArchiveLocationValue(location: String?) {
         m_archiveLocation = location?.trim { it <= ' ' }
-        val psdkLocation = findViewById<View>(R.id.psdkLocation) as EditText
-        if (triggerEvent) {
-            psdkLocation.setText(m_archiveLocation)
-        }
 
         val projectEngineHealth = findViewById<TextView>(R.id.projectEngineHealth)
         if (m_withSavedArchive) {
@@ -132,9 +108,8 @@ class CompileActivity: ComponentActivity() {
                             edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation)
                             edit.apply()
                             projectEngineHealth.text = "Archive is valid"
-                        } else {
-                            projectEngineHealth.text =
-                                "$m_permissionErrorMessage $m_badArchiveLocation"
+                        } else if (m_badArchiveLocation != null) {
+                            projectEngineHealth.text = m_badArchiveLocation
                         }
                     }
                 }
@@ -150,60 +125,12 @@ class CompileActivity: ComponentActivity() {
         clickButton.isEnabled = validState
         return validState
     }
-    private fun handlePermissionsRequestResult(grantResults: IntArray) {
-        if (Arrays.stream(grantResults).anyMatch { i: Int -> i != PackageManager.PERMISSION_GRANTED }) {
-            m_permissionErrorMessage = "You must have read and write to external storage permissions in order to use PSDK"
-        }
-    }
-
-    private fun askForExternalStorageAndChooseFile() {
-        //Android is 11 (R) or above
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (Environment.isExternalStorageManager()) {
-                chooseProjectFile()
-            } else {
-                try {
-                    val intent = Intent()
-                    intent.setAction(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    val uri = Uri.fromParts("package", this.packageName, null)
-                    intent.setData(uri)
-                    storageActivityForFileSelectionResultLauncher.launch(intent)
-                } catch (e: java.lang.Exception) {
-                    val intent = Intent()
-                    intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    storageActivityForFileSelectionResultLauncher.launch(intent)
-                }
-            }
-        } else {
-            //Below android 11
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf<String>(
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ),
-                STORAGE_PERMISSION_CODE
-            )
-            chooseProjectFile()
-        }
-
-    }
 
     private fun selectProjectFile() {
         try {
-            askForExternalStorageAndChooseFile()
+            chooseProjectFile()
         } catch (ex: ActivityNotFoundException) {
             Toast.makeText(applicationContext, "No suitable File Manager was found.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            STORAGE_PERMISSION_CODE -> {
-                handlePermissionsRequestResult(grantResults)
-            }
-            else -> {}
         }
     }
 
@@ -225,7 +152,7 @@ class CompileActivity: ComponentActivity() {
         ) { result ->
             val path = PathUtil(applicationContext).getPathFromUri(result.data?.data)
             m_withSavedArchive = false
-            setArchiveLocationValue(path, true)
+            setArchiveLocationValue(path)
         }
 
     private val storageActivityForFileSelectionResultLauncher = registerForActivityResult(
@@ -250,10 +177,9 @@ class CompileActivity: ComponentActivity() {
     }
 
     private val isValidState: Boolean
-        get() = m_permissionErrorMessage == null && m_badArchiveLocation == null
+        get() = m_badArchiveLocation == null
 
     companion object {
-        private const val STORAGE_PERMISSION_CODE = 23
         private const val PROJECT_LOCATION_STRING = "location"
     }
 }

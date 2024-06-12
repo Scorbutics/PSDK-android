@@ -12,39 +12,24 @@
         android:textSize="16sp"
         android:textStyle="bold" />
 
-    <EditText
-        android:id="@+id/psdkLocation"
-        android:layout_width="396dp"
-        android:layout_height="wrap_content"
-        android:ems="10"
-        android:hint="Path to project.psa"
-        android:inputType="textPersonName"
-        android:minHeight="48dp" />
-
-    <CheckedTextView
-        android:id="@+id/psdkLocationValid"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:checkMark="@drawable/check_mark"
-        android:checked="true"
-        android:text="PSDK Location validity" />
-
     <Button
         android:id="@+id/locatePSDK"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Locate PSDK archive" />
+        android:text="Import PSDK archive" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/textView4"
+        <CheckedTextView
+            android:id="@+id/psdkLocationValid"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Project compatibility errors" />
+            android:checkMark="@drawable/check_mark"
+            android:checked="true"
+            android:text="Game archive validity" />
 
         <TextView
             android:id="@+id/projectEngineHealth"

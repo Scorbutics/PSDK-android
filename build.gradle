@@ -5,7 +5,7 @@ buildscript {
         mavenCentral()
         maven { url "https://jitpack.io" }
     }
-    ext.kotlin_version = '1.7.20'
+    ext.kotlin_version = '1.9.10'
 
     dependencies {
         classpath libs.gradle
@@ -14,6 +14,10 @@ buildscript {
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
     }
+}
+
+plugins {
+    id 'org.jetbrains.kotlin.plugin.serialization' version "$kotlin_version" apply false
 }
 
 allprojects {

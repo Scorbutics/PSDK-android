@@ -2,10 +2,12 @@
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
+    id 'org.jetbrains.kotlin.plugin.serialization'
+    id 'com.google.devtools.ksp' version "1.9.10-1.0.13"
 }
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
 
     sourceSets {
         main {
@@ -68,6 +70,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
+    }
     buildFeatures {
         viewBinding true
         buildConfig true
@@ -76,7 +81,16 @@ android {
     namespace 'com.psdk'
 }
 
+kotlin {
+    jvmToolchain(JavaVersion.VERSION_17.majorVersion.toInteger())
+}
+
 dependencies {
+    def room_version = "2.6.1"
+    implementation "androidx.room:room-runtime:$room_version"
+    annotationProcessor "androidx.room:room-compiler:$room_version"
+    ksp "androidx.room:room-compiler:$room_version"
+
     implementation fileTree(dir: 'libs', include: '*.jar')
     implementation(libs.apkzlib)
     implementation(libs.apksig)
@@ -88,5 +102,6 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.zip4j)
     implementation(libs.legacy)
+    implementation(libs.kotlinx.serialization)
     implementation libs.kotlin.stdlib
 }
