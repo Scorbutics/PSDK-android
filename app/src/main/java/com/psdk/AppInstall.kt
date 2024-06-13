@@ -17,6 +17,7 @@ import java.io.*
 import java.lang.Exception
 import java.util.ArrayList
 import java.util.Arrays
+import java.util.stream.Collectors
 import kotlin.streams.toList
 
 object AppInstall {
@@ -65,7 +66,7 @@ object AppInstall {
         // Directory
         return Arrays.stream(gameFiles).flatMap { file ->
             recursivelyListAllFiles(assetManager, "$dirOrFile/$file", depth + 1).stream()
-        }.toList()
+        }.collect(Collectors.toList())
     }
 
     fun unpackExtraAssetsIfNeeded(activity: Activity, preferences: SharedPreferences): String? {

@@ -2,8 +2,6 @@ require 'libLiteRGSS'
 
 Project_path = Dir.pwd
 PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
-STDERR.puts "Project path: #{Project_path}"
-STDERR.puts "Archive: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
 LiteRGSS::AssetWriter::write_dir = Project_path
 

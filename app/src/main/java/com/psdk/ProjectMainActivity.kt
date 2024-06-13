@@ -10,8 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
 import com.psdk.ruby.vm.RubyScript
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromStream
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -34,15 +32,6 @@ class ProjectMainActivity : ComponentActivity() {
         val projectDao = m_database.projectDao()
         val projectId = intent.getStringExtra("PROJECT_ID")
         m_project = projectDao.findById(UUID.fromString(projectId))
-
-        val projectPreferences = getSharedPreferences(PROJECT_KEY, MODE_PRIVATE)
-        val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, projectPreferences)
-        errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
-        val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this, "Release", releaseLocation)
-        if (shouldAutoStart) {
-            startGame()
-            return
-        }
 
         setContentView(R.layout.project_main_page)
 
@@ -104,7 +93,7 @@ class ProjectMainActivity : ComponentActivity() {
             val versionStr = majorVersion.toString() + "." + (versionNumeric - (majorVersion shl 8)).toString()
             projectVersion.text = versionStr
         } catch (e: IOException) {
-            projectVersion.text = "Not found"
+            projectVersion.text = "Not available"
         }
     }
 
@@ -157,10 +146,6 @@ class ProjectMainActivity : ComponentActivity() {
 
     private val gameErrorLogOutputFile: String
         get() = "$releaseLocation/Error.log"
-
-    private fun unableToUnpackAssetsMessage(error: String) {
-        Toast.makeText(applicationContext, "Unable to unpack application assets : $error", Toast.LENGTH_LONG).show()
-    }
 
     companion object {
         const val PROJECT_KEY = "PSDK-PROJECT"

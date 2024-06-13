@@ -25,7 +25,6 @@ class CompileActivity: ComponentActivity() {
 
     private var m_archiveLocation: String? = null
     private var m_badArchiveLocation: String? = null
-    private lateinit var m_projectPreferences: SharedPreferences
     private var m_releaseLocation: String? = null
     private var m_withSavedArchive: Boolean = false
     private var m_executionLocation: String? = null
@@ -33,16 +32,14 @@ class CompileActivity: ComponentActivity() {
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.compiler)
-        m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
 
         m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_releaseLocation = intent.getStringExtra("RELEASE_LOCATION")
         val rubyBaseDir = intent.getStringExtra("RUBY_BASEDIR")
         val nativeLibsDir = intent.getStringExtra("NATIVE_LIBS_LOCATION")
 
-        val psdkLocation = m_projectPreferences!!.getString(PROJECT_LOCATION_STRING,"")
-        m_withSavedArchive = psdkLocation?.isNotEmpty() ?: false
-        setArchiveLocationValue(psdkLocation)
+        m_withSavedArchive = importedFile.canRead()
+        setArchiveLocationValue(importedFile.path)
 
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener { v: View? ->
@@ -108,9 +105,6 @@ class CompileActivity: ComponentActivity() {
                     runOnUiThread {
                         val validState = lockScreenIfInvalidState(isValidState)
                         if (validState) {
-                            val edit = m_projectPreferences!!.edit()
-                            edit.putString(PROJECT_LOCATION_STRING, m_archiveLocation)
-                            edit.apply()
                             projectEngineHealth.text = "Archive is valid"
                         } else if (m_badArchiveLocation != null) {
                             projectEngineHealth.text = m_badArchiveLocation
@@ -175,7 +169,4 @@ class CompileActivity: ComponentActivity() {
     private val importedFile: File
         get() = File("$m_executionLocation/archive.psa")
 
-    companion object {
-        private const val PROJECT_LOCATION_STRING = "location"
-    }
 }

@@ -12,6 +12,7 @@ abstract class RubyInterpreter(private val assets: AssetManager, private val app
         if (vm == null) {
             vm = buildMainScript(applicationPath, assets, location, this)
         } else {
+            vm!!.update(location.executionLocation!!, location.archiveLocation!!)
             vm!!.listener = this
         }
         vm!!.enqueue(script, onComplete)

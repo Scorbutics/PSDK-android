@@ -10,6 +10,10 @@ ARGV << "skip_binary"
 
 FileUtils.mkdir_p "./Data/Events/Battle"
 
+Project_path = Dir.pwd
+STDERR.puts "Current directory: #{Project_path}"
+STDERR.puts "Archive location: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
+
 require 'libLiteRGSS'
 LiteRGSS::Shader.available = false
 require 'ruby_physfs_patch.rb'

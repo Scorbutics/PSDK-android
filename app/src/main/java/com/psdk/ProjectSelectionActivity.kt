@@ -2,8 +2,9 @@ package com.psdk
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.DialogInterface
+import android.app.NativeActivity
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,13 +17,17 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.core.view.updatePadding
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
 import com.psdk.ruby.RubyInfo
+import com.psdk.ruby.vm.RubyScript
 import java.io.File
+import java.io.FileWriter
 import java.util.UUID
 
 
@@ -33,11 +38,23 @@ class ProjectSelectionActivity: ComponentActivity() {
 
     private lateinit var m_database: AppDatabase
     private lateinit var m_rootDirectory: Uri
+    private lateinit var m_readableRootDirectory: String
+    private lateinit var m_projectPreferences: SharedPreferences
+    private var m_isInternal: Boolean = false
 
     private var m_allProjects: List<Project> = listOf()
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
+        val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
+        errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
+        val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this, "Release", releaseLocation)
+        if (shouldAutoStart) {
+            autoStartGame()
+            return
+        }
 
         setContentView(R.layout.project_selection)
 
@@ -54,20 +71,47 @@ class ProjectSelectionActivity: ComponentActivity() {
         val rubyPlatform = findViewById<TextView>(R.id.engineRubyPlatform)
         rubyPlatform.text = RubyInfo.rubyPlatform
 
-        val baseUri = loadSavedDirectory()
-        if (baseUri == null) {
-            openRootProjectsDirectory(null)
-        } else {
-            m_rootDirectory = baseUri
-            loadProjects()
-        }
+        val changeProjectRootDir = findViewById<Button>(R.id.changeProjectRootDir)
+        changeProjectRootDir.setOnClickListener { chooseStorageLocationDialog() }
+
+        loadSavedDirectory()
+        loadProjects()
     }
 
-    fun saveDirectory(uri: Uri?) {
-        if (uri == null) {
-            return
-        }
-        val existing = loadSavedDirectory()
+    private fun unableToUnpackAssetsMessage(error: String) {
+        Toast.makeText(applicationContext, "Unable to unpack application assets : $error", Toast.LENGTH_LONG).show()
+    }
+
+    private fun autoStartGame() {
+        val startGameActivityIntent = Intent(this@ProjectSelectionActivity, NativeActivity::class.java)
+        startGameActivityIntent.putExtra("RUBY_BASEDIR", filesDir.path)
+        startGameActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
+        startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
+        startGameActivityIntent.putExtra("OUTPUT_FILENAME", gameLogOutputFile)
+        FileWriter(gameLogOutputFile, false).flush()
+        val startScript: String = RubyScript.readFromAssets(assets, "start.rb")
+        startGameActivityIntent.putExtra("START_SCRIPT", startScript)
+        startGameActivityResultLauncher.launch(startGameActivityIntent)
+    }
+
+    private val startGameActivityResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private val executionLocation: String
+        get() = applicationInfo.dataDir
+
+    private val gameLogOutputFile: String
+        get() = "$executionLocation/last_stdout.log"
+
+    private val releaseLocation: String
+        get() = "$executionLocation/Release"
+
+    private fun saveDirectoryPersistent(uri: Uri) {
+        val edit = m_projectPreferences.edit()
+        edit.remove(ROOT_PROJECT_INTERNAL)
+        edit.apply()
+        val existing = contentResolver.persistedUriPermissions.firstOrNull()?.uri
         if (existing != null) {
             // Release existing directory when new one is granted
             contentResolver.releasePersistableUriPermission(existing, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -75,8 +119,56 @@ class ProjectSelectionActivity: ComponentActivity() {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
-    fun loadSavedDirectory() : Uri? {
-        return contentResolver.persistedUriPermissions.firstOrNull()?.uri
+    private fun loadSavedDirectory() {
+        val isInternal = m_projectPreferences.getBoolean(ROOT_PROJECT_INTERNAL, false)
+        val baseUri = if (isInternal) null else contentResolver.persistedUriPermissions.firstOrNull()?.uri
+        loadSavedDirectory(baseUri)
+    }
+
+    private fun loadSavedDirectory(uri: Uri?) {
+        if (uri == null) {
+            m_isInternal = true
+            m_rootDirectory = filesDir.toUri()
+            m_readableRootDirectory = PathUtil(applicationContext).getPathFromUri(m_rootDirectory)!!
+        } else {
+            m_isInternal = false
+            m_rootDirectory = uri
+            val realUri = DocumentsContract.buildDocumentUriUsingTree(
+                m_rootDirectory,
+                DocumentsContract.getTreeDocumentId(m_rootDirectory)
+            )
+            m_readableRootDirectory = PathUtil(applicationContext).getPathFromUri(realUri)!!
+        }
+        val currentDirectoryText = findViewById<TextView>(R.id.currentDirectoryText)
+        currentDirectoryText.text = if (m_isInternal) "Internal application directory" else m_readableRootDirectory
+    }
+
+    private fun chooseStorageLocationDialog() {
+        val builder: AlertDialog.Builder = AlertDialog.Builder(this)
+        builder.setTitle("Choose your root projects directory")
+        builder.setSingleChoiceItems(
+            arrayOf("Prefer an internal storage", "Choose a custom location"), 0
+        ) { dialog, which ->
+            when (which) {
+                0 -> {
+                    loadSavedDirectory(null)
+
+                    // Save in preferences as it's an user action
+                    val edit = m_projectPreferences.edit()
+                    edit.putBoolean(ROOT_PROJECT_INTERNAL, true)
+                    edit.apply()
+
+                    loadProjects()
+                    dialog.dismiss()
+                }
+                1 -> {
+                    dialog.dismiss()
+                    openRootProjectsDirectory(null)
+                }
+            }
+        }
+
+        builder.show()
     }
 
     private fun createNewProjectDialog() {
@@ -102,13 +194,7 @@ class ProjectSelectionActivity: ComponentActivity() {
     private fun accessProject(name: String, id: UUID?) {
         val projectMainActivity =
             Intent(this@ProjectSelectionActivity, ProjectMainActivity::class.java)
-
-        val projectId: UUID
-        if (id == null) {
-            projectId = createNewProject(name)
-        } else {
-            projectId = id
-        }
+        val projectId: UUID = id ?: createNewProject(name)
 
         // Empty project id means a new project
         projectMainActivity.putExtra("PROJECT_ID", projectId.toString())
@@ -117,11 +203,7 @@ class ProjectSelectionActivity: ComponentActivity() {
 
     private fun createNewProject(name: String): UUID {
         val projectId = UUID.randomUUID()
-        val realRootDirectory = PathUtil(applicationContext).getPathFromUri(DocumentsContract.buildDocumentUriUsingTree(
-            m_rootDirectory,
-            DocumentsContract.getTreeDocumentId(m_rootDirectory)
-        ))
-        val projectDirectoryRoot = File(realRootDirectory + "/projects/" + name)
+        val projectDirectoryRoot = File(m_readableRootDirectory + "/projects/" + name)
         var projectDirectoryIt = projectDirectoryRoot
         var index = 0
         while (projectDirectoryIt.exists() && m_allProjects.find { p -> p.directory != projectDirectoryIt.path } != null) {
@@ -227,11 +309,10 @@ class ProjectSelectionActivity: ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val uri = result.data?.data!!
-            m_rootDirectory = uri
-            saveDirectory(m_rootDirectory)
+            loadSavedDirectory(result.data?.data!!)
+            saveDirectoryPersistent(m_rootDirectory)
         }
-        loadProjects()
+        refreshExistingProjectsUI()
     }
 
 
@@ -252,6 +333,10 @@ class ProjectSelectionActivity: ComponentActivity() {
             val projectView = buildExistingProjectButton(project)
             existingProjects.addView(projectView)
         }
+    }
+
+    companion object {
+        const val ROOT_PROJECT_INTERNAL = "ROOT_PROJECT_INTERNAL"
     }
 
 }

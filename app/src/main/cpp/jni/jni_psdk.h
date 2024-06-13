@@ -13,8 +13,12 @@ JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* 
 
 int StartGameFromNativeActivity(ANativeActivity* activity);
 
+JNIEXPORT jint JNICALL
+Java_com_psdk_ruby_vm_RubyVM_00024Companion_updateVmLocation(JNIEnv *env, jobject thiz, jstring executionLocation, jstring additionalParams);
+
 #ifdef __cplusplus
 }
 #endif
 #endif
+
 

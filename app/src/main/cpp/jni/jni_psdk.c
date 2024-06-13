@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include <android/log.h>
 
@@ -39,6 +40,23 @@ JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* 
 
     return result;
 }
+
+JNIEXPORT jint JNICALL
+Java_com_psdk_ruby_vm_RubyVM_00024Companion_updateVmLocation(JNIEnv *env, jobject thiz, jstring executionLocation, jstring additionalParams) {
+    (void) thiz;
+
+    const char *executionLocation_c = (*env)->GetStringUTFChars(env, executionLocation, 0);
+    const char *additionalParams_c = (*env)->GetStringUTFChars(env, additionalParams, 0);
+
+    int result = chdir(executionLocation_c);
+    setenv("PSDK_ANDROID_ADDITIONAL_PARAM", additionalParams_c == NULL ? "" : additionalParams_c, 1);
+
+    (*env)->ReleaseStringUTFChars(env, executionLocation, executionLocation_c);
+    (*env)->ReleaseStringUTFChars(env, additionalParams, additionalParams_c);
+
+    return result;
+}
+
 
 int StartGameFromNativeActivity(ANativeActivity* activity) {
 

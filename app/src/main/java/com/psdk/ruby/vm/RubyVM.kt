@@ -89,8 +89,13 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         writer.close()
     }
 
+    fun update(executionLocation: String, archiveLocation: String) {
+        updateVmLocation(executionLocation, archiveLocation)
+    }
+
     companion object {
         private external fun exec(scriptContent: String, fifoLogs: String, fifoCommands: String, fifoReturn: String, rubyBaseDirectory: String?, executionLocation: String?, nativeLibsDirLocation: String?, additionalParam: String?): Int
+        private external fun updateVmLocation(executionLocation: String, archiveLocation: String): Int
         private const val FIFO_LOGS_NAME = "psdk_fifo_logs"
         private const val FIFO_COMMANDS_NAME = "psdk_fifo_commands"
     }
