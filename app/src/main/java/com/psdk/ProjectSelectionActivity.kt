@@ -168,7 +168,6 @@ class ProjectSelectionActivity: ComponentActivity() {
         deleteProject.setOnClickListener {
             deleteProject(project)
         }
-        deleteProject.visibility = if(projectReadableOnFilesystem) View.VISIBLE else View.GONE
 
         val unsyncIcon = ImageView(this)
         unsyncIcon.layoutParams = LinearLayout.LayoutParams(
@@ -176,7 +175,7 @@ class ProjectSelectionActivity: ComponentActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
         unsyncIcon.setImageResource(android.R.drawable.ic_dialog_alert)
-        unsyncIcon.visibility = if(projectReadableOnFilesystem) View.GONE else View.VISIBLE
+        unsyncIcon.visibility = if (projectReadableOnFilesystem) View.GONE else View.VISIBLE
 
         val unsyncDetails = TextView(this)
         unsyncIcon.layoutParams = LinearLayout.LayoutParams(
@@ -193,9 +192,9 @@ class ProjectSelectionActivity: ComponentActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
         container.addView(accessProject)
+        container.addView(deleteProject)
         container.addView(unsyncIcon)
         container.addView(unsyncDetails)
-        container.addView(deleteProject)
         return container
     }
 
@@ -205,6 +204,10 @@ class ProjectSelectionActivity: ComponentActivity() {
         builder.setPositiveButton("Yes") { _, _ ->
             run {
                 m_database.projectDao().delete(project)
+                val projectDirectory = File(project.directory)
+                if (projectDirectory.canRead()) {
+                    projectDirectory.deleteRecursively()
+                }
                 refreshExistingProjectsUI()
             }
         }
