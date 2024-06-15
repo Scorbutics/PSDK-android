@@ -10,8 +10,7 @@ ARGV << "skip_binary"
 
 FileUtils.mkdir_p "./Data/Events/Battle"
 
-Project_path = Dir.pwd
-STDERR.puts "Current directory: #{Project_path}"
+STDERR.puts "Current directory: #{Dir.pwd}"
 STDERR.puts "Archive location: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
 require 'libLiteRGSS'
