@@ -230,10 +230,10 @@ end
 def global_require(moduleName)
   begin
     data = File.read(moduleName)
-  rescue
+    return eval(data)
+  rescue Exception
     raise LoadError.new $!
   end
-  return eval(data)
 end
 
 module Kernel
