@@ -38,21 +38,28 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         }
 
         mainThread = Thread {
-            exec(main.getContent(), fifoLogsFilename, fifoCommandsFilename, fifoReturnFilename, location.rubyBaseDirectory, location.executionLocation, location.nativeLibsLocation, location.archiveLocation)
+            exec(main.getContent(),
+                fifoLogsFilename,
+                fifoCommandsFilename,
+                fifoReturnFilename,
+                location.rubyBaseDirectory,
+                location.executionLocation,
+                location.nativeLibsLocation,
+                location.archiveLocation)
         }
         logReaderThread = Thread {
             try {
                 while (!fifoLogs!!.exists()) {
                 }
-                val `in` = BufferedReader(FileReader(fifoLogs))
-                var msg: String?
-                do {
-                    msg = `in`.readLine()
-                    if (msg != null) {
-                        accept(msg)
-                    }
-                } while (msg != null)
-                `in`.close()
+                BufferedReader(FileReader(fifoLogs)).use { reader ->
+                    var msg: String?
+                    do {
+                        msg = reader.readLine()
+                        if (msg != null) {
+                            accept(msg)
+                        }
+                    } while (msg != null)
+                }
             } catch (e: IOException) {
                 e.printStackTrace()
                 onLogError(e)
@@ -68,14 +75,14 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
     fun enqueue(script: RubyScript, onComplete: CompletionTask) {
         val scriptThread = Thread {
             try {
-                val `in` = BufferedReader(FileReader(fifoReturnFile!!))
-                // First line sent => script EOF reached, we quit
-                var resultLine: String? = null;
-                do {
-                   resultLine = `in`.readLine()
-                } while (resultLine == null);
-                `in`.close()
-                onComplete.invoke(if ("0".equals(resultLine.trim())) 0 else 1)
+                var resultLine: String?;
+                BufferedReader(FileReader(fifoReturnFile!!)).use { reader ->
+                    // First line sent => script EOF reached, we quit
+                    do {
+                        resultLine = reader.readLine()
+                    } while (resultLine == null);
+                }
+                onComplete.invoke(if ("0" == resultLine?.trim()) 0 else 1)
             } catch (e: IOException) {
                 e.printStackTrace()
                 onLogError(e)
@@ -84,9 +91,9 @@ abstract class RubyVM(private val applicationPath: String?, private val main: Ru
         }
 
         scriptThread.start()
-        val writer = FileWriter(fifoCommands)
-        writer.append(script.getContent())
-        writer.close()
+        FileWriter(fifoCommands).use { writer ->
+            writer.append(script.getContent())
+        }
     }
 
     fun update(executionLocation: String, archiveLocation: String) {
