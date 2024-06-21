@@ -113,8 +113,10 @@ class ::File
         return nil
       end
       return file
-    rescue Exception
-      STDERR.puts $!.message
+    rescue Exception => error
+      STDERR.puts error.message
+      STDERR.puts error.backtrace.join("\n\t")
+      raise Errno::ENOENT
     end
   end
 
@@ -231,7 +233,7 @@ def global_require(moduleName)
   begin
     data = File.read(moduleName)
     return eval(data)
-  rescue Exception
+  rescue
     raise LoadError.new $!
   end
 end
@@ -242,7 +244,7 @@ module Kernel
   def require(moduleName)
     begin
       oldRequire(moduleName)
-    rescue LoadError 
+    rescue LoadError
       return zip_require(moduleName)
     end
   end
