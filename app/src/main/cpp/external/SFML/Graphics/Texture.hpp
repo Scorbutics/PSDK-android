@@ -28,9 +28,6 @@
 ////////////////////////////////////////////////////////////
 // Headers
 ////////////////////////////////////////////////////////////
-#include <array>
-#include <optional>
-
 #include <SFML/Graphics/Export.hpp>
 #include <SFML/Graphics/Image.hpp>
 #include <SFML/Window/GlResource.hpp>
@@ -572,7 +569,7 @@ public:
     /// \param coordinateType Type of texture coordinates to use
     ///
     ////////////////////////////////////////////////////////////
-    static std::optional<std::array<float, 16>> bind(const Texture* texture, CoordinateType coordinateType = Normalized);
+    static void bind(const Texture* texture, CoordinateType coordinateType = Normalized);
 
     ////////////////////////////////////////////////////////////
     /// \brief Get the maximum texture size allowed

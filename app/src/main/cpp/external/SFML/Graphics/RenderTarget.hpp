@@ -421,7 +421,7 @@ private:
     /// \param texture Texture to apply
     ///
     ////////////////////////////////////////////////////////////
-    void applyTexture(const Texture* texture, const Shader* shader);
+    void applyTexture(const Texture* texture);
 
     ////////////////////////////////////////////////////////////
     /// \brief Apply a new shader
@@ -475,9 +475,9 @@ private:
         bool      useVertexCache; //!< Did we previously use the vertex cache?
         Vertex    vertexCache[VertexCacheSize]; //!< Pre-transformed vertices cache
         Uint32    programChanged;
-        Int32    posAttrib = -1;
-        Int32    colAttrib = -1;
-        Int32    texAttrib = -1;
+        Int32    posAttrib;
+        Int32    colAttrib;
+        Int32    texAttrib;
     };
 
     ////////////////////////////////////////////////////////////
