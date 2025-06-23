@@ -114,6 +114,7 @@ class ::File
       end
       return file
     rescue Exception => error
+      STDOUT.flush
       STDERR.puts error.message
       STDERR.puts error.backtrace.join("\n\t")
       raise Errno::ENOENT
