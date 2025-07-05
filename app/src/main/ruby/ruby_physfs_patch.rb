@@ -1,6 +1,6 @@
 require 'libLiteRGSS'
 
-Project_path = Dir.pwd
+Project_path = if Dir.pwd.end_with?('/') then Dir.pwd else Dir.pwd + '/' end
 PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
 LiteRGSS::AssetWriter::write_dir = Project_path
@@ -86,7 +86,8 @@ class ::File
 
   Old_file_open_ = method(:open)
   def File.open(filename, mode, **file_opts)
-    if Old_file_exist_.call(filename)
+    # Never try to write inside the archive
+    if mode == "w" || mode == "wb" || Old_file_exist_.call(filename)
       if !block_given?
         return Old_file_open_.call(filename, mode, **file_opts)
       else
@@ -101,8 +102,9 @@ class ::File
       end
     end
     asset_file_path = path_in_assets(filename)
-
     begin
+      raise Errno::ENOENT, "#{filename} cannot be found in the archive" if asset_file_path.nil?
+
       file = LiteRGSS::AssetFile.new(asset_file_path, mode.nil? ? "r" : mode)
       if block_given?
         begin
@@ -222,6 +224,13 @@ class ::Dir
     end
   end
 
+  def Dir.entries(src)
+      return ['.', '..'].concat(Dir[src + "/*"].map { |entry| entry.delete_prefix(src + "/") })
+  end
+
+  def Dir.exist?(src)
+      return File.exist?(src) && File.directory?(src)
+  end
 end
 
 class ::IO

@@ -42,14 +42,20 @@ class CompileProcessActivity : ComponentActivity() {
 
         val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder());
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder());
+        val copySavesLogs = CompileStepLogs(CompileStepData("Copying saves", CompileStepStatus.READY), StringBuilder());
 
         m_currentLogs = checkEngineLogs
 
-        val compilationStepsDetails = mapOf(Pair(checkEngineLogs.step, listOf(checkEngineLogs.logs)), Pair(compilationLogs.step, listOf(compilationLogs.logs)))
+        val compilationStepsDetails = mapOf(
+            Pair(checkEngineLogs.step, listOf(checkEngineLogs.logs)),
+            Pair(compilationLogs.step, listOf(compilationLogs.logs)),
+            Pair(copySavesLogs.step, listOf(copySavesLogs.logs))
+        )
         val compilationStepsTitles = ArrayList<CompileStepData>(compilationStepsDetails.keys)
         val expandableListAdapter = CompileProcessStepListAdapter(this, compilationStepsTitles, compilationStepsDetails)
         compilationStepsView.setAdapter(expandableListAdapter)
         compilationStepsView.expandGroup(0, true)
+
         val rubyInterpreter = object : RubyInterpreter(assets, applicationInfo.dataDir, buildPsdkProcessData()) {
             override fun accept(lineMessage: String) {
                 m_currentLogs?.logs?.appendLine(lineMessage)
@@ -63,7 +69,7 @@ class CompileProcessActivity : ComponentActivity() {
             }
         }
 
-        val onCompleteCompilation: CompletionTask = { returnCode: Int ->
+        val onCompleteCompileProcess: CompletionTask = { returnCode: Int ->
             val resultText: String;
             if (returnCode == 0) {
                 resultText = "Compilation success !"
@@ -83,6 +89,27 @@ class CompileProcessActivity : ComponentActivity() {
             setResult(returnCode)
         }
 
+        val onCompleteRubyCompilation: CompletionTask = { returnCode: Int ->
+            Thread.sleep(1000)
+            if (returnCode != 0) {
+                runOnUiThread {
+                    progressBarCompilation.visibility = View.INVISIBLE
+                    compilationEndState.text = "Ruby compilation failure"
+                }
+                Thread.sleep(2000)
+                setResult(returnCode)
+            } else {
+                m_currentLogs?.step?.status = CompileStepStatus.SUCCESS
+                m_currentLogs = copySavesLogs
+                m_currentLogs?.step?.status = CompileStepStatus.IN_PROGRESS
+                runOnUiThread {
+                    compilationStepsView.collapseGroup(1)
+                    compilationStepsView.expandGroup(2, true)
+                }
+                rubyInterpreter.enqueue(RubyScript(assets, COPY_SAVES_SCRIPT), onCompleteCompileProcess)
+            }
+        }
+
         val onCompleteCheck: CompletionTask = { returnCode: Int ->
             Thread.sleep(1000)
             if (returnCode != 0) {
@@ -100,9 +127,10 @@ class CompileProcessActivity : ComponentActivity() {
                     compilationStepsView.collapseGroup(0)
                     compilationStepsView.expandGroup(1, true)
                 }
-                rubyInterpreter.enqueue(RubyScript(assets, SCRIPT), onCompleteCompilation)
+                rubyInterpreter.enqueue(RubyScript(assets, RUBY_COMPILE_SCRIPT), onCompleteRubyCompilation)
             }
         }
+
         try {
             rubyInterpreter.enqueue(RubyScript(assets, CHECK_ENGINE_SCRIPT), onCompleteCheck);
         } catch (ex: Exception) {
@@ -115,7 +143,8 @@ class CompileProcessActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val SCRIPT = "compile.rb"
+        private const val COPY_SAVES_SCRIPT = "copy_saves.rb"
+        private const val RUBY_COMPILE_SCRIPT = "compile.rb"
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
     }
 }
