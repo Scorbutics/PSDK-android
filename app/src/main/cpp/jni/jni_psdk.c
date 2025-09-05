@@ -11,7 +11,7 @@
 #include "get_activity_parameters.h"
 #include "logging.h"
 
-JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommands, jstring fifoReturn,
+JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVMNative_00024Companion_exec(JNIEnv* env, jobject clazz, jstring scriptContent, jstring fifoLogs, jstring fifoCommands, jstring fifoReturn,
                                                                         jstring rubyBaseDirectory, jstring executionLocation, jstring nativeLibsDirLocation, jstring additionalParam) {
     (void) clazz;
 
@@ -42,7 +42,7 @@ JNIEXPORT jint JNICALL Java_com_psdk_ruby_vm_RubyVM_00024Companion_exec(JNIEnv* 
 }
 
 JNIEXPORT jint JNICALL
-Java_com_psdk_ruby_vm_RubyVM_00024Companion_updateVmLocation(JNIEnv *env, jobject thiz, jstring executionLocation, jstring additionalParams) {
+Java_com_psdk_ruby_vm_RubyVMNative_00024Companion_updateVmLocation(JNIEnv *env, jobject thiz, jstring executionLocation, jstring additionalParams) {
     (void) thiz;
 
     const char *executionLocation_c = (*env)->GetStringUTFChars(env, executionLocation, 0);
