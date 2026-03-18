@@ -3,6 +3,7 @@ package com.psdk
 import android.app.NativeActivity
 import android.content.Intent
 import android.os.Bundle
+import android.system.Os
 import android.view.View
 import android.widget.*
 import androidx.activity.ComponentActivity
@@ -10,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
 import com.psdk.ruby.vm.RubyScript
+import com.scorbutics.rubyvm.RubyVMPaths
 import java.io.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -41,8 +43,6 @@ class ProjectMainActivity : ComponentActivity() {
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener {
             val compileIntent = Intent(this, CompileActivity::class.java)
-            compileIntent.putExtra("RUBY_BASEDIR", rubyBaseDirectory)
-            compileIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
             compileIntent.putExtra("EXECUTION_LOCATION", executionLocation)
             compileIntent.putExtra("RELEASE_LOCATION", releaseLocation)
             compileActivityResultLauncher.launch(compileIntent)
@@ -121,22 +121,27 @@ class ProjectMainActivity : ComponentActivity() {
     }
 
     private fun startGame() {
-        val startGameActivityIntent = Intent(this@ProjectMainActivity, NativeActivity::class.java)
-        startGameActivityIntent.putExtra("RUBY_BASEDIR", rubyBaseDirectory)
-        startGameActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
-        startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
-        startGameActivityIntent.putExtra("OUTPUT_FILENAME", gameLogOutputFile)
-        FileWriter(gameLogOutputFile, false).flush()
-        val startScript: String = RubyScript.readFromAssets(assets, "start.rb")
-        startGameActivityIntent.putExtra("START_SCRIPT", startScript)
-        startGameActivityResultLauncher.launch(startGameActivityIntent)
+        Thread {
+            val paths = RubyVMPaths.getDefaultPaths(this)
+            val startScript = RubyScript.readFromAssets(assets, "start.rb")
+            val scriptFile = File(filesDir, "start.rb")
+            scriptFile.writeText(startScript)
+
+            Os.setenv("RGSS_RUBY_BASE_DIR", paths.rubyBaseDir, true)
+            Os.setenv("RGSS_NATIVE_LIBS_DIR", paths.nativeLibsDir, true)
+            Os.setenv("RGSS_SCRIPT_PATH", scriptFile.absolutePath, true)
+            Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
+
+            FileWriter(gameLogOutputFile, false).flush()
+            runOnUiThread {
+                val startGameActivityIntent = Intent(this@ProjectMainActivity, NativeActivity::class.java)
+                startGameActivityResultLauncher.launch(startGameActivityIntent)
+            }
+        }.start()
     }
 
     private val executionLocation: String
         get() = m_project.directory
-
-    private val rubyBaseDirectory: String
-        get() = filesDir.path
 
     private val gameLogOutputFile: String
         get() = "$executionLocation/last_stdout.log"

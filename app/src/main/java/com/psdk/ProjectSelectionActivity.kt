@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.system.Os
 import android.text.InputType
 import android.view.View
 import android.widget.Button
@@ -24,8 +25,9 @@ import androidx.core.net.toUri
 import androidx.core.view.updatePadding
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
-import com.psdk.ruby.RubyInfo
+import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
+import com.scorbutics.rubyvm.RubyVMPaths
 import java.io.File
 import java.io.FileWriter
 import java.util.UUID
@@ -33,7 +35,7 @@ import java.util.UUID
 
 class ProjectSelectionActivity: ComponentActivity() {
     init {
-        System.loadLibrary("jni")
+        PsdkInterpreter.initialize()
     }
 
     private lateinit var m_database: AppDatabase
@@ -48,13 +50,23 @@ class ProjectSelectionActivity: ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         m_projectPreferences = getSharedPreferences(ProjectMainActivity.PROJECT_KEY, MODE_PRIVATE)
-        val errorUnpackAssets = AppInstall.unpackExtraAssetsIfNeeded(this, m_projectPreferences)
-        errorUnpackAssets?.let { unableToUnpackAssetsMessage(it) }
-        val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this, "Release", releaseLocation)
-        if (shouldAutoStart) {
-            autoStartGame()
-            return
-        }
+
+        Thread {
+            try {
+                RubyVMPaths.getDefaultPaths(this@ProjectSelectionActivity)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(applicationContext, "Unable to initialize Ruby VM: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+
+            runOnUiThread {
+                val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(this@ProjectSelectionActivity, "Release", releaseLocation)
+                if (shouldAutoStart) {
+                    autoStartGame()
+                }
+            }
+        }.start()
 
         setContentView(R.layout.project_selection)
 
@@ -66,10 +78,6 @@ class ProjectSelectionActivity: ComponentActivity() {
         }
         val abiVersion = findViewById<TextView>(R.id.deviceAbiVersion)
         abiVersion.text = sb.toString()
-        val rubyVersion = findViewById<TextView>(R.id.engineRubyVersion)
-        rubyVersion.text = RubyInfo.rubyVersion
-        val rubyPlatform = findViewById<TextView>(R.id.engineRubyPlatform)
-        rubyPlatform.text = RubyInfo.rubyPlatform
 
         val changeProjectRootDir = findViewById<Button>(R.id.changeProjectRootDir)
         changeProjectRootDir.setOnClickListener { chooseStorageLocationDialog() }
@@ -78,20 +86,23 @@ class ProjectSelectionActivity: ComponentActivity() {
         loadProjects()
     }
 
-    private fun unableToUnpackAssetsMessage(error: String) {
-        Toast.makeText(applicationContext, "Unable to unpack application assets : $error", Toast.LENGTH_LONG).show()
-    }
-
     private fun autoStartGame() {
-        val startGameActivityIntent = Intent(this@ProjectSelectionActivity, NativeActivity::class.java)
-        startGameActivityIntent.putExtra("RUBY_BASEDIR", filesDir.path)
-        startGameActivityIntent.putExtra("NATIVE_LIBS_LOCATION", applicationInfo.nativeLibraryDir)
-        startGameActivityIntent.putExtra("EXECUTION_LOCATION", executionLocation)
-        startGameActivityIntent.putExtra("OUTPUT_FILENAME", gameLogOutputFile)
-        FileWriter(gameLogOutputFile, false).flush()
-        val startScript: String = RubyScript.readFromAssets(assets, "start.rb")
-        startGameActivityIntent.putExtra("START_SCRIPT", startScript)
-        startGameActivityResultLauncher.launch(startGameActivityIntent)
+        Thread {
+            val paths = RubyVMPaths.getDefaultPaths(this)
+            val startScript = RubyScript.readFromAssets(assets, "start.rb")
+            val scriptFile = File(filesDir, "start.rb")
+            scriptFile.writeText(startScript)
+
+            Os.setenv("RGSS_RUBY_BASE_DIR", paths.rubyBaseDir, true)
+            Os.setenv("RGSS_NATIVE_LIBS_DIR", paths.nativeLibsDir, true)
+            Os.setenv("RGSS_SCRIPT_PATH", scriptFile.absolutePath, true)
+
+            runOnUiThread {
+                val startGameActivityIntent = Intent(this@ProjectSelectionActivity, NativeActivity::class.java)
+                FileWriter(gameLogOutputFile, false).flush()
+                startGameActivityResultLauncher.launch(startGameActivityIntent)
+            }
+        }.start()
     }
 
     private val startGameActivityResultLauncher = registerForActivityResult(
@@ -113,7 +124,6 @@ class ProjectSelectionActivity: ComponentActivity() {
         edit.apply()
         val existing = contentResolver.persistedUriPermissions.firstOrNull()?.uri
         if (existing != null) {
-            // Release existing directory when new one is granted
             contentResolver.releasePersistableUriPermission(existing, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -153,7 +163,6 @@ class ProjectSelectionActivity: ComponentActivity() {
                 0 -> {
                     loadSavedDirectory(null)
 
-                    // Save in preferences as it's an user action
                     val edit = m_projectPreferences.edit()
                     edit.putBoolean(ROOT_PROJECT_INTERNAL, true)
                     edit.apply()
@@ -172,7 +181,6 @@ class ProjectSelectionActivity: ComponentActivity() {
     }
 
     private fun createNewProjectDialog() {
-        // Set up an input inside an alert dialog in order to ask for project details
         val builder: AlertDialog.Builder = AlertDialog.Builder(this)
         builder.setTitle("New project")
         val input = EditText(this)
@@ -196,7 +204,6 @@ class ProjectSelectionActivity: ComponentActivity() {
             Intent(this@ProjectSelectionActivity, ProjectMainActivity::class.java)
         val projectId: UUID = id ?: createNewProject(name)
 
-        // Empty project id means a new project
         projectMainActivity.putExtra("PROJECT_ID", projectId.toString())
         selectProjectActivityResult.launch(projectMainActivity)
     }

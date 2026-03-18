@@ -13,7 +13,7 @@ FileUtils.mkdir_p "./Data/Events/Battle"
 STDERR.puts "Current directory: #{Dir.pwd}"
 STDERR.puts "Archive location: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
-require 'libLiteRGSS'
+require 'LiteRGSS'
 LiteRGSS::Shader.available = false
 require 'ruby_physfs_patch.rb'
 require './Game.rb'

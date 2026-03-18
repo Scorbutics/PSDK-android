@@ -35,8 +35,6 @@ class CompileActivity: ComponentActivity() {
 
         m_executionLocation = intent.getStringExtra("EXECUTION_LOCATION")
         m_releaseLocation = intent.getStringExtra("RELEASE_LOCATION")
-        val rubyBaseDir = intent.getStringExtra("RUBY_BASEDIR")
-        val nativeLibsDir = intent.getStringExtra("NATIVE_LIBS_LOCATION")
 
         m_withSavedArchive = importedFile.canRead()
         setArchiveLocationValue(importedFile.path)
@@ -44,8 +42,6 @@ class CompileActivity: ComponentActivity() {
         val compileButton = findViewById<Button>(R.id.compileGame)
         compileButton.setOnClickListener { v: View? ->
             val compileIntent = Intent(this, CompileProcessActivity::class.java)
-            compileIntent.putExtra("RUBY_BASEDIR", rubyBaseDir)
-            compileIntent.putExtra("NATIVE_LIBS_LOCATION", nativeLibsDir)
             compileIntent.putExtra("EXECUTION_LOCATION", m_executionLocation)
             compileIntent.putExtra("ARCHIVE_LOCATION", m_archiveLocation)
             compileGameActivityResultLauncher.launch(compileIntent)

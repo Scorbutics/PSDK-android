@@ -1,33 +1,19 @@
 package com.psdk.ruby.vm
 
-import android.content.*
 import android.content.res.AssetManager
-import java.io.*
-import java.lang.StringBuilder
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
-class RubyScript internal constructor(assetManager: AssetManager, assetScriptName: String?) {
-    class ScriptCurrentLocation(val rubyBaseDirectory: String?, val executionLocation: String?, val nativeLibsLocation: String?, val archiveLocation: String?)
+class RubyScript(assetManager: AssetManager, assetScriptName: String) {
+    private val scriptContent: String = readFromAssets(assetManager, assetScriptName)
 
-    private val scriptContent: String
-
-    init {
-        scriptContent = readFromAssets(assetManager, assetScriptName)
-    }
-
-    fun getContent(): String {
-        return scriptContent
-    }
+    fun getContent(): String = scriptContent
 
     companion object {
-        @Throws(IOException::class)
-        fun readFromAssets(assets: AssetManager, assetScriptName: String?): String {
-            val asset = BufferedReader(InputStreamReader(assets.open(assetScriptName!!)))
-            val scriptContent = StringBuilder()
-            var s: String?
-            while (asset.readLine().also { s = it } != null) {
-                scriptContent.append(s).append("\n")
+        fun readFromAssets(assets: AssetManager, assetScriptName: String): String {
+            return BufferedReader(InputStreamReader(assets.open(assetScriptName))).use { reader ->
+                reader.readText()
             }
-            return scriptContent.toString()
         }
     }
 }

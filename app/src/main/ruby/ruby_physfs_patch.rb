@@ -1,4 +1,4 @@
-require 'libLiteRGSS'
+require 'LiteRGSS'
 
 Project_path = if Dir.pwd.end_with?('/') then Dir.pwd else Dir.pwd + '/' end
 PROJECT_ARCHIVE = LiteRGSS::AssetsArchive.new ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
