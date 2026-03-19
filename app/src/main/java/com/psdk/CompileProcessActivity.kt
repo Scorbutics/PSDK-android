@@ -1,5 +1,6 @@
 package com.psdk
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.view.View
@@ -8,6 +9,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import android.app.AlertDialog
 import com.psdk.ruby.vm.CompletionTask
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
@@ -74,24 +76,24 @@ class CompileProcessActivity : ComponentActivity() {
         val location = ScriptLocation(m_executionLocation, m_archiveLocation)
 
         val onCompleteCompileProcess: CompletionTask = { returnCode: Int ->
-            val resultText: String
-            if (returnCode == 0) {
-                resultText = "Compilation success !"
-            } else {
-                resultText = "Compilation failure"
-            }
             m_currentLogs?.step?.status = if (returnCode == 0) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
-            runOnUiThread {
-                progressBarCompilation.visibility = View.INVISIBLE
-                compilationEndState.visibility = View.VISIBLE
-                backToMainScreen.visibility = View.VISIBLE
-                compilationEndState.text = resultText
-                compilationEndState.setTextColor(if (returnCode == 0) Color.GREEN else Color.RED)
-            }
-            Thread.sleep(2000)
             m_currentLogs = null
             interpreter.close()
             setResult(returnCode)
+            runOnUiThread {
+                progressBarCompilation.visibility = View.INVISIBLE
+                if (returnCode == 0) {
+                    compilationEndState.visibility = View.VISIBLE
+                    compilationEndState.text = "Compilation success !"
+                    compilationEndState.setTextColor(Color.GREEN)
+                    showRestartDialog()
+                } else {
+                    compilationEndState.visibility = View.VISIBLE
+                    backToMainScreen.visibility = View.VISIBLE
+                    compilationEndState.text = "Compilation failure"
+                    compilationEndState.setTextColor(Color.RED)
+                }
+            }
         }
 
         val onCompleteRubyCompilation: CompletionTask = { returnCode: Int ->
@@ -153,6 +155,24 @@ class CompileProcessActivity : ComponentActivity() {
         } catch (ex: Exception) {
             Toast.makeText(applicationContext, ex.localizedMessage, Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun showRestartDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Restart required")
+            .setMessage("Compilation completed successfully. The app needs to restart to reset the internal engine. The app will now restart.")
+            .setCancelable(false)
+            .setPositiveButton("Restart now") { _, _ ->
+                restartApp()
+            }
+            .show()
+    }
+
+    private fun restartApp() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)!!
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(intent)
+        Runtime.getRuntime().exit(0)
     }
 
     companion object {
