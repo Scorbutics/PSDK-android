@@ -33,7 +33,7 @@
             android:theme="@style/Theme.Psdk"
             android:icon="@drawable/logo"
             android:screenOrientation="landscape"
-            android:configChanges="keyboardHidden|orientation|screenSize">
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
 
             <meta-data android:name="android.app.lib_name" android:value="rgss_runtime" />
         </activity>

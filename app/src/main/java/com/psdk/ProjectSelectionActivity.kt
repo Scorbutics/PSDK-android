@@ -96,6 +96,8 @@ class ProjectSelectionActivity: ComponentActivity() {
             Os.setenv("RGSS_RUBY_BASE_DIR", paths.rubyBaseDir, true)
             Os.setenv("RGSS_NATIVE_LIBS_DIR", paths.nativeLibsDir, true)
             Os.setenv("RGSS_SCRIPT_PATH", scriptFile.absolutePath, true)
+            Os.setenv("RGSS_LOG_FILE", gameLogOutputFile, true)
+            Os.setenv("RGSS_ERROR_LOG_FILE", "$executionLocation/Error.log", true)
 
             runOnUiThread {
                 val startGameActivityIntent = Intent(this@ProjectSelectionActivity, NativeActivity::class.java)

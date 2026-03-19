@@ -131,6 +131,8 @@ class ProjectMainActivity : ComponentActivity() {
             Os.setenv("RGSS_NATIVE_LIBS_DIR", paths.nativeLibsDir, true)
             Os.setenv("RGSS_SCRIPT_PATH", scriptFile.absolutePath, true)
             Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
+            Os.setenv("RGSS_LOG_FILE", gameLogOutputFile, true)
+            Os.setenv("RGSS_ERROR_LOG_FILE", gameErrorLogOutputFile, true)
 
             FileWriter(gameLogOutputFile, false).flush()
             runOnUiThread {
