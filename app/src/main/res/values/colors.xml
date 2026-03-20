@@ -1,5 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Pokemon Studio Dark Theme Palette -->
+    <color name="colorBackground">#FF1E1E2E</color>
+    <color name="colorSurface">#FF2A2A3E</color>
+    <color name="colorSurfaceVariant">#FF3A3A4E</color>
+    <color name="colorSurfaceElevated">#FF323248</color>
+
+    <color name="colorPrimary">#FF03DAC5</color>
+    <color name="colorPrimaryVariant">#FF018786</color>
+    <color name="colorSecondary">#FF4CAF50</color>
+    <color name="colorSecondaryVariant">#FF388E3C</color>
+
+    <color name="colorOnBackground">#FFFFFFFF</color>
+    <color name="colorOnSurface">#FFFFFFFF</color>
+    <color name="colorOnSurfaceVariant">#FF8B8B9E</color>
+    <color name="colorOnPrimary">#FF000000</color>
+    <color name="colorOnSecondary">#FF000000</color>
+
+    <color name="colorError">#FFCF6679</color>
+    <color name="colorOnError">#FF000000</color>
+
+    <!-- Status colors -->
+    <color name="colorSuccess">#FF4CAF50</color>
+    <color name="colorWarning">#FFFFC107</color>
+    <color name="colorInProgress">#FF42A5F5</color>
+    <color name="colorPending">#FF8B8B9E</color>
+
+    <!-- Legacy (kept for drawables referencing them) -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

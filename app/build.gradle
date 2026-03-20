@@ -77,5 +77,8 @@ dependencies {
     implementation(libs.kotlinx.serialization)
     implementation libs.kotlin.stdlib
 
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+
     implementation 'com.scorbutics.rubyvm:kmp-publish-android:1.0.0-SNAPSHOT'
 }

@@ -1,7 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <style name="Theme.Psdk" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryVariant">@color/colorPrimaryVariant</item>
+        <item name="colorSecondary">@color/colorSecondary</item>
+        <item name="colorOnPrimary">@color/colorOnPrimary</item>
+        <item name="colorOnSecondary">@color/colorOnSecondary</item>
+        <item name="android:colorBackground">@color/colorBackground</item>
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="colorOnSurface">@color/colorOnSurface</item>
+        <item name="colorError">@color/colorError</item>
+        <item name="colorOnError">@color/colorOnError</item>
 
-    <style name="Theme.Psdk" parent="Theme.Design.Light">
+        <item name="android:statusBarColor">@color/colorBackground</item>
+        <item name="android:navigationBarColor">@color/colorBackground</item>
+        <item name="android:windowBackground">@color/colorBackground</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+
+        <item name="android:textColorPrimary">@color/colorOnBackground</item>
+        <item name="android:textColorSecondary">@color/colorOnSurfaceVariant</item>
+
+        <item name="materialButtonStyle">@style/Widget.Psdk.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.Psdk.Button.Outlined</item>
+        <item name="floatingActionButtonStyle">@style/Widget.Psdk.FAB</item>
+        <item name="materialCardViewStyle">@style/Widget.Psdk.CardView</item>
+        <item name="textInputStyle">@style/Widget.Psdk.TextInputLayout</item>
+        <item name="bottomSheetDialogTheme">@style/Theme.Psdk.BottomSheet</item>
     </style>
 </resources>

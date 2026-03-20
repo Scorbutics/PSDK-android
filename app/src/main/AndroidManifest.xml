@@ -12,9 +12,11 @@
         android:icon="@drawable/logo"
         android:allowBackup="true"
         android:extractNativeLibs="true"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        android:theme="@style/Theme.Psdk">
 
-        <activity android:name=".ProjectSelectionActivity"
+        <!-- Entry point router -->
+        <activity android:name=".ui.EntryActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -22,13 +24,17 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".ProjectMainActivity"
-                  android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PROJECT_MAIN" />
-            </intent-filter>
-        </activity>
+        <!-- New activities -->
+        <activity android:name=".ui.ProjectHubActivity"
+            android:exported="false" />
 
+        <activity android:name=".ui.CompileWizardActivity"
+            android:exported="false" />
+
+        <activity android:name=".ui.ClassicSetupActivity"
+            android:exported="false" />
+
+        <!-- Game engine (NativeActivity) -->
         <activity android:name="android.app.NativeActivity"
             android:theme="@style/Theme.Psdk"
             android:icon="@drawable/logo"
@@ -38,36 +44,7 @@
             <meta-data android:name="android.app.lib_name" android:value="rgss_runtime" />
         </activity>
 
-        <activity android:name=".CompileProcessActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.COMPILE_PROCESS" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".CompileActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.COMPILE" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".BuildApkActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BUILD_APK" />
-            </intent-filter>
-        </activity>
-
-        <activity android:name=".ReadLogDetailsActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.READ_LOG_DETAILS" />
-            </intent-filter>
-        </activity>
-
-
-        <provider
+<provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.psdk.starter.provider"
             android:exported="false"
