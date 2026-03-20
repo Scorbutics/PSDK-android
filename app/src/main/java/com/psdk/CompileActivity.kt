@@ -74,7 +74,7 @@ class CompileActivity: ComponentActivity() {
         val sep = absPath.lastIndexOf(File.separator)
         val filename = absPath.substring(sep + 1).trim { it <= ' ' }
         return if (!filename.endsWith(".psa")) {
-            "Error : selected file at filepath $filepath is not a 'psa' file : '$filename'"
+            "Error : selected file at filepath $filepath is not a valid archive file : '$filename'"
         } else try {
             ZipFile(finalFile).use { zip ->
                 if (zip.getEntry("pokemonsdk/version.txt") == null) {
@@ -156,12 +156,10 @@ class CompileActivity: ComponentActivity() {
                 out.close()
                 m_withSavedArchive = false
                 if (EpsaDecryptor.isEpsaFile(stagingFile)) {
-                    // Encrypted archive: validation will decrypt to archive.psa
                     setArchiveLocationValue(stagingFile.path)
                 } else {
-                    // Plain archive: rename staging to final location
-                    stagingFile.renameTo(importedFile)
-                    setArchiveLocationValue(importedFile.path)
+                    stagingFile.delete()
+                    Toast.makeText(applicationContext, "Only encrypted .epsa archives are supported.", Toast.LENGTH_LONG).show()
                 }
             }
         }
