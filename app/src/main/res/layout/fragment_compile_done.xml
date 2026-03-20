@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="@dimen/spacing_lg"
+    android:background="@color/colorBackground">
+
+    <!-- Result icon -->
+    <ImageView
+        android:id="@+id/resultIcon"
+        android:layout_width="@dimen/icon_xl"
+        android:layout_height="@dimen/icon_xl"
+        android:layout_marginBottom="@dimen/spacing_lg" />
+
+    <!-- Result title -->
+    <TextView
+        android:id="@+id/resultTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Psdk.Headline"
+        android:layout_marginBottom="@dimen/spacing_sm" />
+
+    <!-- Result message -->
+    <TextView
+        android:id="@+id/resultMessage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Psdk.Body"
+        android:textColor="@color/colorOnSurfaceVariant"
+        android:gravity="center"
+        android:layout_marginBottom="@dimen/spacing_xl" />
+
+    <!-- Action buttons -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/primaryActionButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/spacing_sm"
+        style="@style/Widget.Psdk.Button" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/secondaryActionButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        style="@style/Widget.Psdk.Button.Outlined" />
+</LinearLayout>

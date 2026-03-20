@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_lg">
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Import Archive"
+            android:textAppearance="@style/TextAppearance.Psdk.Headline"
+            android:layout_marginBottom="@dimen/spacing_sm" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Select an encrypted game archive (.epsa) to compile."
+            android:textAppearance="@style/TextAppearance.Psdk.Body"
+            android:textColor="@color/colorOnSurfaceVariant"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
+        <!-- Archive selection card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/spacing_md"
+            app:cardBackgroundColor="@color/colorSurface"
+            app:cardCornerRadius="@dimen/corner_radius_md"
+            app:strokeColor="@color/colorSurfaceVariant"
+            app:strokeWidth="1dp"
+            app:cardElevation="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/card_padding">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ARCHIVE"
+                    android:textAppearance="@style/TextAppearance.Psdk.Label"
+                    android:layout_marginBottom="@dimen/spacing_md" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/importArchiveButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Import PSDK archive (.epsa)"
+                    app:icon="@drawable/ic_folder_open"
+                    app:iconGravity="textStart"
+                    style="@style/Widget.Psdk.Button.Outlined" />
+
+                <!-- Validation status -->
+                <LinearLayout
+                    android:id="@+id/validationContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:visibility="gone">
+
+                    <ImageView
+                        android:id="@+id/validationIcon"
+                        android:layout_width="@dimen/icon_md"
+                        android:layout_height="@dimen/icon_md"
+                        android:layout_marginEnd="@dimen/spacing_sm" />
+
+                    <TextView
+                        android:id="@+id/validationText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textAppearance="@style/TextAppearance.Psdk.Body" />
+                </LinearLayout>
+
+                <!-- Processing indicator -->
+                <LinearLayout
+                    android:id="@+id/processingContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="@dimen/spacing_md"
+                    android:visibility="gone">
+
+                    <ProgressBar
+                        android:layout_width="@dimen/icon_md"
+                        android:layout_height="@dimen/icon_md"
+                        android:layout_marginEnd="@dimen/spacing_sm"
+                        android:indeterminate="true" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Processing archive..."
+                        android:textAppearance="@style/TextAppearance.Psdk.Body"
+                        android:textColor="@color/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Start compilation button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/startCompilationButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:text="Start Compilation"
+            android:enabled="false"
+            style="@style/Widget.Psdk.Button" />
+    </LinearLayout>
+</ScrollView>

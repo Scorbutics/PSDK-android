@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/colorBackground">
+
+    <!-- Toolbar -->
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/colorBackground"
+        app:titleTextColor="@color/colorOnSurface"
+        app:navigationIconTint="@color/colorOnSurfaceVariant"
+        app:navigationIcon="@drawable/ic_arrow_back"
+        app:title="Compile" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/colorSurfaceVariant" />
+
+    <!-- Step indicator -->
+    <LinearLayout
+        android:id="@+id/stepIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="@dimen/spacing_md"
+        android:background="@color/colorBackground">
+
+        <!-- Step 1: Import -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator1"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_active"
+                android:gravity="center"
+                android:text="1"
+                android:textColor="@color/colorOnPrimary"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Import"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+
+        <!-- Connector 1-2 -->
+        <View
+            android:id="@+id/connector12"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/step_connector_height"
+            android:layout_weight="1"
+            android:layout_gravity="top"
+            android:layout_marginTop="15dp"
+            android:background="@drawable/bg_step_connector" />
+
+        <!-- Step 2: Compile -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator2"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_pending"
+                android:gravity="center"
+                android:text="2"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Compile"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+
+        <!-- Connector 2-3 -->
+        <View
+            android:id="@+id/connector23"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/step_connector_height"
+            android:layout_weight="1"
+            android:layout_gravity="top"
+            android:layout_marginTop="15dp"
+            android:background="@drawable/bg_step_connector" />
+
+        <!-- Step 3: Done -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator3"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_pending"
+                android:gravity="center"
+                android:text="3"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Done"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/colorSurfaceVariant" />
+
+    <!-- Fragment container -->
+    <FrameLayout
+        android:id="@+id/wizardContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>
