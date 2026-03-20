@@ -57,6 +57,18 @@ class ProjectMainActivity : ComponentActivity() {
             return@setOnClickListener
         }
 
+        val showCompilationLog = findViewById<Button>(R.id.showCompilationLog)
+        val compilationLogFile = File(executionLocation, CompileProcessActivity.COMPILATION_LOG_FILE)
+        if (compilationLogFile.exists()) {
+            showCompilationLog.visibility = View.VISIBLE
+            showCompilationLog.setOnClickListener {
+                val intent = Intent(this, ReadLogDetailsActivity::class.java)
+                intent.putExtra("GAME_LOG_FILE_LOCATION", compilationLogFile.absolutePath)
+                intent.putExtra("GAME_ERROR_LOG_FILE_LOCATION", "")
+                readLogDetailsActivityResultLauncher.launch(intent)
+            }
+        }
+
         refreshScreenData()
     }
 

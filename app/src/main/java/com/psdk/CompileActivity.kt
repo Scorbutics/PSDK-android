@@ -14,12 +14,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import java.io.BufferedInputStream
+import com.psdk.zip.EpsaDecryptor
+import java.util.zip.ZipFile
 import java.io.File
-import java.io.FileInputStream
 import java.io.IOException
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 
 class CompileActivity: ComponentActivity() {
 
@@ -56,30 +54,35 @@ class CompileActivity: ComponentActivity() {
         if (filepath == null) {
             return "File path not provided"
         }
-        val finalFile = File(filepath)
+        var finalFile = File(filepath)
         if (!finalFile.exists() || !finalFile.canRead()) {
             return "Error : file at filepath $filepath does not exist or not readable"
         }
+
+        // If this is an encrypted archive, decrypt it first
+        if (EpsaDecryptor.isEpsaFile(finalFile)) {
+            val decryptedFile = importedFile
+            val error = EpsaDecryptor.decrypt(finalFile, decryptedFile)
+            if (error != null) {
+                return error
+            }
+            finalFile = decryptedFile
+            m_archiveLocation = decryptedFile.path
+        }
+
         val absPath = finalFile.absolutePath
         val sep = absPath.lastIndexOf(File.separator)
         val filename = absPath.substring(sep + 1).trim { it <= ' ' }
         return if (!filename.endsWith(".psa")) {
             "Error : selected file at filepath $filepath is not a 'psa' file : '$filename'"
         } else try {
-            val bufIn = BufferedInputStream(FileInputStream(finalFile))
-            bufIn.mark(512)
-            val zipIn = ZipInputStream(bufIn)
-            var foundSpecial = false
-            var entry: ZipEntry
-            while (zipIn.nextEntry.also { entry = it } != null) {
-                if ("pokemonsdk/version.txt" == entry.name) {
-                    foundSpecial = true
-                    break
-                }
+            ZipFile(finalFile).use { zip ->
+                if (zip.getEntry("pokemonsdk/version.txt") == null) {
+                    "pokemonsdk folder not found in the archive"
+                } else if (zip.getEntry("Game.rb") == null) {
+                    "no Game.rb init script in the archive"
+                } else null
             }
-            if (!foundSpecial) {
-                "pokemonsdk folder not found in the archive"
-            } else null
         } catch (e: IOException) {
             "Error while reading the archive: " + e.localizedMessage
         }
@@ -142,16 +145,24 @@ class CompileActivity: ComponentActivity() {
         ) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 val uri = result.data?.data!!
-                if (!importedFile.exists()) {
-                    importedFile.createNewFile()
+                val stagingFile = importedStagingFile
+                if (!stagingFile.exists()) {
+                    stagingFile.createNewFile()
                 }
-                val out = importedFile.outputStream()
+                val out = stagingFile.outputStream()
                 val input = contentResolver.openInputStream(uri)
                 input?.copyTo(out)
                 input?.close()
                 out.close()
                 m_withSavedArchive = false
-                setArchiveLocationValue(importedFile.path)
+                if (EpsaDecryptor.isEpsaFile(stagingFile)) {
+                    // Encrypted archive: validation will decrypt to archive.psa
+                    setArchiveLocationValue(stagingFile.path)
+                } else {
+                    // Plain archive: rename staging to final location
+                    stagingFile.renameTo(importedFile)
+                    setArchiveLocationValue(importedFile.path)
+                }
             }
         }
 
@@ -164,5 +175,8 @@ class CompileActivity: ComponentActivity() {
 
     private val importedFile: File
         get() = File("$m_executionLocation/archive.psa")
+
+    private val importedStagingFile: File
+        get() = File("$m_executionLocation/archive.staging")
 
 }

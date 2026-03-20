@@ -16,12 +16,14 @@ import com.psdk.ruby.vm.RubyScript
 import com.psdk.ruby.vm.ScriptLocation
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
+import java.io.File
 
 
 class CompileProcessActivity : ComponentActivity() {
     private var m_executionLocation: String? = null
     private var m_archiveLocation: String? = null
     private var m_currentLogs: CompileStepLogs? = null
+    private val m_allStepLogs = mutableListOf<CompileStepLogs>()
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +46,7 @@ class CompileProcessActivity : ComponentActivity() {
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder())
         val copySavesLogs = CompileStepLogs(CompileStepData("Copying saves", CompileStepStatus.READY), StringBuilder())
 
+        m_allStepLogs.addAll(listOf(checkEngineLogs, compilationLogs, copySavesLogs))
         m_currentLogs = checkEngineLogs
 
         val compilationStepsDetails = mapOf(
@@ -82,6 +85,7 @@ class CompileProcessActivity : ComponentActivity() {
             setResult(returnCode)
             runOnUiThread {
                 progressBarCompilation.visibility = View.INVISIBLE
+                saveLogsToFile()
                 if (returnCode == 0) {
                     compilationEndState.visibility = View.VISIBLE
                     compilationEndState.text = "Compilation success !"
@@ -100,6 +104,7 @@ class CompileProcessActivity : ComponentActivity() {
             Thread.sleep(1000)
             if (returnCode != 0) {
                 m_currentLogs?.step?.status = CompileStepStatus.ERROR
+                saveLogsToFile()
                 runOnUiThread {
                     progressBarCompilation.visibility = View.INVISIBLE
                     compilationEndState.visibility = View.VISIBLE
@@ -127,6 +132,7 @@ class CompileProcessActivity : ComponentActivity() {
             Thread.sleep(1000)
             if (returnCode != 0) {
                 m_currentLogs?.step?.status = CompileStepStatus.ERROR
+                saveLogsToFile()
                 runOnUiThread {
                     progressBarCompilation.visibility = View.INVISIBLE
                     compilationEndState.visibility = View.VISIBLE
@@ -157,6 +163,17 @@ class CompileProcessActivity : ComponentActivity() {
         }
     }
 
+    private fun saveLogsToFile() {
+        val logFile = File(m_executionLocation, COMPILATION_LOG_FILE)
+        logFile.bufferedWriter().use { writer ->
+            for (stepLogs in m_allStepLogs) {
+                writer.appendLine("=== ${stepLogs.step.title} [${stepLogs.step.status}] ===")
+                writer.appendLine(stepLogs.logs.toString())
+                writer.newLine()
+            }
+        }
+    }
+
     private fun showRestartDialog() {
         AlertDialog.Builder(this)
             .setTitle("Restart required")
@@ -179,5 +196,6 @@ class CompileProcessActivity : ComponentActivity() {
         private const val COPY_SAVES_SCRIPT = "copy_saves.rb"
         private const val RUBY_COMPILE_SCRIPT = "compile.rb"
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
+        const val COMPILATION_LOG_FILE = "last_compilation.log"
     }
 }
