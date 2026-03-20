@@ -50,6 +50,18 @@
         android:layout_marginTop="@dimen/spacing_md"
         android:text="Preparing your adventure..." />
 
+    <!-- View Logs button (shown on failure) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/viewLogsButton"
+        style="@style/Widget.Psdk.Button.Outlined"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_lg"
+        android:text="View Compilation Logs"
+        android:visibility="gone"
+        app:icon="@android:drawable/ic_dialog_info"
+        app:iconGravity="textStart" />
+
     <!-- Spacer -->
     <View
         android:layout_width="0dp"

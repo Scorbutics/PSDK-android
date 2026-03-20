@@ -2,9 +2,10 @@ package com.psdk.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.psdk.AppModeDetector
@@ -23,6 +24,7 @@ class ClassicSetupActivity : AppCompatActivity() {
         val gameTitle = findViewById<TextView>(R.id.gameTitle)
         val statusText = findViewById<TextView>(R.id.statusText)
         val progressBar = findViewById<LinearProgressIndicator>(R.id.setupProgressBar)
+        val viewLogsButton = findViewById<MaterialButton>(R.id.viewLogsButton)
 
         gameTitle.text = applicationInfo.loadLabel(packageManager)
         progressBar.isIndeterminate = true
@@ -63,6 +65,7 @@ class ClassicSetupActivity : AppCompatActivity() {
 
                 val compilationComplete = Object()
                 var compilationSuccess = false
+                var compilationLogFile: File? = null
 
                 val engine = CompilationEngine(
                     context = this,
@@ -82,6 +85,7 @@ class ClassicSetupActivity : AppCompatActivity() {
 
                         override fun onCompilationFinished(success: Boolean, logFile: File) {
                             compilationSuccess = success
+                            compilationLogFile = logFile
                             synchronized(compilationComplete) {
                                 compilationComplete.notify()
                             }
@@ -97,7 +101,21 @@ class ClassicSetupActivity : AppCompatActivity() {
                 }
 
                 if (!compilationSuccess) {
-                    throw Exception("Compilation failed. Check logs for details.")
+                    val logPath = compilationLogFile?.absolutePath
+                    runOnUiThread {
+                        statusText.text = "Compilation failed"
+                        statusText.setTextColor(getColor(R.color.colorError))
+                        progressBar.setIndicatorColor(getColor(R.color.colorError))
+                        progressBar.progress = 100
+                        if (logPath != null) {
+                            viewLogsButton.visibility = View.VISIBLE
+                            viewLogsButton.setOnClickListener {
+                                LogBottomSheetFragment.newInstance(logPath, null, "Compilation Logs")
+                                    .show(supportFragmentManager, "compilation_logs")
+                            }
+                        }
+                    }
+                    return@Thread
                 }
 
                 // Step 5: Save state and prompt restart
@@ -116,8 +134,10 @@ class ClassicSetupActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusText.text = "Setup failed"
-                    Toast.makeText(applicationContext, "Setup failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    statusText.text = "Setup failed: ${e.localizedMessage}"
+                    statusText.setTextColor(getColor(R.color.colorError))
+                    progressBar.setIndicatorColor(getColor(R.color.colorError))
+                    progressBar.progress = 100
                 }
             }
         }.start()
