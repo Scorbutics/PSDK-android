@@ -189,7 +189,7 @@ class ::Dir
         final_files = []
         all_dirs.each do |dir|
             if LiteRGSS::AssetFile::is_directory? dir
-                final_search = dir + "/" + search + search_append
+                final_search = dir + "/**/" + search + search_append
                 #STDERR.puts "GO RECURSIVE SEARCH #{final_search} in #{directory_path} (#{search_pattern})"
                 final_files = final_files.concat(Dir[final_search])
             else
