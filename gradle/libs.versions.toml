@@ -3,7 +3,7 @@ apkzlib = "8.3.0"
 bcpkix-jdk15on = "1.70"
 apksig = "8.3.0"
 appcompat = "1.5.1"
-gradle = "8.8.0"
+gradle = "9.1.1"
 kotlin-stdlib = "1.8.20"
 material = "1.7.0"
 constraintlayout = "2.1.4"
@@ -12,6 +12,7 @@ zip4j = "2.11.5"
 zipalign = "1.1.3"
 arsc = "1.3.1"
 kotlinx-serialization = "1.7.0"
+rgss-runtime-android = "1.0.5-SNAPSHOT"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -27,3 +28,4 @@ zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
 zipalign = { module = "com.github.iyxan23:zipalign-java", version.ref = "zipalign" }
 arsc = { module = "io.github.reandroid:ARSCLib", version.ref = "arsc" }
 kotlinx-serialization = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+rgss-runtime-android = { module = "com.scorbutics.rubyvm:rgss-runtime-android", version.ref = "rgss-runtime-android" }

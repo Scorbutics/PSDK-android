@@ -1,48 +1,35 @@
 # PSDK-android
 
-A modern Android port of PSDK (Pokémon SDK) using SFML for Android v8a (64-bit architecture). This project demonstrates how to build a native Android application that integrates SFML graphics library with an embedded Ruby VM for game scripting.
+A modern Android port of PSDK (Pokémon SDK). This project provides a Kotlin Android application that delegates all native code execution (SFML, Ruby VM) to the [`rgss-runtime`](https://github.com/Scorbutics/litergss-everywhere) dependency.
 
 ## 🎯 Overview
 
 PSDK-android is an Android implementation that combines:
-- **SFML (Simple and Fast Multimedia Library)** for graphics, audio, and windowing
-- **Embedded Ruby VM** for game scripting and logic
-- **Modern Android build system** using CMake and Gradle
-- **64-bit ARM support** (arm64-v8a) for Android 8.0+
+- **[`rgss-runtime-android`](https://github.com/Scorbutics/litergss-everywhere)**: A self-contained dependency that bundles SFML, the embedded Ruby VM, and all native libraries
+- **Modern Android build system** using Gradle
+- **Multi-architecture support** (arm64-v8a, x86_64) for Android 8.0+
 
-The project upgrades the traditional SFML Android example to a more modern architecture, leveraging CMake for native code compilation and providing a clean integration between C++ native code and Kotlin/Java Android components.
+The project itself contains no native C++ code — all native code and the Ruby VM interpreter are packaged inside the `rgss-runtime-android` dependency, keeping this repository focused on the Android application layer (UI, project management, APK compilation).
 
 ## ✨ Features
 
-- ✅ **64-bit Android Support**: Fully compatible with arm64-v8a architecture
-- ✅ **SFML Integration**: Complete SFML library support including graphics, audio, network, and window management
-- ✅ **Ruby Scripting**: Embedded Ruby VM for game logic and scripting
-- ✅ **Modern Build System**: CMake-based native build with Gradle integration
+- ✅ **Multi-architecture Support**: Compatible with arm64-v8a and x86_64
+- ✅ **SFML + Ruby VM via rgss-runtime**: Graphics, audio, and scripting provided by the runtime dependency
+- ✅ **Pure Kotlin/Java Application**: No native code to compile in this project
 - ✅ **Android 8.0+ Compatible**: Targets modern Android versions (API 26+)
 - ✅ **Room Database**: Integrated Room persistence library for data storage
 - ✅ **Kotlin Support**: Modern Kotlin-based Android application layer
 
 ## 📋 Requirements
 
-Before building this project, ensure you have **EXACTLY** the following versions installed:
-
 ### Required Tools
-- **NDK r22b** (or NDK 25.0.8775105 as specified in build.gradle)
-- **Android Studio** >= 4.2.0
-- **CMake** >= 3.19.2 (project uses 3.22.1)
-- **Ninja** build system
-- **libtool binary** (package `libtool-bin` on Ubuntu/Debian)
+- **Android Studio**
+- **Java**: JDK 17 (for Kotlin toolchain)
 
 ### Android SDK Requirements
 - **Compile SDK**: 34
 - **Min SDK**: 26 (Android 8.0)
 - **Target SDK**: 33
-- **Build Tools**: Latest
-
-### Development Environment
-- **Java**: JDK 17 (for Kotlin toolchain)
-- **Kotlin**: 1.9.10+
-- **Gradle**: 8.x (via wrapper)
 
 ## 🏗️ Project Structure
 
@@ -51,28 +38,16 @@ PSDK-android/
 ├── app/
 │   ├── src/
 │   │   └── main/
-│   │       ├── cpp/                    # Native C++ code
-│   │       │   ├── external/           # External library headers
-│   │       │   ├── jni/                # JNI bridge code
-│   │       │   ├── logging/            # Logging utilities
-│   │       │   ├── psdk-script-starter/# PSDK script initialization
-│   │       │   ├── ruby-vm/            # Ruby VM integration
-│   │       │   ├── CMakeLists.txt      # CMake build configuration
-│   │       │   └── main.cpp            # Application entry point
-│   │       ├── java/                   # Java source files
-│   │       ├── kotlin/                 # Kotlin source files
-│   │       └── ruby/                   # Ruby scripts (assets)
-│   ├── jniLibs/                        # Pre-built native libraries
-│   │   └── arm64-v8a/                  # 64-bit ARM libraries
-│   │       ├── libsfml-*.so            # SFML libraries
-│   │       ├── libruby.so              # Ruby VM
-│   │       └── ...                     # Other dependencies
+│   │       ├── java/                   # Kotlin/Java source files
+│   │       └── ruby/                   # Ruby scripts (bundled as assets)
 │   └── build.gradle                    # App-level Gradle config
 ├── gradle/                             # Gradle wrapper files
 ├── build.gradle                        # Project-level Gradle config
 ├── settings.gradle                     # Gradle settings
 └── README.md                           # This file
 ```
+
+All native libraries (SFML, Ruby VM, etc.) are provided transitively by the `rgss-runtime-android` dependency — there is no `cpp/` or `jniLibs/` directory in this project.
 
 ## 🚀 Getting Started
 
@@ -83,34 +58,22 @@ git clone https://github.com/Scorbutics/PSDK-android.git
 cd PSDK-android
 ```
 
-### 2. Install Dependencies
+### 2. Configure the Ruby VM Dependency
 
-#### On Ubuntu/Debian:
-```bash
-sudo apt-get update
-sudo apt-get install libtool-bin cmake ninja-build
+The embedded Ruby VM (`rgss-runtime-android`) is published to GitHub Packages from the [litergss-everywhere](https://github.com/Scorbutics/litergss-everywhere) repository. Gradle needs a GitHub Personal Access Token (PAT) to download it.
+
+**Create a PAT** with the `read:packages` scope at [GitHub Settings > Tokens](https://github.com/settings/tokens), then add it to your **user-level** Gradle properties (`~/.gradle/gradle.properties` — create the file if it doesn't exist):
+
+```properties
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.token=YOUR_GITHUB_PAT
 ```
 
-#### On macOS:
-```bash
-brew install libtool cmake ninja
-```
+> **Do not** commit these credentials. The project's `gradle.properties` does not contain them; they are read from your home directory.
 
-#### On Windows:
-- Install CMake from [cmake.org](https://cmake.org/download/)
-- Install Ninja from [ninja-build.org](https://ninja-build.org/)
-- Ensure libtool is available (via MSYS2 or similar)
+Alternatively, you can set the `GITHUB_USERNAME` and `GITHUB_TOKEN` environment variables instead.
 
-### 3. Configure Android Studio
-
-1. Open Android Studio
-2. Install the required NDK version:
-   - Go to **Tools → SDK Manager → SDK Tools**
-   - Check "Show Package Details"
-   - Install **NDK 25.0.8775105** (or r22b)
-3. Install CMake 3.22.1+ from SDK Manager
-
-### 4. Build the Project
+### 3. Build the Project
 
 #### Using Android Studio:
 1. Open the project in Android Studio
@@ -132,17 +95,6 @@ brew install libtool cmake ninja
 
 ## 🔧 Configuration
 
-### CMake Build Arguments
-
-The project uses the following CMake configuration:
-
-```cmake
--DANDROID_STL=c++_shared
--DANDROID_PLATFORM=android-26
--DANDROID_ABI=arm64-v8a
--DCMAKE_BUILD_TYPE=Debug  # or Release
-```
-
 ### Gradle Configuration
 
 Key configuration in `app/build.gradle`:
@@ -156,15 +108,8 @@ android {
         minSdkVersion 26
         targetSdkVersion 33
         
-        externalNativeBuild {
-            cmake {
-                cFlags "-fdeclspec"
-                cppFlags "-std=c++17"
-            }
-        }
-        
         ndk {
-            abiFilters 'arm64-v8a'
+            abiFilters += ["x86_64", "arm64-v8a"]
         }
     }
 }
@@ -172,12 +117,8 @@ android {
 
 ## 📚 Dependencies
 
-### Native Libraries (C++)
-- **SFML**: Graphics, audio, window, system, network modules
-- **OpenAL**: Audio backend
-- **Ogg/Vorbis/FLAC**: Audio codecs
-- **FreeType**: Font rendering
-- **Ruby**: Embedded scripting engine
+### Runtime
+- **[`rgss-runtime-android`](https://github.com/Scorbutics/litergss-everywhere)**: Bundles all native libraries (SFML, Ruby VM, OpenAL, audio codecs, FreeType, etc.) — published to [GitHub Packages](https://github.com/Scorbutics/litergss-everywhere/packages)
 
 ### Android Libraries (Kotlin/Java)
 - **AndroidX Room**: Database persistence (v2.6.1)
@@ -190,50 +131,26 @@ android {
 
 ## 🎮 Usage
 
-The application entry point is in `main.cpp`:
-
-```cpp
-int main(int argc, char* argv[]) {
-    auto* activity = sf::getNativeActivity();
-    return StartGameFromNativeActivity(activity);
-}
-```
-
-The `StartGameFromNativeActivity` function (defined in `jni_psdk.h`) initializes the Ruby VM and starts the game loop using SFML.
-
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.
 
-### Modifying Native Code
-
-1. Edit C++ files in `app/src/main/cpp/`
-2. Update `CMakeLists.txt` if adding new source files
-3. Rebuild the project to compile native code
+The native entry point and Ruby VM initialization are handled internally by the `rgss-runtime-android` dependency.
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-**Issue**: CMake version mismatch
+**Issue**: Dependency resolution failure for `rgss-runtime-android`
 ```
-Solution: Ensure CMake 3.19.2+ is installed and configured in Android Studio
-```
-
-**Issue**: NDK not found
-```
-Solution: Install the exact NDK version specified in build.gradle via SDK Manager
-```
-
-**Issue**: libtool not found during build
-```
-Solution: Install libtool-bin package (Linux) or equivalent for your OS
+Solution: Ensure your GitHub PAT is configured with `read:packages` scope
+in ~/.gradle/gradle.properties (see "Configure the Ruby VM Dependency" above)
 ```
 
 **Issue**: UnsatisfiedLinkError at runtime
 ```
-Solution: Ensure all .so files are present in jniLibs/arm64-v8a/
-Check that abiFilters is set to 'arm64-v8a' in build.gradle
+Solution: Check that abiFilters in build.gradle matches your device architecture
+Verify that the rgss-runtime-android dependency resolved correctly
 ```
 
 **Issue**: Ruby VM fails to initialize
@@ -254,10 +171,9 @@ Contributions are welcome! Please follow these guidelines:
 
 ### Development Guidelines
 
-- Follow C++17 standards for native code
 - Use Kotlin for Android-specific code
 - Maintain compatibility with Android 8.0+
-- Test on real devices (arm64-v8a)
+- Test on real devices (arm64-v8a or x86_64)
 - Document significant changes
 
 ## 📄 License
@@ -271,6 +187,7 @@ This project's license is not explicitly specified. Please contact the repositor
 
 ## 🔗 Related Projects
 
+- [litergss-everywhere](https://github.com/Scorbutics/litergss-everywhere) - The rgss-runtime dependency (SFML + Ruby VM)
 - [SFML](https://www.sfml-dev.org/) - Simple and Fast Multimedia Library
 - [PSDK](https://psdk.pokemonworkshop.com/) - Pokémon SDK
 - [Ruby](https://www.ruby-lang.org/) - Ruby programming language
@@ -284,13 +201,6 @@ For issues, questions, or suggestions:
 ## 🎯 Roadmap
 
 Potential future enhancements:
-- [ ] Support for additional Android architectures (armeabi-v7a, x86_64)
-- [ ] Updated SFML version with official 64-bit Android support
-- [ ] Improved Ruby VM integration and performance
 - [ ] Example game/demo application
 - [ ] Automated testing and CI/CD pipeline
 - [ ] Comprehensive documentation and tutorials
-
----
-
-**Note**: This project demonstrates advanced Android NDK development with SFML and Ruby integration. It requires solid understanding of C++, CMake, JNI, and Android development.

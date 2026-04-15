@@ -3,7 +3,7 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android'
     id 'org.jetbrains.kotlin.plugin.serialization'
-    id 'com.google.devtools.ksp' version "1.9.10-1.0.13"
+    id 'com.google.devtools.ksp' version '2.3.2'
 }
 
 android {
@@ -80,5 +80,5 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
 
-    implementation 'com.scorbutics.rubyvm:kmp-publish-android:1.0.0-SNAPSHOT'
+    implementation libs.rgss.runtime.android
 }

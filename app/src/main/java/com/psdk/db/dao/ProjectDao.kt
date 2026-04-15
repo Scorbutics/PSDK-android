@@ -16,7 +16,7 @@ interface ProjectDao {
     fun findById(projectId: UUID): Project
 
     @Insert
-    fun insertAll(vararg projects: Project)
+    fun insertAll(project: Project)
 
     @Delete
     fun delete(project: Project)
