@@ -125,7 +125,11 @@ class ClassicSetupActivity : AppCompatActivity() {
                 updateStatus(statusText, "Setup complete!")
 
                 val prefs = getSharedPreferences(CLASSIC_MODE_PREFS, MODE_PRIVATE)
-                prefs.edit().putString(CLASSIC_MODE_STATE_KEY, STATE_SETUP_COMPLETE).apply()
+                val currentVersionCode = packageManager.getPackageInfo(packageName, 0).longVersionCode
+                prefs.edit()
+                    .putString(CLASSIC_MODE_STATE_KEY, STATE_SETUP_COMPLETE)
+                    .putLong("VERSION_CODE", currentVersionCode)
+                    .apply()
 
                 Thread.sleep(500)
 

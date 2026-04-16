@@ -19,6 +19,16 @@ class EntryActivity : AppCompatActivity() {
         val target = when (mode) {
             AppModeDetector.AppMode.CLASSIC_USER -> {
                 val prefs = getSharedPreferences(ClassicSetupActivity.CLASSIC_MODE_PREFS, MODE_PRIVATE)
+
+                // Detect APK upgrade by comparing stored versionCode
+                val currentVersionCode = packageManager.getPackageInfo(packageName, 0).longVersionCode
+                val storedVersionCode = prefs.getLong("VERSION_CODE", -1L)
+                if (storedVersionCode != currentVersionCode) {
+                    prefs.edit()
+                        .putString(ClassicSetupActivity.CLASSIC_MODE_STATE_KEY, ClassicSetupActivity.STATE_NEEDS_SETUP)
+                        .apply()
+                }
+
                 val state = prefs.getString(ClassicSetupActivity.CLASSIC_MODE_STATE_KEY, ClassicSetupActivity.STATE_NEEDS_SETUP)
 
                 when (state) {

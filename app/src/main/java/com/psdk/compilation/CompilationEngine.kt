@@ -31,13 +31,14 @@ class CompilationEngine(
     private var interpreter: PsdkInterpreter? = null
 
     fun start() {
-        val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder())
+        val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up saves", CompileStepStatus.IN_PROGRESS), StringBuilder())
+        val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.READY), StringBuilder())
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder())
         val copySavesLogs = CompileStepLogs(CompileStepData("Copying saves", CompileStepStatus.READY), StringBuilder())
-        allStepLogs.addAll(listOf(checkEngineLogs, compilationLogs, copySavesLogs))
+        allStepLogs.addAll(listOf(backupSavesLogs, checkEngineLogs, compilationLogs, copySavesLogs))
 
         currentLogIndex = 0
-        callback.onStepStarted(0, checkEngineLogs.step.title)
+        callback.onStepStarted(0, backupSavesLogs.step.title)
 
         interpreter = PsdkInterpreter.create(
             context = context,
@@ -55,8 +56,8 @@ class CompilationEngine(
         val location = ScriptLocation(executionLocation, archiveLocation)
 
         val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
-            allStepLogs[2].step.status = if (returnCode == 0) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
-            callback.onStepCompleted(2, returnCode == 0)
+            allStepLogs[3].step.status = if (returnCode == 0) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
+            callback.onStepCompleted(3, returnCode == 0)
             interpreter?.close()
             interpreter = null
             val logFile = saveLogsToFile()
@@ -64,6 +65,25 @@ class CompilationEngine(
         }
 
         val onCompleteCompilation: CompletionTask = { returnCode: Int ->
+            Thread.sleep(1000)
+            if (returnCode != 0) {
+                allStepLogs[2].step.status = CompileStepStatus.ERROR
+                callback.onStepCompleted(2, false)
+                interpreter?.close()
+                interpreter = null
+                val logFile = saveLogsToFile()
+                callback.onCompilationFinished(false, logFile)
+            } else {
+                allStepLogs[2].step.status = CompileStepStatus.SUCCESS
+                callback.onStepCompleted(2, true)
+                currentLogIndex = 3
+                allStepLogs[3].step.status = CompileStepStatus.IN_PROGRESS
+                callback.onStepStarted(3, allStepLogs[3].step.title)
+                interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT), location, onCompleteCopySaves)
+            }
+        }
+
+        val onCompleteCheck: CompletionTask = { returnCode: Int ->
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[1].step.status = CompileStepStatus.ERROR
@@ -78,11 +98,11 @@ class CompilationEngine(
                 currentLogIndex = 2
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(2, allStepLogs[2].step.title)
-                interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT), location, onCompleteCopySaves)
+                interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT), location, onCompleteCompilation)
             }
         }
 
-        val onCompleteCheck: CompletionTask = { returnCode: Int ->
+        val onCompleteBackup: CompletionTask = { returnCode: Int ->
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[0].step.status = CompileStepStatus.ERROR
@@ -97,12 +117,12 @@ class CompilationEngine(
                 currentLogIndex = 1
                 allStepLogs[1].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(1, allStepLogs[1].step.title)
-                interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT), location, onCompleteCompilation)
+                interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
             }
         }
 
         try {
-            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
+            interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
         } catch (ex: Exception) {
             callback.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
             callback.onCompilationFinished(false, saveLogsToFile())
@@ -134,6 +154,7 @@ class CompilationEngine(
     }
 
     companion object {
+        private const val BACKUP_SAVES_SCRIPT = "backup_saves.rb"
         private const val COPY_SAVES_SCRIPT = "copy_saves.rb"
         private const val RUBY_COMPILE_SCRIPT = "compile.rb"
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
