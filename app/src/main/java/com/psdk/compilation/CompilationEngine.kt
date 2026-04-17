@@ -31,14 +31,14 @@ class CompilationEngine(
     private var interpreter: PsdkInterpreter? = null
 
     fun start() {
-        val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up saves", CompileStepStatus.IN_PROGRESS), StringBuilder())
-        val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.READY), StringBuilder())
+        val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder())
+        val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up previous Release", CompileStepStatus.READY), StringBuilder())
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder())
         val copySavesLogs = CompileStepLogs(CompileStepData("Copying saves", CompileStepStatus.READY), StringBuilder())
-        allStepLogs.addAll(listOf(backupSavesLogs, checkEngineLogs, compilationLogs, copySavesLogs))
+        allStepLogs.addAll(listOf(checkEngineLogs, backupSavesLogs, compilationLogs, copySavesLogs))
 
         currentLogIndex = 0
-        callback.onStepStarted(0, backupSavesLogs.step.title)
+        callback.onStepStarted(0, checkEngineLogs.step.title)
 
         interpreter = PsdkInterpreter.create(
             context = context,
@@ -55,13 +55,27 @@ class CompilationEngine(
 
         val location = ScriptLocation(executionLocation, archiveLocation)
 
-        val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
-            allStepLogs[3].step.status = if (returnCode == 0) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
-            callback.onStepCompleted(3, returnCode == 0)
+        val finishWithFailure: (Int) -> Unit = { failedStepIndex ->
             interpreter?.close()
             interpreter = null
+            restoreReleaseBackup(failedStepIndex)
             val logFile = saveLogsToFile()
-            callback.onCompilationFinished(returnCode == 0, logFile)
+            callback.onCompilationFinished(false, logFile)
+        }
+
+        val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
+            if (returnCode != 0) {
+                allStepLogs[3].step.status = CompileStepStatus.ERROR
+                callback.onStepCompleted(3, false)
+                finishWithFailure(3)
+            } else {
+                allStepLogs[3].step.status = CompileStepStatus.SUCCESS
+                callback.onStepCompleted(3, true)
+                interpreter?.close()
+                interpreter = null
+                val logFile = saveLogsToFile()
+                callback.onCompilationFinished(true, logFile)
+            }
         }
 
         val onCompleteCompilation: CompletionTask = { returnCode: Int ->
@@ -69,10 +83,7 @@ class CompilationEngine(
             if (returnCode != 0) {
                 allStepLogs[2].step.status = CompileStepStatus.ERROR
                 callback.onStepCompleted(2, false)
-                interpreter?.close()
-                interpreter = null
-                val logFile = saveLogsToFile()
-                callback.onCompilationFinished(false, logFile)
+                finishWithFailure(2)
             } else {
                 allStepLogs[2].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(2, true)
@@ -83,15 +94,12 @@ class CompilationEngine(
             }
         }
 
-        val onCompleteCheck: CompletionTask = { returnCode: Int ->
+        val onCompleteBackup: CompletionTask = { returnCode: Int ->
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[1].step.status = CompileStepStatus.ERROR
                 callback.onStepCompleted(1, false)
-                interpreter?.close()
-                interpreter = null
-                val logFile = saveLogsToFile()
-                callback.onCompilationFinished(false, logFile)
+                finishWithFailure(1)
             } else {
                 allStepLogs[1].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(1, true)
@@ -102,7 +110,7 @@ class CompilationEngine(
             }
         }
 
-        val onCompleteBackup: CompletionTask = { returnCode: Int ->
+        val onCompleteCheck: CompletionTask = { returnCode: Int ->
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[0].step.status = CompileStepStatus.ERROR
@@ -117,15 +125,36 @@ class CompilationEngine(
                 currentLogIndex = 1
                 allStepLogs[1].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(1, allStepLogs[1].step.title)
-                interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
+                interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
             }
         }
 
         try {
-            interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
+            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
         } catch (ex: Exception) {
             callback.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
             callback.onCompilationFinished(false, saveLogsToFile())
+        }
+    }
+
+    private fun restoreReleaseBackup(failedStepIndex: Int) {
+        val releaseDir = File(executionLocation, "Release")
+        val backupDir = File(executionLocation, "ReleaseBackup")
+        if (!backupDir.exists()) {
+            callback.onLogMessage(failedStepIndex, "No Release backup to restore.")
+            return
+        }
+        try {
+            if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                callback.onLogMessage(failedStepIndex, "Warning: failed to fully clean Release folder before restore.")
+            }
+            if (backupDir.renameTo(releaseDir)) {
+                callback.onLogMessage(failedStepIndex, "Restored previous Release folder from backup.")
+            } else {
+                callback.onLogMessage(failedStepIndex, "Error: failed to rename ReleaseBackup back to Release.")
+            }
+        } catch (ex: Exception) {
+            callback.onLogMessage(failedStepIndex, "Error while restoring backup: ${ex.localizedMessage}")
         }
     }
 

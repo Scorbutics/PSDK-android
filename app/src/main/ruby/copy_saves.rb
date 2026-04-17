@@ -1,4 +1,5 @@
 require 'ruby_physfs_patch.rb'
+require 'fileutils'
 
 unless File.exist?("Release")
     raise "Unable to find a valid release folder"
@@ -24,39 +25,32 @@ end
 
 STDERR.puts "Archive location: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
 
-if File.exist?('Saves')
-    copy_directory_recursive('Saves', File.join('Release', 'Saves'))
-    puts "Saves were copied with success in the release folder."
-else
-    puts "No saves included in this compilation."
-end
-
-# Restore backed-up user saves (from previous installation)
-# User saves take priority over bundled archive saves
-BACKUP_DIR = './SavesBackup'
+BACKUP_DIR = './ReleaseBackup'
+BACKUP_SAVES = File.join(BACKUP_DIR, 'Saves')
 DEST_SAVES = File.join('Release', 'Saves')
 
-if File.OldDirectory?(BACKUP_DIR)
-  Dir.mkdir(DEST_SAVES) unless File.OldDirectory?(DEST_SAVES)
-
-  Dir.entries(BACKUP_DIR).each do |entry|
-    next if entry == '.' || entry == '..'
-    src_path = File.join(BACKUP_DIR, entry)
-    dest_path = File.join(DEST_SAVES, entry)
-
-    if File.OldDirectory?(src_path)
-      copy_directory_recursive(src_path, dest_path)
-    else
-      STDERR.puts "Restoring save #{src_path} to #{dest_path}"
-      IO.copy_stream(src_path, dest_path)
-    end
+# User saves from previous installation take priority over bundled archive saves
+restored_from_backup = false
+if File.OldDirectory?(BACKUP_SAVES)
+  entries = Dir.entries(BACKUP_SAVES).reject { |e| e == '.' || e == '..' }
+  if entries.any?
+    copy_directory_recursive(BACKUP_SAVES, DEST_SAVES)
+    puts "User saves restored from previous Release."
+    restored_from_backup = true
   end
-  puts "User saves restored from backup."
+end
 
-  # Clean up backup
-  require 'fileutils'
+if !restored_from_backup
+  if File.exist?('Saves')
+    copy_directory_recursive('Saves', DEST_SAVES)
+    puts "Saves were copied with success in the release folder."
+  else
+    puts "No saves included in this compilation."
+  end
+end
+
+# Clean up backup now that compilation succeeded
+if File.OldDirectory?(BACKUP_DIR)
   FileUtils.rm_rf(BACKUP_DIR)
-  STDERR.puts "Backup directory cleaned up."
-else
-  puts "No save backup found to restore."
+  STDERR.puts "Release backup cleaned up."
 end
