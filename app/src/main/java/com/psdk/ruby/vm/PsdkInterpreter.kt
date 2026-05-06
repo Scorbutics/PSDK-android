@@ -79,20 +79,9 @@ class PsdkInterpreter private constructor(
             onError: ((Exception) -> Unit)? = null
         ): PsdkInterpreter {
             val paths = RubyVMPaths.getDefaultPaths(context)
-            extractPsdkAssets(context.assets, paths.installDir)
             return PsdkInterpreter(paths, context.assets, listener, onError)
         }
 
-        private fun extractPsdkAssets(assets: AssetManager, installDir: String) {
-            val target = File(installDir, "ruby_physfs_patch.rb")
-            if (!target.exists()) {
-                assets.open("ruby_physfs_patch.rb").use { input ->
-                    target.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        }
     }
 }
 

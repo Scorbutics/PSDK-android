@@ -1,4 +1,13 @@
-require 'ruby_physfs_patch.rb'
+# Mount the APK assets archive at PhysFS root, and point writes to the cwd
+# (real filesystem). The first mount auto-activates the C-extension shim
+# that re-routes File / Dir / IO / Kernel#require through the VFS — saves
+# written to write_dir shadow the archive's stock copy on subsequent reads.
+# `physfs` is statically linked into libembedded-ruby-vm and pre-provided
+# at VM startup, so the require is a no-op kept for explicitness.
+require 'physfs'
+PhysFS.mount ENV['PSDK_ANDROID_ADDITIONAL_PARAM']
+PhysFS.write_dir = Dir.pwd.end_with?('/') ? Dir.pwd : "#{Dir.pwd}/"
+
 require 'fileutils'
 
 unless File.exist?("Release")
@@ -31,7 +40,7 @@ DEST_SAVES = File.join('Release', 'Saves')
 
 # User saves from previous installation take priority over bundled archive saves
 restored_from_backup = false
-if File.OldDirectory?(BACKUP_SAVES)
+if File.directory?(BACKUP_SAVES)
   entries = Dir.entries(BACKUP_SAVES).reject { |e| e == '.' || e == '..' }
   if entries.any?
     copy_directory_recursive(BACKUP_SAVES, DEST_SAVES)
@@ -50,7 +59,7 @@ if !restored_from_backup
 end
 
 # Clean up backup now that compilation succeeded
-if File.OldDirectory?(BACKUP_DIR)
+if File.directory?(BACKUP_DIR)
   FileUtils.rm_rf(BACKUP_DIR)
   STDERR.puts "Release backup cleaned up."
 end
