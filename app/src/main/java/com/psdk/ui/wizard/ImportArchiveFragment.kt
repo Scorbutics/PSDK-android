@@ -102,8 +102,9 @@ class ImportArchiveFragment : Fragment() {
         validationContainer.visibility = View.GONE
         startCompilationButton.isEnabled = false
 
+        val ctx = requireContext().applicationContext
         Thread {
-            val result = ArchiveValidator.validate(executionLocation, stagingFile)
+            val result = ArchiveValidator.validate(ctx, executionLocation, stagingFile)
             activity?.runOnUiThread {
                 processingContainer.visibility = View.GONE
                 if (result.isValid) {

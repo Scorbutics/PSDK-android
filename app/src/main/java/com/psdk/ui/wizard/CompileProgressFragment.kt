@@ -77,7 +77,7 @@ class CompileProgressFragment : Fragment() {
             }
         )
 
-        adapter.setSteps(listOf("Check engine", "Compilation", "Copying saves"))
+        adapter.setSteps(listOf("Check engine", "Backing up previous Release", "Compilation", "Copying saves"))
         engine?.start()
     }
 }

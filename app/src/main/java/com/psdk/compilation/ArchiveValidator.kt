@@ -1,5 +1,6 @@
 package com.psdk.compilation
 
+import android.content.Context
 import com.psdk.zip.EpsaDecryptor
 import java.io.File
 import java.io.IOException
@@ -12,7 +13,7 @@ object ArchiveValidator {
         val archivePath: String?
     )
 
-    fun validate(executionLocation: String, stagingFile: File): ValidationResult {
+    fun validate(context: Context, executionLocation: String, stagingFile: File): ValidationResult {
         if (!stagingFile.exists() || !stagingFile.canRead()) {
             return ValidationResult(false, "File does not exist or is not readable", null)
         }
@@ -22,7 +23,7 @@ object ArchiveValidator {
         }
 
         val decryptedFile = File(executionLocation, "archive.psa")
-        val error = EpsaDecryptor.decrypt(stagingFile, decryptedFile)
+        val error = EpsaDecryptor.decrypt(context, stagingFile, decryptedFile)
         if (error != null) {
             return ValidationResult(false, error, null)
         }

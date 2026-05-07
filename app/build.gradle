@@ -6,6 +6,17 @@ plugins {
     id 'com.google.devtools.ksp' version '2.3.2'
 }
 
+// We iterate fast on rgss-runtime SNAPSHOTs (republishing the same
+// "1.1.0-SNAPSHOT" coordinate). Gradle's default 24h SNAPSHOT TTL means
+// a freshly republished AAR won't be picked up until tomorrow unless you
+// pass --refresh-dependencies. Drop the TTL to zero so every build does
+// a quick HEAD against the registry and pulls the new artifact when it
+// exists. One small request per changing dep per build — worth it for
+// the SNAPSHOT churn during active runtime development.
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 android {
     compileSdkVersion 34
 
@@ -26,6 +37,20 @@ android {
 
         ndk {
             abiFilters += ["x86_64", "arm64-v8a"]
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+                cFlags "-std=c11"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

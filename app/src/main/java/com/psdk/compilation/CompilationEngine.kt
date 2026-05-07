@@ -12,6 +12,8 @@ import com.psdk.ruby.vm.ScriptLocation
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class CompilationEngine(
     private val context: Context,
@@ -30,6 +32,22 @@ class CompilationEngine(
     private var currentLogIndex = 0
     private var interpreter: PsdkInterpreter? = null
 
+    // Log writes and step switches are serialized through this single-threaded executor.
+    // Without it, logs from script N can be tagged with step N+1 because the JNI listener
+    // fires from a different thread than the one bumping currentLogIndex.
+    private val logExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "CompilationEngine-LogDispatch").apply { isDaemon = true }
+    }
+
+    private fun setActiveStep(idx: Int) {
+        logExecutor.submit { currentLogIndex = idx }.get()
+    }
+
+    private fun shutdownLogExecutor() {
+        logExecutor.shutdown()
+        logExecutor.awaitTermination(5, TimeUnit.SECONDS)
+    }
+
     fun start() {
         val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder())
         val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up previous Release", CompileStepStatus.READY), StringBuilder())
@@ -44,8 +62,12 @@ class CompilationEngine(
             context = context,
             listener = object : LogListener {
                 override fun onLogMessage(logMessage: LogMessage) {
-                    allStepLogs[currentLogIndex].logs.appendLine(logMessage.message)
-                    callback.onLogMessage(currentLogIndex, logMessage.message)
+                    val msg = logMessage.message
+                    logExecutor.execute {
+                        val idx = currentLogIndex
+                        allStepLogs[idx].logs.appendLine(msg)
+                        callback.onLogMessage(idx, msg)
+                    }
                 }
             },
             onError = { e ->
@@ -87,7 +109,7 @@ class CompilationEngine(
             } else {
                 allStepLogs[2].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(2, true)
-                currentLogIndex = 3
+                setActiveStep(3)
                 allStepLogs[3].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(3, allStepLogs[3].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT), location, onCompleteCopySaves)
@@ -103,7 +125,7 @@ class CompilationEngine(
             } else {
                 allStepLogs[1].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(1, true)
-                currentLogIndex = 2
+                setActiveStep(2)
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(2, allStepLogs[2].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT), location, onCompleteCompilation)
@@ -122,7 +144,7 @@ class CompilationEngine(
             } else {
                 allStepLogs[0].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(0, true)
-                currentLogIndex = 1
+                setActiveStep(1)
                 allStepLogs[1].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(1, allStepLogs[1].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
@@ -171,6 +193,9 @@ class CompilationEngine(
     }
 
     private fun saveLogsToFile(): File {
+        // Drain pending log writes before reading the buffers, otherwise the file
+        // can be missing the tail of the last script's output.
+        shutdownLogExecutor()
         val logFile = File(executionLocation, COMPILATION_LOG_FILE)
         logFile.bufferedWriter().use { writer ->
             for (stepLogs in allStepLogs) {

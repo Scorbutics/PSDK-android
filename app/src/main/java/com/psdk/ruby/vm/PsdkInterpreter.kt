@@ -3,7 +3,9 @@ package com.psdk.ruby.vm
 import android.content.Context
 import android.content.res.AssetManager
 import android.system.Os
+import android.util.Log
 import java.io.File
+import com.scorbutics.rubyvm.BuildInfo
 import com.scorbutics.rubyvm.ExecutionResult
 import com.scorbutics.rubyvm.LibraryConfig
 import com.scorbutics.rubyvm.LogListener
@@ -69,8 +71,17 @@ class PsdkInterpreter private constructor(
     }
 
     companion object {
+        const val TAG = "PsdkInterpreter"
+
+        /** rgss-runtime identity for the AAR currently linked into the app. */
+        val rgssRuntimeVersion: String get() = BuildInfo.VERSION
+        val rgssRuntimeBuildTimestamp: String get() = BuildInfo.BUILD_TIMESTAMP
+        val rgssRuntimeBanner: String
+            get() = "rgss-runtime $rgssRuntimeVersion (built $rgssRuntimeBuildTimestamp)"
+
         fun initialize() {
             LibraryConfig.libraryName = "rgss_runtime"
+            Log.i(TAG, rgssRuntimeBanner)
         }
 
         fun create(

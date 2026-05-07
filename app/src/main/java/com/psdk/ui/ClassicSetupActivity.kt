@@ -50,7 +50,7 @@ class ClassicSetupActivity : AppCompatActivity() {
                 // Step 3: Decrypt
                 updateStatus(statusText, "Decrypting archive...")
                 val decryptedFile = File(executionLocation, "archive.psa")
-                val decryptError = EpsaDecryptor.decrypt(stagingFile, decryptedFile)
+                val decryptError = EpsaDecryptor.decrypt(this@ClassicSetupActivity, stagingFile, decryptedFile)
                 if (decryptError != null) {
                     throw Exception("Decryption failed: $decryptError")
                 }
