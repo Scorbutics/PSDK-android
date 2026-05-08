@@ -11,7 +11,8 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.psdk.AppModeDetector
 import com.psdk.R
 import com.psdk.compilation.CompilationEngine
-import com.psdk.zip.EpsaDecryptor
+import com.psdk.ruby.vm.ArchiveKeys
+import com.psdk.zip.EpsaArchive
 import com.scorbutics.rubyvm.RubyVMPaths
 import java.io.File
 
@@ -47,14 +48,18 @@ class ClassicSetupActivity : AppCompatActivity() {
                     }
                 }
 
-                // Step 3: Decrypt
-                updateStatus(statusText, "Decrypting archive...")
-                val decryptedFile = File(executionLocation, "archive.psa")
-                val decryptError = EpsaDecryptor.decrypt(this@ClassicSetupActivity, stagingFile, decryptedFile)
-                if (decryptError != null) {
-                    throw Exception("Decryption failed: $decryptError")
+                // Step 3: Validate the v4 header and derive K_enc / K_mac.
+                // No on-disk decryption — the keys are passed to Ruby via env
+                // vars and used by EpsaStream to decrypt on the fly.
+                updateStatus(statusText, "Verifying archive...")
+                val archive = when (val r = EpsaArchive.resolve(this@ClassicSetupActivity, stagingFile)) {
+                    is EpsaArchive.Result.Failure -> throw Exception("Archive verification failed: ${r.message}")
+                    is EpsaArchive.Result.Ok      -> ArchiveKeys(
+                        epsaPath  = r.keys.epsaPath,
+                        encKeyHex = r.keys.encKey.toHex(),
+                        macKeyHex = r.keys.macKey.toHex()
+                    )
                 }
-                stagingFile.delete()
 
                 // Step 4: Compile
                 updateStatus(statusText, "Compiling game data...")
@@ -70,7 +75,7 @@ class ClassicSetupActivity : AppCompatActivity() {
                 val engine = CompilationEngine(
                     context = this,
                     executionLocation = executionLocation,
-                    archiveLocation = decryptedFile.absolutePath,
+                    archive = archive,
                     callback = object : CompilationEngine.CompilationCallback {
                         override fun onStepStarted(stepIndex: Int, stepName: String) {
                             updateStatus(statusText, stepName + "...")
@@ -166,6 +171,9 @@ class ClassicSetupActivity : AppCompatActivity() {
         startActivity(intent)
         Runtime.getRuntime().exit(0)
     }
+
+    private fun ByteArray.toHex(): String =
+        joinToString("") { "%02x".format(it) }
 
     companion object {
         const val CLASSIC_MODE_PREFS = "CLASSIC_MODE"

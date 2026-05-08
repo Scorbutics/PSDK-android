@@ -5,14 +5,15 @@
 #include "hkdf.h"
 
 /*
- * KDF for EPSA archives.
+ * KDF for v4 EPSA archives. Produces K_enc and K_mac for AES-256-CTR /
+ * HMAC-SHA256 streaming decrypt.
  *
  * Inputs (from Kotlin):
- *   certDer     : APK signing cert DER bytes
+ *   certDer     : APK signing cert DER bytes (HKDF ikm)
  *   buildId     : 8 random bytes baked into the archive at encrypt time
  *   kdfVersion  : single-byte version selector (currently always 1)
  *
- * Output: 32-byte K_master suitable for AES-256.
+ * Output: 64 bytes = K_enc (32) || K_mac (32).
  *
  * The salt and info-prefix constants are stored XOR'd against OBF_KEY so they
  * don't appear as readable byte runs in `strings`/`hexdump`. They are
@@ -22,8 +23,7 @@
  * naive grep-based extraction.
  *
  * Must produce output byte-for-byte identical to the host Ruby implementation
- * in plugins/epsa_kdf.rb. The parity test in plugins/test_epsa_kdf.rb is the
- * gate that catches drift.
+ * in plugins/epsa_kdf.rb (derive_v4).
  */
 
 static const uint8_t OBF_KEY = 0x7b;
@@ -47,11 +47,26 @@ static const uint8_t INFO_XOR[16] = {
 #define EPSA_BUILD_ID_SIZE  8
 #define EPSA_KEY_SIZE      32
 
+/* v4 KDF info-suffix tags. Must exactly match the producer side
+ * (PSDKTechnicalDemo/plugins/epsa_format.rb KDF_INFO_TAG_*) and the
+ * consumer Ruby side (PSDK-android/app/src/main/ruby/lib/epsa_format.rb).
+ * 16 bytes each. */
+static const char EPSA_V4_TAG_ENC[] = "psdk-epsa-enc-v4";
+static const char EPSA_V4_TAG_MAC[] = "psdk-epsa-mac-v4";
+#define EPSA_V4_TAG_SIZE 16  /* sizeof tag string, excl. NUL */
+
+/* v4 dual-key derivation: returns 64 bytes (K_enc 32 || K_mac 32).
+ *
+ * Salt + info-prefix (deobfuscated) follow the same pattern as the producer
+ * (epsa_kdf.rb derive_v4): a 16-byte tag distinguishes the two keys. Keeping
+ * one JNI call for both avoids re-marshalling the cert bytes and keeps the
+ * deobfuscated buffers on the stack for half as long as two calls would.
+ */
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_com_psdk_zip_EpsaKdfNative_deriveNative(JNIEnv *env, jobject /*thiz*/,
-                                              jbyteArray certDer,
-                                              jbyteArray buildId,
-                                              jint kdfVersion) {
+Java_com_psdk_zip_EpsaKdfNative_deriveV4Native(JNIEnv *env, jobject /*thiz*/,
+                                                jbyteArray certDer,
+                                                jbyteArray buildId,
+                                                jint kdfVersion) {
     if (certDer == nullptr || buildId == nullptr) return nullptr;
 
     jsize cert_len = env->GetArrayLength(certDer);
@@ -68,10 +83,9 @@ Java_com_psdk_zip_EpsaKdfNative_deriveNative(JNIEnv *env, jobject /*thiz*/,
     }
 
     uint8_t salt[EPSA_SALT_SIZE];
-    uint8_t info[EPSA_INFO_PFX_SIZE + 1 + EPSA_BUILD_ID_SIZE];
-    uint8_t key[EPSA_KEY_SIZE];
+    uint8_t info[EPSA_INFO_PFX_SIZE + 1 + EPSA_BUILD_ID_SIZE + EPSA_V4_TAG_SIZE];
+    uint8_t out[EPSA_KEY_SIZE * 2];
 
-    /* Deobfuscate salt and info prefix. */
     for (size_t i = 0; i < EPSA_SALT_SIZE; i++) {
         salt[i] = (uint8_t)(SALT_XOR[i] ^ OBF_KEY);
     }
@@ -81,11 +95,26 @@ Java_com_psdk_zip_EpsaKdfNative_deriveNative(JNIEnv *env, jobject /*thiz*/,
     info[EPSA_INFO_PFX_SIZE] = (uint8_t)(kdfVersion & 0xff);
     memcpy(info + EPSA_INFO_PFX_SIZE + 1, bid_ptr, EPSA_BUILD_ID_SIZE);
 
-    int rc = hkdf_sha256(reinterpret_cast<const uint8_t *>(cert_ptr),
+    const size_t tag_off = EPSA_INFO_PFX_SIZE + 1 + EPSA_BUILD_ID_SIZE;
+    int rc = 0;
+
+    /* K_enc */
+    memcpy(info + tag_off, EPSA_V4_TAG_ENC, EPSA_V4_TAG_SIZE);
+    rc = hkdf_sha256(reinterpret_cast<const uint8_t *>(cert_ptr),
+                     (size_t)cert_len,
+                     salt, sizeof(salt),
+                     info, sizeof(info),
+                     out, EPSA_KEY_SIZE);
+
+    /* K_mac */
+    if (rc == 0) {
+        memcpy(info + tag_off, EPSA_V4_TAG_MAC, EPSA_V4_TAG_SIZE);
+        rc = hkdf_sha256(reinterpret_cast<const uint8_t *>(cert_ptr),
                          (size_t)cert_len,
                          salt, sizeof(salt),
                          info, sizeof(info),
-                         key,  sizeof(key));
+                         out + EPSA_KEY_SIZE, EPSA_KEY_SIZE);
+    }
 
     /* Wipe sensitive stack buffers regardless of outcome. */
     volatile uint8_t *p = salt;
@@ -97,21 +126,21 @@ Java_com_psdk_zip_EpsaKdfNative_deriveNative(JNIEnv *env, jobject /*thiz*/,
     env->ReleaseByteArrayElements(buildId, bid_ptr,  JNI_ABORT);
 
     if (rc != 0) {
-        p = key;
-        for (size_t i = 0; i < sizeof(key); i++) p[i] = 0;
+        p = out;
+        for (size_t i = 0; i < sizeof(out); i++) p[i] = 0;
         return nullptr;
     }
 
-    jbyteArray result = env->NewByteArray(EPSA_KEY_SIZE);
+    jbyteArray result = env->NewByteArray((jsize)sizeof(out));
     if (result == nullptr) {
-        p = key;
-        for (size_t i = 0; i < sizeof(key); i++) p[i] = 0;
+        p = out;
+        for (size_t i = 0; i < sizeof(out); i++) p[i] = 0;
         return nullptr;
     }
-    env->SetByteArrayRegion(result, 0, EPSA_KEY_SIZE, reinterpret_cast<jbyte *>(key));
+    env->SetByteArrayRegion(result, 0, (jsize)sizeof(out), reinterpret_cast<jbyte *>(out));
 
-    p = key;
-    for (size_t i = 0; i < sizeof(key); i++) p[i] = 0;
+    p = out;
+    for (size_t i = 0; i < sizeof(out); i++) p[i] = 0;
 
     return result;
 }

@@ -1,67 +1,63 @@
 package com.psdk.compilation
 
 import android.content.Context
-import com.psdk.zip.EpsaDecryptor
+import com.psdk.ruby.vm.ArchiveKeys
+import com.psdk.zip.EpsaArchive
 import java.io.File
-import java.io.IOException
-import java.util.zip.ZipFile
 
+/**
+ * Validates a candidate .epsa archive and resolves its decryption keys.
+ *
+ * v4-streaming flow: no on-disk decryption. Validation = header parse +
+ * first-chunk HMAC verification (proves the cert lines up and the bundle
+ * isn't tampered). The deeper "is this a valid PSDK archive" structural
+ * check (pokemonsdk/, Game.rb) now happens at compile time when the Ruby
+ * side mounts via EpsaStream — there's no decrypted ZIP to inspect from
+ * Java.
+ */
 object ArchiveValidator {
     data class ValidationResult(
         val isValid: Boolean,
         val error: String?,
-        val archivePath: String?
+        val archive: ArchiveKeys?
     )
 
-    fun validate(context: Context, executionLocation: String, stagingFile: File): ValidationResult {
+    fun validate(context: Context, stagingFile: File): ValidationResult {
         if (!stagingFile.exists() || !stagingFile.canRead()) {
             return ValidationResult(false, "File does not exist or is not readable", null)
         }
 
-        if (!EpsaDecryptor.isEpsaFile(stagingFile)) {
+        if (!EpsaArchive.isEpsaFile(stagingFile)) {
             return ValidationResult(false, "Only encrypted .epsa archives are supported.", null)
         }
 
-        val decryptedFile = File(executionLocation, "archive.psa")
-        val error = EpsaDecryptor.decrypt(context, stagingFile, decryptedFile)
-        if (error != null) {
-            return ValidationResult(false, error, null)
+        return when (val r = EpsaArchive.resolve(context, stagingFile)) {
+            is EpsaArchive.Result.Failure -> ValidationResult(false, r.message, null)
+            is EpsaArchive.Result.Ok      -> ValidationResult(
+                true, null,
+                ArchiveKeys(
+                    epsaPath  = r.keys.epsaPath,
+                    encKeyHex = r.keys.encKey.toHex(),
+                    macKeyHex = r.keys.macKey.toHex()
+                )
+            )
         }
-
-        return validateZipStructure(decryptedFile)
     }
 
-    fun validateExisting(executionLocation: String): ValidationResult {
-        val existingArchive = File(executionLocation, "archive.psa")
-        if (!existingArchive.exists() || !existingArchive.canRead()) {
+    /**
+     * Lightweight check used to decide whether the import wizard can skip
+     * the "import a file" step. Returns valid only if the staged .epsa
+     * exists and its header parses cleanly + first-chunk HMAC verifies.
+     */
+    fun validateExisting(context: Context, stagingFile: File): ValidationResult {
+        if (!stagingFile.exists() || !stagingFile.canRead()) {
             return ValidationResult(false, null, null)
         }
-        return validateZipStructure(existingArchive)
-    }
-
-    private fun validateZipStructure(file: File): ValidationResult {
-        val absPath = file.absolutePath
-        val filename = file.name.trim()
-        if (!filename.endsWith(".psa")) {
-            return ValidationResult(false, "Selected file is not a valid archive: '$filename'", null)
-        }
-
-        return try {
-            ZipFile(file).use { zip ->
-                when {
-                    zip.getEntry("pokemonsdk/version.txt") == null ->
-                        ValidationResult(false, "pokemonsdk folder not found in the archive", null)
-                    zip.getEntry("Game.rb") == null ->
-                        ValidationResult(false, "no Game.rb init script in the archive", null)
-                    else ->
-                        ValidationResult(true, null, file.absolutePath)
-                }
-            }
-        } catch (e: IOException) {
-            ValidationResult(false, "Error while reading the archive: ${e.localizedMessage}", null)
-        }
+        return validate(context, stagingFile)
     }
 
     fun getStagingFile(executionLocation: String): File = File(executionLocation, "archive.staging")
-    fun getArchiveFile(executionLocation: String): File = File(executionLocation, "archive.psa")
+
+    private fun ByteArray.toHex(): String =
+        joinToString("") { "%02x".format(it) }
 }

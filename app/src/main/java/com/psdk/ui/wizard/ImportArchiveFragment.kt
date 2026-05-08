@@ -18,7 +18,7 @@ import com.google.android.material.button.MaterialButton
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
 import com.psdk.ui.CompileWizardViewModel
-import com.psdk.zip.EpsaDecryptor
+import com.psdk.zip.EpsaArchive
 
 class ImportArchiveFragment : Fragment() {
 
@@ -45,8 +45,8 @@ class ImportArchiveFragment : Fragment() {
                 stagingFile.outputStream().use { out -> input.copyTo(out) }
             }
 
-            if (EpsaDecryptor.isEpsaFile(stagingFile)) {
-                validateArchive(stagingFile, executionLocation)
+            if (EpsaArchive.isEpsaFile(stagingFile)) {
+                validateArchive(stagingFile)
             } else {
                 stagingFile.delete()
                 showValidationError("Only encrypted .epsa archives are supported.")
@@ -77,9 +77,10 @@ class ImportArchiveFragment : Fragment() {
         // Check if we already have a valid archive
         val executionLocation = viewModel.executionLocation.value
         if (executionLocation != null) {
-            val result = ArchiveValidator.validateExisting(executionLocation)
+            val staged = ArchiveValidator.getStagingFile(executionLocation)
+            val result = ArchiveValidator.validateExisting(requireContext(), staged)
             if (result.isValid) {
-                viewModel.archivePath.value = result.archivePath
+                viewModel.archive.value = result.archive
                 showValidationSuccess()
             }
         }
@@ -97,18 +98,18 @@ class ImportArchiveFragment : Fragment() {
         }
     }
 
-    private fun validateArchive(stagingFile: java.io.File, executionLocation: String) {
+    private fun validateArchive(stagingFile: java.io.File) {
         processingContainer.visibility = View.VISIBLE
         validationContainer.visibility = View.GONE
         startCompilationButton.isEnabled = false
 
         val ctx = requireContext().applicationContext
         Thread {
-            val result = ArchiveValidator.validate(ctx, executionLocation, stagingFile)
+            val result = ArchiveValidator.validate(ctx, stagingFile)
             activity?.runOnUiThread {
                 processingContainer.visibility = View.GONE
                 if (result.isValid) {
-                    viewModel.archivePath.value = result.archivePath
+                    viewModel.archive.value = result.archive
                     showValidationSuccess()
                 } else {
                     showValidationError(result.error ?: "Unknown validation error")

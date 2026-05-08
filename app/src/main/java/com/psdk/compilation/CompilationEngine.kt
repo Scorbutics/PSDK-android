@@ -5,6 +5,7 @@ import android.widget.Toast
 import com.psdk.CompileStepData
 import com.psdk.CompileStepLogs
 import com.psdk.CompileStepStatus
+import com.psdk.ruby.vm.ArchiveKeys
 import com.psdk.ruby.vm.CompletionTask
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
@@ -18,7 +19,7 @@ import java.util.concurrent.TimeUnit
 class CompilationEngine(
     private val context: Context,
     private val executionLocation: String,
-    private val archiveLocation: String,
+    private val archive: ArchiveKeys,
     private val callback: CompilationCallback
 ) {
     interface CompilationCallback {
@@ -75,7 +76,7 @@ class CompilationEngine(
             }
         )
 
-        val location = ScriptLocation(executionLocation, archiveLocation)
+        val location = ScriptLocation(executionLocation, archive)
 
         val finishWithFailure: (Int) -> Unit = { failedStepIndex ->
             interpreter?.close()
@@ -112,7 +113,7 @@ class CompilationEngine(
                 setActiveStep(3)
                 allStepLogs[3].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(3, allStepLogs[3].step.title)
-                interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT), location, onCompleteCopySaves)
+                interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCopySaves)
             }
         }
 
@@ -128,7 +129,7 @@ class CompilationEngine(
                 setActiveStep(2)
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
                 callback.onStepStarted(2, allStepLogs[2].step.title)
-                interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT), location, onCompleteCompilation)
+                interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCompilation)
             }
         }
 
@@ -213,5 +214,16 @@ class CompilationEngine(
         private const val RUBY_COMPILE_SCRIPT = "compile.rb"
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
         const val COMPILATION_LOG_FILE = "last_compilation.log"
+
+        // Ruby preludes prepended to scripts that mount the archive. They
+        // define EpsaFormat, EpsaStream, and ArchiveMount so compile.rb /
+        // copy_saves.rb can call ArchiveMount.mount! without a load path.
+        // Order matters: epsa_stream depends on epsa_format, and
+        // archive_mount depends on epsa_stream.
+        private val ARCHIVE_PRELUDES = listOf(
+            "lib/epsa_format.rb",
+            "lib/epsa_stream.rb",
+            "lib/archive_mount.rb"
+        )
     }
 }

@@ -1,11 +1,14 @@
-# Mount the APK assets archive at PhysFS root, and point writes to the cwd
-# (real filesystem). The first mount auto-activates the C-extension shim
-# that re-routes File / Dir / IO / Kernel#require through the VFS — saves
-# written to write_dir shadow the archive's stock copy on subsequent reads.
-# `physfs` is statically linked into libembedded-ruby-vm and pre-provided
-# at VM startup, so the require is a no-op kept for explicitness.
+# Mount the encrypted .epsa archive via a streaming decrypter (EpsaStream),
+# then point writes to the cwd (real filesystem). The first mount
+# auto-activates the C-extension shim that re-routes File / Dir / IO /
+# Kernel#require through the VFS — saves written to write_dir shadow the
+# archive's stock copy on subsequent reads. `physfs` is statically linked
+# into libembedded-ruby-vm and pre-provided at VM startup, so the require
+# is a no-op kept for explicitness. EpsaStream and ArchiveMount are
+# prepended as preludes by RubyScript — see
+# CompilationEngine.ARCHIVE_PRELUDES.
 require 'physfs'
-PhysFS.mount ENV['PSDK_ANDROID_ADDITIONAL_PARAM']
+ArchiveMount.mount!
 PhysFS.write_dir = Dir.pwd.end_with?('/') ? Dir.pwd : "#{Dir.pwd}/"
 
 require 'fileutils'
@@ -32,7 +35,7 @@ def copy_directory_recursive(src, dest)
   end
 end
 
-STDERR.puts "Archive location: " + ENV["PSDK_ANDROID_ADDITIONAL_PARAM"]
+STDERR.puts "Archive location: " + ENV.fetch('PSDK_EPSA_PATH', '<unset>')
 
 BACKUP_DIR = './ReleaseBackup'
 BACKUP_SAVES = File.join(BACKUP_DIR, 'Saves')

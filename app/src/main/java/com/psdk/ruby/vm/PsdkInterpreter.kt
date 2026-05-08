@@ -28,7 +28,11 @@ class PsdkInterpreter private constructor(
             try {
                 ensureInterpreter()
                 location.executionLocation?.let { Os.setenv("PSDK_EXECUTION_LOCATION", it, true) }
-                location.archiveLocation?.let { Os.setenv("PSDK_ANDROID_ADDITIONAL_PARAM", it, true) }
+                location.archive?.let { archive ->
+                    Os.setenv("PSDK_EPSA_PATH",        archive.epsaPath,   true)
+                    Os.setenv("PSDK_EPSA_KEY_HEX",     archive.encKeyHex,  true)
+                    Os.setenv("PSDK_EPSA_MAC_KEY_HEX", archive.macKeyHex,  true)
+                }
 
                 val wrappedContent = if (location.executionLocation != null) {
                     "Dir.chdir('${location.executionLocation}')\n${script.getContent()}"
@@ -92,11 +96,21 @@ class PsdkInterpreter private constructor(
             val paths = RubyVMPaths.getDefaultPaths(context)
             return PsdkInterpreter(paths, context.assets, listener, onError)
         }
-
     }
 }
 
+/**
+ * Bundle of (path, K_enc, K_mac) needed to mount the encrypted .epsa via
+ * the streaming decrypter. Keys are passed as hex strings because they
+ * travel through the process environment via Os.setenv → Ruby ENV.
+ */
+data class ArchiveKeys(
+    val epsaPath: String,
+    val encKeyHex: String,
+    val macKeyHex: String
+)
+
 data class ScriptLocation(
     val executionLocation: String?,
-    val archiveLocation: String?
+    val archive: ArchiveKeys?
 )

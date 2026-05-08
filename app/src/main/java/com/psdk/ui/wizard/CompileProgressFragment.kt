@@ -39,12 +39,12 @@ class CompileProgressFragment : Fragment() {
         recyclerView.adapter = adapter
 
         val executionLocation = viewModel.executionLocation.value ?: return
-        val archivePath = viewModel.archivePath.value ?: return
+        val archive = viewModel.archive.value ?: return
 
         engine = CompilationEngine(
             context = requireContext(),
             executionLocation = executionLocation,
-            archiveLocation = archivePath,
+            archive = archive,
             callback = object : CompilationEngine.CompilationCallback {
                 override fun onStepStarted(stepIndex: Int, stepName: String) {
                     activity?.runOnUiThread {

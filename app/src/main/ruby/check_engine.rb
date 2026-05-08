@@ -23,8 +23,10 @@ end
 
 # Method table must match what compile.rb / copy_saves.rb rely on. A partial
 # init (e.g. PhysFSGem_DefineModuleMethods skipped) surfaces here rather than
-# as a confusing NoMethodError mid-mount.
-required_methods = %i[mount unmount write_dir= write_dir exist? directory? mtime read enumerate glob]
+# as a confusing NoMethodError mid-mount. mount_io is the streaming-decrypt
+# entrypoint introduced for v4 .epsa archives — its absence means the gem
+# was built against a pre-v4 physfs source.
+required_methods = %i[mount mount_io unmount write_dir= write_dir exist? directory? mtime read enumerate glob]
 missing = required_methods.reject { |m| PhysFS.respond_to?(m) }
 raise "PhysFS is missing required methods: #{missing.inspect}" unless missing.empty?
 
