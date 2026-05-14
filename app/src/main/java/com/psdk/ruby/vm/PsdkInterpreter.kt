@@ -66,7 +66,35 @@ class PsdkInterpreter private constructor(
                 listener = listener
             )
             interpreter!!.enableLogging()
+            armRemoteListeners(interpreter!!)
         }
+    }
+
+    /**
+     * In debug builds, arm both the rdbg/DAP listener and the line-eval
+     * console on the just-created interpreter. The KMP API supports
+     * coexistence (debug listener bound first, eval injected via the FIFO
+     * interpreter post-boot). Logs the result but does not fail the
+     * interpreter setup — a missing port is dev-friction, not a crash.
+     */
+    private fun armRemoteListeners(interp: KmpInterpreter) {
+        if (!RemoteListenerConfig.enabled) return
+
+        val dbgRc = interp.enableRemoteDebug(
+            host = RemoteListenerConfig.DEBUG_HOST,
+            port = RemoteListenerConfig.DEBUG_PORT,
+            token = RemoteListenerConfig.TOKEN,
+            sessionName = "psdk-launcher-debug",
+        )
+        Log.i(TAG, "enableRemoteDebug rc=$dbgRc on ${RemoteListenerConfig.DEBUG_HOST}:${RemoteListenerConfig.DEBUG_PORT}")
+
+        val evalRc = interp.enableRemoteEval(
+            host = RemoteListenerConfig.EVAL_HOST,
+            port = RemoteListenerConfig.EVAL_PORT,
+            token = RemoteListenerConfig.TOKEN,
+            sessionName = "psdk-launcher-eval",
+        )
+        Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.EVAL_PORT}")
     }
 
     fun close() {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only manifest overlay. Merged on top of app/src/main/AndroidManifest.xml
+  for the `debug` build type only — release builds never see these entries.
+
+  android.permission.INTERNET is required for the rdbg/DAP listener and the
+  remote-eval console to call socket(2). Without it the Android sandbox
+  rejects the syscall with EPERM and the listener thread dies before bind().
+  Granting INTERNET in release would change the shipped app's permission
+  profile (Play Store listing, runtime install prompts on some OEMs) so we
+  scope this to debug only.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>
