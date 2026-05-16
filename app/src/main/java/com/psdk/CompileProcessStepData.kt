@@ -9,7 +9,8 @@ enum class CompileStepStatus {
 
 data class CompileStepLogs(
     val step: CompileStepData,
-    val logs: StringBuilder
+    val logs: StringBuilder,
+    val errorLogs: StringBuilder = StringBuilder()
 )
 
 data class CompileStepData(

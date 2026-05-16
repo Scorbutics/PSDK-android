@@ -10,6 +10,7 @@ class CompileWizardViewModel : ViewModel() {
     val archive = MutableLiveData<ArchiveKeys?>()
     val executionLocation = MutableLiveData<String>()
     val currentStep = MutableLiveData(0)
+    val compilationSuccess = MutableLiveData<Boolean?>()
 
     // Export-specific
     val apkFolderLocation = MutableLiveData<String?>()

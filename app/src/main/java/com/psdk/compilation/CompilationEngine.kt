@@ -10,6 +10,7 @@ import com.psdk.ruby.vm.CompletionTask
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
 import com.psdk.ruby.vm.ScriptLocation
+import com.scorbutics.rubyvm.LogLevel
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 import java.io.File
@@ -26,7 +27,7 @@ class CompilationEngine(
         fun onStepStarted(stepIndex: Int, stepName: String)
         fun onStepCompleted(stepIndex: Int, success: Boolean)
         fun onLogMessage(stepIndex: Int, message: String)
-        fun onCompilationFinished(success: Boolean, logFile: File)
+        fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File)
     }
 
     private val allStepLogs = mutableListOf<CompileStepLogs>()
@@ -64,9 +65,13 @@ class CompilationEngine(
             listener = object : LogListener {
                 override fun onLogMessage(logMessage: LogMessage) {
                     val msg = logMessage.message
+                    val isError = logMessage.level === LogLevel.ERROR
                     logExecutor.execute {
                         val idx = currentLogIndex
                         allStepLogs[idx].logs.appendLine(msg)
+                        if (isError) {
+                            allStepLogs[idx].errorLogs.appendLine(msg)
+                        }
                         callback.onLogMessage(idx, msg)
                     }
                 }
@@ -82,8 +87,8 @@ class CompilationEngine(
             interpreter?.close()
             interpreter = null
             restoreReleaseBackup(failedStepIndex)
-            val logFile = saveLogsToFile()
-            callback.onCompilationFinished(false, logFile)
+            val (logFile, errorLogFile) = saveLogsToFile()
+            callback.onCompilationFinished(false, logFile, errorLogFile)
         }
 
         val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
@@ -96,8 +101,8 @@ class CompilationEngine(
                 callback.onStepCompleted(3, true)
                 interpreter?.close()
                 interpreter = null
-                val logFile = saveLogsToFile()
-                callback.onCompilationFinished(true, logFile)
+                val (logFile, errorLogFile) = saveLogsToFile()
+                callback.onCompilationFinished(true, logFile, errorLogFile)
             }
         }
 
@@ -140,8 +145,8 @@ class CompilationEngine(
                 callback.onStepCompleted(0, false)
                 interpreter?.close()
                 interpreter = null
-                val logFile = saveLogsToFile()
-                callback.onCompilationFinished(false, logFile)
+                val (logFile, errorLogFile) = saveLogsToFile()
+                callback.onCompilationFinished(false, logFile, errorLogFile)
             } else {
                 allStepLogs[0].step.status = CompileStepStatus.SUCCESS
                 callback.onStepCompleted(0, true)
@@ -156,7 +161,8 @@ class CompilationEngine(
             interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
         } catch (ex: Exception) {
             callback.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
-            callback.onCompilationFinished(false, saveLogsToFile())
+            val (logFile, errorLogFile) = saveLogsToFile()
+            callback.onCompilationFinished(false, logFile, errorLogFile)
         }
     }
 
@@ -193,7 +199,7 @@ class CompilationEngine(
         return sb.toString()
     }
 
-    private fun saveLogsToFile(): File {
+    private fun saveLogsToFile(): Pair<File, File> {
         // Drain pending log writes before reading the buffers, otherwise the file
         // can be missing the tail of the last script's output.
         shutdownLogExecutor()
@@ -205,7 +211,16 @@ class CompilationEngine(
                 writer.newLine()
             }
         }
-        return logFile
+        val errorLogFile = File(executionLocation, COMPILATION_ERROR_LOG_FILE)
+        errorLogFile.bufferedWriter().use { writer ->
+            for (stepLogs in allStepLogs) {
+                if (stepLogs.errorLogs.isEmpty()) continue
+                writer.appendLine("=== ${stepLogs.step.title} [${stepLogs.step.status}] ===")
+                writer.appendLine(stepLogs.errorLogs.toString())
+                writer.newLine()
+            }
+        }
+        return logFile to errorLogFile
     }
 
     companion object {
@@ -214,6 +229,7 @@ class CompilationEngine(
         private const val RUBY_COMPILE_SCRIPT = "compile.rb"
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
         const val COMPILATION_LOG_FILE = "last_compilation.log"
+        const val COMPILATION_ERROR_LOG_FILE = "last_compilation_errors.log"
 
         // Ruby preludes prepended to scripts that mount the archive. They
         // define EpsaFormat, EpsaStream, and ArchiveMount so compile.rb /

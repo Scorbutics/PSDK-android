@@ -68,9 +68,10 @@ class CompileProgressFragment : Fragment() {
                     }
                 }
 
-                override fun onCompilationFinished(success: Boolean, logFile: File) {
+                override fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File) {
                     activity?.runOnUiThread {
                         progressBar.hide()
+                        viewModel.compilationSuccess.value = success
                         viewModel.currentStep.value = 2
                     }
                 }

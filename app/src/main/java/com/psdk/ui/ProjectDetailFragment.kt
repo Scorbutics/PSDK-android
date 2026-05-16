@@ -91,12 +91,13 @@ class ProjectDetailFragment : Fragment() {
 
         // Compilation logs
         val compilationLogFile = File(executionLocation, CompilationEngine.COMPILATION_LOG_FILE)
+        val compilationErrorLogFile = File(executionLocation, CompilationEngine.COMPILATION_ERROR_LOG_FILE)
         if (compilationLogFile.exists()) {
             compilationLogsButton.visibility = View.VISIBLE
             compilationLogsButton.setOnClickListener {
                 val fragment = LogBottomSheetFragment.newInstance(
                     outputLogPath = compilationLogFile.absolutePath,
-                    errorLogPath = null,
+                    errorLogPath = if (compilationErrorLogFile.exists()) compilationErrorLogFile.absolutePath else null,
                     title = "Compilation Logs"
                 )
                 fragment.show(parentFragmentManager, "compilation_logs")

@@ -1,10 +1,13 @@
 package com.psdk.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.tabs.TabLayout
@@ -21,6 +24,7 @@ class LogBottomSheetFragment : BottomSheetDialogFragment() {
 
     private var outputContent: String = ""
     private var errorContent: String = ""
+    private var currentTabIndex: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +53,16 @@ class LogBottomSheetFragment : BottomSheetDialogFragment() {
 
         toolbar.title = title
         toolbar.setNavigationOnClickListener { dismiss() }
+        toolbar.inflateMenu(R.menu.log_bottom_sheet_menu)
+        toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_share -> {
+                    shareCurrentTab()
+                    true
+                }
+                else -> false
+            }
+        }
 
         // Load content
         if (directContent != null) {
@@ -64,7 +78,8 @@ class LogBottomSheetFragment : BottomSheetDialogFragment() {
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
-                val content = when (tab?.position) {
+                currentTabIndex = tab?.position ?: 0
+                val content = when (currentTabIndex) {
                     0 -> outputContent
                     1 -> errorContent
                     else -> ""
@@ -91,6 +106,48 @@ class LogBottomSheetFragment : BottomSheetDialogFragment() {
         } catch (e: Exception) {
             "Error reading log: ${e.localizedMessage}"
         }
+    }
+
+    private fun shareCurrentTab() {
+        val tabLabel = if (currentTabIndex == 1) "Errors" else "Output"
+        val filePath = if (currentTabIndex == 1) errorLogPath else outputLogPath
+        val content = if (currentTabIndex == 1) errorContent else outputContent
+
+        if (content.isBlank()) {
+            Toast.makeText(requireContext(), "Nothing to share", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val subject = "$title — $tabLabel"
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        // Prefer attaching the file (better target support: email, drive, gist).
+        // Fall back to plain text for direct-content mode or missing files.
+        val file = filePath?.let { File(it) }
+        if (file != null && file.exists()) {
+            try {
+                val uri = FileProvider.getUriForFile(
+                    requireContext(),
+                    requireContext().packageName + ".provider",
+                    file
+                )
+                intent.type = "text/plain"
+                intent.putExtra(Intent.EXTRA_STREAM, uri)
+            } catch (e: Exception) {
+                // FileProvider couldn't expose the file (path not covered by file_paths.xml,
+                // permission issue, etc.) — degrade to inline text rather than crashing.
+                intent.type = "text/plain"
+                intent.putExtra(Intent.EXTRA_TEXT, content)
+            }
+        } else {
+            intent.type = "text/plain"
+            intent.putExtra(Intent.EXTRA_TEXT, content)
+        }
+
+        startActivity(Intent.createChooser(intent, "Share $tabLabel"))
     }
 
     companion object {
