@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single particle for the FAB's press-release burst (see
+     ProjectListFragment.spawnFabParticles). Same accent as the halo so
+     particles read as "the halo just emitted energy outward". -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/colorSplashAccent" />
+</shape>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Halo behind the centred "+" FAB. Sized for the 200dp container in
+     fragment_project_list.xml — gradientRadius matches the container's
+     half-width so the glow fades to fully transparent right at the edge.
+     The fragment animates this drawable's host View alpha 0.5↔0.85 to
+     give it the splash centerpiece's breathing cadence. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:startColor="#990F70B0"
+        android:centerColor="#4D0F70B0"
+        android:endColor="#000F70B0"
+        android:gradientRadius="100dp" />
+</shape>

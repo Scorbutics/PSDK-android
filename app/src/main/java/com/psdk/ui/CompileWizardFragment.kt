@@ -131,11 +131,26 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
         if (debugPlayMode) {
             toolbar.title = "Debug Play"
+        }
+        // Toolbar overflow lives in every super-user flow (compile and
+        // debug-play); classic-bootstrap hides the whole chrome so the
+        // menu never paints there. Item visibility is mode-dependent:
+        //   - Game Logs: only when the release dir exists (debug-play).
+        //   - Delete project: any time we know which project this is
+        //     (super-user always; classic has no Project entity).
+        if (!classicBootstrap) {
             toolbar.inflateMenu(R.menu.compile_wizard_menu)
+            val menu = toolbar.menu
+            menu.findItem(R.id.action_game_logs)?.isVisible = debugPlayMode
+            menu.findItem(R.id.action_delete_project)?.isVisible = true
             toolbar.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_game_logs -> {
                         showGameLogs(executionLocation, releaseLocation)
+                        true
+                    }
+                    R.id.action_delete_project -> {
+                        showDeleteDialog(executionLocation)
                         true
                     }
                     else -> false
@@ -493,6 +508,34 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             title = "Game Logs",
         )
         fragment.show(parentFragmentManager, "game_logs")
+    }
+
+    /**
+     * "Delete project" relocated from the row trash icon. Resolves the
+     * Project entity by its on-disk directory (the only stable handle the
+     * wizard was given), drops it from the DB, wipes the directory, and
+     * pops the wizard back to the project list. The list refreshes
+     * itself in [ProjectListFragment.onResume].
+     */
+    private fun showDeleteDialog(executionLocation: String) {
+        val database = com.psdk.db.AppDatabase.getInstance(requireContext())
+        val project = database.projectDao().findByDirectory(executionLocation) ?: return
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(
+            requireContext(),
+            R.style.Theme_Psdk_Dialog,
+        )
+            .setTitle("Delete project")
+            .setMessage("Remove '${project.name}'? This deletes the staged archive and any compiled output.")
+            .setPositiveButton("Delete") { _, _ ->
+                database.projectDao().delete(project)
+                val dir = File(project.directory)
+                if (dir.canRead()) dir.deleteRecursively()
+                if (isAdded) {
+                    requireActivity().onBackPressedDispatcher.onBackPressed()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /**

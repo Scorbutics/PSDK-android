@@ -13,10 +13,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -30,6 +33,9 @@ import com.psdk.db.entities.Project
 import com.psdk.zip.EpsaArchive
 import java.io.File
 import java.util.UUID
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.random.Random
 
 class ProjectListFragment : Fragment() {
 
@@ -39,10 +45,11 @@ class ProjectListFragment : Fragment() {
     private lateinit var adapter: ProjectListAdapter
     private lateinit var database: AppDatabase
 
-    // Constantly-running breath animator on the centred "+". Kept as a
-    // field so onDestroyView can cancel it — otherwise it holds a view
-    // reference past the view's lifetime.
+    // Constantly-running breath animators on the centred "+" stack.
+    // Kept as fields so onDestroyView can cancel them — otherwise they
+    // hold view references past the view's lifetime.
     private var fabBreath: ObjectAnimator? = null
+    private var haloBreath: ObjectAnimator? = null
 
     private val chooseArchiveLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -64,16 +71,19 @@ class ProjectListFragment : Fragment() {
         val recyclerView = view.findViewById<RecyclerView>(R.id.projectsRecyclerView)
         val emptyState = view.findViewById<LinearLayout>(R.id.emptyState)
         val newProjectFab = view.findViewById<FloatingActionButton>(R.id.newProjectFab)
+        val newProjectHalo = view.findViewById<View>(R.id.newProjectHalo)
+        val fabContainer = view.findViewById<FrameLayout>(R.id.fabContainer)
 
+        // Delete moved to the wizard's toolbar overflow menu. The adapter
+        // no longer needs a delete callback.
         adapter = ProjectListAdapter(
             onProjectClick = { project -> launchCompileWizard(project, autoStart = false) },
-            onDeleteClick = { project -> showDeleteDialog(project) }
         )
 
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = adapter
 
-        setupCentralAddButton(newProjectFab)
+        setupCentralAddButton(newProjectFab, newProjectHalo, fabContainer)
 
         // Observe projects
         viewModel.projects.observe(viewLifecycleOwner) { projects ->
@@ -103,16 +113,21 @@ class ProjectListFragment : Fragment() {
     }
 
     /**
-     * Wire up the centred "+" FAB:
-     *   - constant gentle "breath" scale animation (the halo behind it is
-     *     drawn by loader.rb, see build_icon's @icon_glow path).
-     *   - touch-down compresses to 0.9 + release bounces back via
-     *     OvershootInterpolator, so the button feels springy.
-     *   - click triggers the file picker; on result, we stage the archive,
-     *     create a project named after the filename, and launch the
-     *     compile wizard in auto-start mode.
+     * Wire up the centred "+" stack:
+     *   - FAB itself: gentle scale "breath" (1.0↔1.05).
+     *   - Halo behind it: alpha breathes 0.5↔0.85 on a slower cycle so the
+     *     glow feels like it's pulsing the FAB outward, not in lock-step.
+     *   - Touch-down compresses scale + release snaps back via
+     *     OvershootInterpolator; release also spawns a particle burst
+     *     outward from the FAB centre (see [spawnFabParticles]) — same
+     *     vocabulary as loader.rb's spawn_bang.
+     *   - Click triggers the file picker.
      */
-    private fun setupCentralAddButton(fab: FloatingActionButton) {
+    private fun setupCentralAddButton(
+        fab: FloatingActionButton,
+        halo: View,
+        container: FrameLayout,
+    ) {
         fabBreath = ObjectAnimator.ofPropertyValuesHolder(
             fab,
             PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.05f),
@@ -125,16 +140,31 @@ class ProjectListFragment : Fragment() {
             start()
         }
 
-        // Press response — drop scale while finger is down, OvershootInterpolator
-        // snap back on release. We don't pause the breath animator: when the
-        // press release animation completes the breath resumes from wherever
-        // it had progressed to.
+        haloBreath = ObjectAnimator.ofFloat(halo, View.ALPHA, 0.5f, 0.85f).apply {
+            duration = 2400L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+
+        // Press response — scale dip on down, OvershootInterpolator snap
+        // back + particle burst on release. We don't pause the breath
+        // animators: when the press-release animation completes the breath
+        // resumes from wherever it had progressed to.
         fab.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.animate().scaleX(0.9f).scaleY(0.9f).setDuration(90L).start()
                 }
-                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_UP -> {
+                    v.animate()
+                        .scaleX(1f).scaleY(1f)
+                        .setInterpolator(OvershootInterpolator(3f))
+                        .setDuration(360L)
+                        .start()
+                    spawnFabParticles(container, fab)
+                }
                 MotionEvent.ACTION_CANCEL -> {
                     v.animate()
                         .scaleX(1f).scaleY(1f)
@@ -148,9 +178,57 @@ class ProjectListFragment : Fragment() {
         fab.setOnClickListener { showArchivePicker() }
     }
 
+    /**
+     * Burst of [PARTICLE_COUNT] dots from the FAB centre — same beat as
+     * loader.rb's spawn_bang. Each particle is a tiny View added to
+     * [container], animated outward at a random angle, then removed.
+     * Cheap (one View per particle, removed on end) and works without
+     * any custom drawing surface.
+     */
+    private fun spawnFabParticles(container: FrameLayout, fab: View) {
+        val ctx = container.context
+        val density = ctx.resources.displayMetrics.density
+        val fabCx = fab.x + fab.width / 2f
+        val fabCy = fab.y + fab.height / 2f
+        val baseRadius = fab.width / 2f
+        repeat(PARTICLE_COUNT) { i ->
+            val particle = View(ctx).apply {
+                background = ContextCompat.getDrawable(ctx, R.drawable.bg_fab_particle)
+                val sizePx = (PARTICLE_SIZE_DP * density).toInt()
+                layoutParams = FrameLayout.LayoutParams(sizePx, sizePx)
+                // Random angle around the FAB; start just outside the
+                // FAB's edge so particles look ejected, not warped.
+                val angle = (i.toDouble() / PARTICLE_COUNT) * Math.PI * 2 +
+                    Random.nextDouble(-0.2, 0.2)
+                val travel = (PARTICLE_TRAVEL_DP * density) *
+                    Random.nextDouble(0.7, 1.0).toFloat()
+                val startX = fabCx + (baseRadius * cos(angle)).toFloat() - sizePx / 2f
+                val startY = fabCy + (baseRadius * sin(angle)).toFloat() - sizePx / 2f
+                x = startX
+                y = startY
+                alpha = 1f
+                animate()
+                    .translationXBy((travel * cos(angle)).toFloat())
+                    .translationYBy((travel * sin(angle)).toFloat())
+                    .alpha(0f)
+                    .scaleX(0.4f)
+                    .scaleY(0.4f)
+                    .setDuration(PARTICLE_DURATION_MS)
+                    .setInterpolator(DecelerateInterpolator(1.6f))
+                    .withEndAction {
+                        (parent as? ViewGroup)?.removeView(this)
+                    }
+                    .start()
+            }
+            container.addView(particle)
+        }
+    }
+
     override fun onDestroyView() {
         fabBreath?.cancel()
         fabBreath = null
+        haloBreath?.cancel()
+        haloBreath = null
         super.onDestroyView()
     }
 
@@ -272,19 +350,10 @@ class ProjectListFragment : Fragment() {
          * scrolling rows and signals intent.
          */
         private const val MAX_PROJECTS = 3
-    }
 
-    private fun showDeleteDialog(project: Project) {
-        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Psdk_Dialog)
-            .setTitle("Delete Project")
-            .setMessage("Are you sure you want to remove '${project.name}'?")
-            .setPositiveButton("Delete") { _, _ ->
-                database.projectDao().delete(project)
-                val dir = File(project.directory)
-                if (dir.canRead()) dir.deleteRecursively()
-                refreshProjects()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        private const val PARTICLE_COUNT = 12
+        private const val PARTICLE_SIZE_DP = 8
+        private const val PARTICLE_TRAVEL_DP = 64
+        private const val PARTICLE_DURATION_MS = 520L
     }
 }

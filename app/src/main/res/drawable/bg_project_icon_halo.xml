@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft radial glow behind each project's game.png. Echoes the splash
+     centerpiece halo so rows feel like satellites of the same scene.
+     gradientRadius is tied to a 64dp container; tweak both if you resize. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:startColor="#990F70B0"
+        android:centerColor="#330F70B0"
+        android:endColor="#000F70B0"
+        android:gradientRadius="32dp" />
+</shape>
