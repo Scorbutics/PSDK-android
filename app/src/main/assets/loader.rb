@@ -442,16 +442,32 @@ class Loader
     DEFAULT_ICON_COLOR.dup
   end
 
+  # System fonts to fall back on when the project's font isn't present —
+  # mainly used in the default/hub state where no project has been
+  # extracted yet but we still want the footer text visible. Roboto is
+  # the Android default and present on every device since ~4.0; DroidSans
+  # was its predecessor and survives on very old devices.
+  SYSTEM_FONT_FALLBACKS = [
+    '/system/fonts/Roboto-Regular.ttf',
+    '/system/fonts/DroidSans.ttf',
+  ].freeze
+
   # LiteRGSS::Text raises if its font id isn't registered. PSDK normally
   # walks Configs.texts.fonts at Graphics.on_start — we don't have that
-  # yet, so register the well-known PSDK default ourselves.
+  # yet, so register the well-known PSDK default ourselves, falling back
+  # to a system font so the footer renders in the default state.
   def ensure_font_loaded
-    return unless File.exist?(@font_path)
-    LiteRGSS::Fonts.load_font(0, @font_path)
-    LiteRGSS::Fonts.set_default_size(0, 13)
-    @font_loaded = true
-  rescue StandardError => e
-    loader_say "font load failed: #{e.class}: #{e.message}"
+    ([@font_path] + SYSTEM_FONT_FALLBACKS).each do |path|
+      next unless File.exist?(path)
+      begin
+        LiteRGSS::Fonts.load_font(0, path)
+        LiteRGSS::Fonts.set_default_size(0, 13)
+        @font_loaded = true
+        return
+      rescue StandardError => e
+        loader_say "font load failed (#{path}): #{e.class}: #{e.message}"
+      end
+    end
   end
 
   # Pin the short edge to LOGICAL_SHORT_EDGE and scale the long edge by
@@ -705,10 +721,11 @@ class Loader
     cx = @icon_cx
     cy = @icon_cy
 
-    # Soft additive-looking radial halo behind the icon. Tinted with the
-    # icon's median color so the halo and gradient share a hue family —
-    # a generic blue halo on a warm icon used to feel disconnected once
-    # the splash became the activity centerpiece.
+    # Soft additive-looking radial halo. Tinted with @icon_color so it
+    # shares a hue family with the gradient. Rendered unconditionally —
+    # in default/hub state (no icon to display) it sits behind the Kotlin
+    # "+" FAB the hub centres over the GL surface; build_text_layer's
+    # @icon.nil? branch keeps text layout safe when no icon was loaded.
     glow_color = halo_color
     g = LiteRGSS::Image.new(GLOW_SIZE, GLOW_SIZE)
     r_outer = GLOW_SIZE / 2.0
@@ -814,9 +831,33 @@ class Loader
   # position (e.g. in a future orientation rebalance).
   def build_text_layer
     return unless @font_loaded   # without a font, Text.new raises
+    full_w = @window_width
+
+    # Footer is anchored to the canvas bottom and renders in every state,
+    # including the no-icon default where the splash is just background +
+    # particles. Title / version / status are positioned relative to the
+    # icon and only make sense when one is present, so build them after
+    # the @icon.nil? bailout.
+    #
+    # The GL surface draws edge-to-edge under the system navigation bar
+    # (see RootActivity.onCreate), so the bottom margin has to clear the
+    # nav bar's logical-pixel height on top of the visual gap. ~56 px
+    # covers the 3-button bar on typical xxhdpi/xxxhdpi phones at the
+    # 240px-short-edge logical canvas; gesture-nav devices end up with
+    # extra padding, which still reads as comfortable bottom whitespace.
+    footer_y = @window_height - 56
+    @footer_text = LiteRGSS::Text.new(0, @vp, 0, footer_y, full_w, 12,
+                                      'Powered by PSDK · LiteRGSS2 · Ruby VM', 1)
+    @footer_text.size = FOOTER_FONT_SIZE
+    @footer_text.fill_color    = LiteRGSS::Color.new(110, 125, 150, 200)
+    @footer_text.outline_color = LiteRGSS::Color.new(0, 0, 0, 140)
+    @footer_text.opacity = 0
+    @footer_text.z = 20
+
+    return if @icon.nil?
+
     cy = @icon_cy
     half_h = @icon_h / 2
-    full_w = @window_width
     accent = cta_accent_color
 
     # Visual hierarchy from font size: title largest, footer smallest.
@@ -827,7 +868,6 @@ class Loader
     title_y   = cy - half_h - 60
     version_y = cy - half_h - 28
     cta_y     = cy + half_h + 8
-    footer_y  = @window_height - 22
 
     # Cache the resting y of each lift-able element so animate_text_layer
     # can derive the per-frame y by subtracting lift_offset_for(...). The
@@ -865,14 +905,6 @@ class Loader
     @status_text.outline_thickness = 1
     @status_text.opacity = 0
     @status_text.z = 20
-
-    @footer_text = LiteRGSS::Text.new(0, @vp, 0, footer_y, full_w, 12,
-                                      'Powered by PSDK · LiteRGSS2 · Ruby VM', 1)
-    @footer_text.size = FOOTER_FONT_SIZE
-    @footer_text.fill_color    = LiteRGSS::Color.new(110, 125, 150, 200)
-    @footer_text.outline_color = LiteRGSS::Color.new(0, 0, 0, 140)
-    @footer_text.opacity = 0
-    @footer_text.z = 20
   end
 
   # Per-frame animator. Splits cleanly into intro (frame 0..INTRO),

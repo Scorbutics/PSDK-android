@@ -30,6 +30,16 @@
         android:layout_height="1dp"
         android:background="@color/colorSurfaceVariant" />
 
+    <!-- Step-indicator block (indicator + its bottom divider). Hidden
+         initially and slid down into place when the user taps the logo
+         to begin compiling — see [slideInStepIndicator]. -->
+    <LinearLayout
+        android:id="@+id/stepIndicatorBlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
     <!-- Step indicator -->
     <LinearLayout
         android:id="@+id/stepIndicator"
@@ -149,6 +159,7 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/colorSurfaceVariant" />
+    </LinearLayout>
     </LinearLayout>
 
     <!-- Wizard body. The GL surface lives in [RootActivity]'s root layout

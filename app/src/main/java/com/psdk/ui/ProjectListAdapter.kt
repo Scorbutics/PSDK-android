@@ -1,5 +1,6 @@
 package com.psdk.ui
 
+import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +28,7 @@ class ProjectListAdapter(
     }
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val projectIcon: ImageView = itemView.findViewById(R.id.projectIcon)
         private val projectName: TextView = itemView.findViewById(R.id.projectName)
         private val projectStatus: TextView = itemView.findViewById(R.id.projectStatus)
         private val syncWarningIcon: ImageView = itemView.findViewById(R.id.syncWarningIcon)
@@ -53,6 +55,19 @@ class ProjectListAdapter(
                     }
                 )
             )
+
+            // Per-project game.png is written by the wizard's
+            // extract_loader_assets pass; bundled PSDK gear logo is the
+            // fallback for freshly-created projects or unreadable paths.
+            val logoFile = File(project.directory, "loader_assets/game.png")
+            val logo = if (isReadable && logoFile.exists()) {
+                BitmapFactory.decodeFile(logoFile.absolutePath)
+            } else null
+            if (logo != null) {
+                projectIcon.setImageBitmap(logo)
+            } else {
+                projectIcon.setImageResource(R.drawable.logo)
+            }
 
             syncWarningIcon.visibility = if (isReadable) View.GONE else View.VISIBLE
 

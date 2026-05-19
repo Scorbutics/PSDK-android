@@ -20,12 +20,15 @@
         android:gravity="center_vertical"
         android:padding="@dimen/card_padding">
 
-        <!-- Project icon placeholder -->
-        <View
+        <!-- Project icon — game.png from the project's extracted
+             loader_assets, falling back to the bundled PSDK logo. -->
+        <ImageView
+            android:id="@+id/projectIcon"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:background="@drawable/bg_step_active"
-            android:layout_marginEnd="@dimen/spacing_md" />
+            android:layout_marginEnd="@dimen/spacing_md"
+            android:scaleType="fitCenter"
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"

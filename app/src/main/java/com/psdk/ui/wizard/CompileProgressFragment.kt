@@ -10,6 +10,7 @@ import com.psdk.R
 import com.psdk.compilation.CompilationEngine
 import com.psdk.compilation.CompileSubStepMapper
 import com.psdk.ui.CompileWizardViewModel
+import com.psdk.ui.LoaderPaths
 import java.io.File
 
 /**
@@ -17,11 +18,11 @@ import java.io.File
  *
  * The visible UI during compile is the GL surface running loader.rb —
  * its `status_text` shows the current sub-step. We get text into Ruby
- * via a polled file (see [LOADER_STATUS_FILE]) instead of bringing up an
+ * via a polled file ([LoaderPaths.statusFile]) instead of bringing up an
  * Android overlay, because we already pay for the splash and a second
  * UI layer just competes for the user's eye.
  *
- * The fragment owns nothing visual on purpose: the activity's toolbar
+ * The fragment owns nothing visual on purpose: the wizard's toolbar
  * and step indicator are the only Kotlin-side chrome, and the full
  * per-step log lives on disk for CompileDoneFragment's "View Logs".
  */
@@ -108,21 +109,25 @@ class CompileProgressFragment : Fragment() {
     }
 
     /**
-     * Write a one-line status into `<executionLocation>/.loader_status`,
-     * the file the splash's loader.rb polls each frame. We debounce
-     * identical writes so the loader's mtime-based poll doesn't re-read
-     * the same string repeatedly.
+     * Write a one-line status into [LoaderPaths.statusFile], the file the
+     * splash's loader.rb polls each frame. We debounce identical writes
+     * so the loader's mtime-based poll doesn't re-read the same string
+     * repeatedly.
      *
-     * Best-effort: a failed write (executionLocation missing, disk full,
-     * permission flake) just means the splash keeps the previous label
-     * until the next update lands. That's a strictly worse UX than the
-     * happy path, never a broken one.
+     * The status file lives next to the loader's assets dir (app data
+     * dir), not next to the wizard's per-project executionLocation — the
+     * loader is activity-scoped since Cut 2 and chdir's to one stable
+     * location regardless of which project is compiling.
+     *
+     * Best-effort: a failed write (disk full, permission flake) just
+     * means the splash keeps the previous label until the next update
+     * lands. That's a strictly worse UX than the happy path, never a
+     * broken one.
      */
     private fun pushStatus(text: String) {
         if (text == lastStatusWritten) return
-        val executionLocation = viewModel.executionLocation.value ?: return
         try {
-            File(executionLocation, LOADER_STATUS_FILE).writeText(text)
+            LoaderPaths.statusFile(requireContext()).writeText(text)
             lastStatusWritten = text
         } catch (e: Exception) {
             // Swallow — see kdoc above.
@@ -130,13 +135,10 @@ class CompileProgressFragment : Fragment() {
     }
 
     companion object {
-        /** Matches Loader::LOADER_STATUS_FILE in loader.rb verbatim. */
-        const val LOADER_STATUS_FILE = ".loader_status"
-
         /**
          * Matches Loader::LIFT_SENTINEL in loader.rb verbatim. Writing
-         * this string to LOADER_STATUS_FILE asks the splash to lift its
-         * centerpiece upward — see loader.rb's [poll_external_status]
+         * this string to [LoaderPaths.statusFile] asks the splash to lift
+         * its centerpiece upward — see loader.rb's [poll_external_status]
          * and the staggered offsets in animate_icon / animate_text_layer.
          */
         const val LIFT_SENTINEL = "<<LIFT>>"

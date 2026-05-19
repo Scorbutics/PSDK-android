@@ -14,9 +14,6 @@ class CompileWizardViewModel : ViewModel() {
     val currentStep = MutableLiveData(0)
     val compilationSuccess = MutableLiveData<Boolean?>()
 
-    // Export-specific
-    val apkFolderLocation = MutableLiveData<String?>()
-
     // Compilation engine outlives the fragment so an orientation change
     // (or any other view-recreation) doesn't restart compilation. Started
     // once when the user enters the progress step; closed when the
@@ -24,8 +21,6 @@ class CompileWizardViewModel : ViewModel() {
     // Callers re-attach via [CompilationEngine.setCallback], which atomically
     // returns a snapshot so a fresh fragment can replay UI state.
     private var engine: CompilationEngine? = null
-
-    fun isExportMode(): Boolean = apkFolderLocation.value != null
 
     /**
      * Returns the running engine, starting it on first call. Returns null
