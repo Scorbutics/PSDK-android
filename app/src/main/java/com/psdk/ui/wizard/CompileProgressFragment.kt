@@ -47,6 +47,13 @@ class CompileProgressFragment : Fragment() {
 
         val callback = object : CompilationEngine.CompilationCallback {
             override fun onStepStarted(stepIndex: Int, stepName: String) {
+                // Step 3 ("Copying saves") is the engine's housekeeping
+                // tail. By the time it fires we've already shown
+                // "Finalizing…" via CompileSubStepMapper, and a fresh
+                // "Copying saves…" label right before the lift reads as
+                // an out-of-context interruption — the user is done,
+                // the compile result card is what matters next.
+                if (stepIndex >= 3) return
                 pushStatus("$stepName...")
             }
 
@@ -62,6 +69,15 @@ class CompileProgressFragment : Fragment() {
             }
 
             override fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File) {
+                // Trigger the splash lift BEFORE the wizard advances —
+                // the loader picks up <<LIFT>> on its next file poll
+                // (≤133ms) and the icon + title + version + status
+                // animate upward to make room for CompileDoneFragment's
+                // bottom card sliding up. The card's slide animation
+                // and the splash lift play in parallel; minor de-sync
+                // is fine because the card and lifted content land in
+                // separate regions of the screen.
+                pushStatus(LIFT_SENTINEL)
                 activity?.runOnUiThread {
                     viewModel.compilationSuccess.value = success
                     viewModel.currentStep.value = 2
@@ -113,5 +129,13 @@ class CompileProgressFragment : Fragment() {
     companion object {
         /** Matches Loader::LOADER_STATUS_FILE in loader.rb verbatim. */
         const val LOADER_STATUS_FILE = ".loader_status"
+
+        /**
+         * Matches Loader::LIFT_SENTINEL in loader.rb verbatim. Writing
+         * this string to LOADER_STATUS_FILE asks the splash to lift its
+         * centerpiece upward — see loader.rb's [poll_external_status]
+         * and the staggered offsets in animate_icon / animate_text_layer.
+         */
+        const val LIFT_SENTINEL = "<<LIFT>>"
     }
 }

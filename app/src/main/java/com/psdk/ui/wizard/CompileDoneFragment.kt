@@ -5,8 +5,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import com.google.android.material.button.MaterialButton
@@ -29,6 +31,7 @@ class CompileDoneFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val resultCard = view.findViewById<MaterialCardView>(R.id.resultCard)
         val resultIcon = view.findViewById<ImageView>(R.id.resultIcon)
         val resultTitle = view.findViewById<TextView>(R.id.resultTitle)
         val resultMessage = view.findViewById<TextView>(R.id.resultMessage)
@@ -37,6 +40,23 @@ class CompileDoneFragment : Fragment() {
         val primaryButton = view.findViewById<MaterialButton>(R.id.primaryActionButton)
         val secondaryButton = view.findViewById<MaterialButton>(R.id.secondaryActionButton)
         val tertiaryButton = view.findViewById<MaterialButton>(R.id.tertiaryActionButton)
+
+        // Slide the card up from below its resting position. doOnPreDraw
+        // runs after layout but before the first frame, so we set
+        // translationY to "fully off-screen below" before the user
+        // ever sees the card at rest — no flash. The loader.rb side
+        // lifts its centerpiece in parallel (triggered by the LIFT
+        // sentinel CompileProgressFragment wrote on finish), so the
+        // composition reads as "splash makes room, result rises in".
+        resultCard.doOnPreDraw {
+            val bottomMargin = (resultCard.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+            resultCard.translationY = (resultCard.height + bottomMargin).toFloat()
+            resultCard.animate()
+                .translationY(0f)
+                .setDuration(SLIDE_DURATION_MS)
+                .setInterpolator(DecelerateInterpolator(1.4f))
+                .start()
+        }
 
         val executionLocation = viewModel.executionLocation.value ?: ""
         val logFile = File(executionLocation, CompilationEngine.COMPILATION_LOG_FILE)
@@ -112,5 +132,14 @@ class CompileDoneFragment : Fragment() {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         activity.startActivity(intent)
         Runtime.getRuntime().exit(0)
+    }
+
+    companion object {
+        // Slide is tuned a touch slower than the loader.rb lift
+        // (~LIFT_DURATION_FRAMES = 36 frames = 0.6s) so the card
+        // settles a beat after the splash centerpiece reaches its
+        // new resting height — gives the eye a chance to track the
+        // logo first, then read the result.
+        private const val SLIDE_DURATION_MS = 520L
     }
 }

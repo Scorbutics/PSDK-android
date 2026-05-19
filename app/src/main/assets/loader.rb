@@ -100,6 +100,38 @@ class Loader
   STATUS_POLL_INTERVAL_F  = 8  # ~7.5 Hz at 60Hz — much faster than humans read
   STATUS_FILE_BYTE_LIMIT  = 256 # guard vs. accidental dump of a megabyte log
 
+  # If the status file's payload starts with this token, trigger the
+  # post-compile lift animation. The rest of the line (if any) replaces
+  # the splash status_text the same way a normal status update would.
+  # Kept identical on the Kotlin side — CompileProgressFragment writes
+  # this string verbatim from onCompilationFinished, right before
+  # advancing the wizard to the result step.
+  LIFT_SENTINEL = '<<LIFT>>'.freeze
+
+  # Post-compile lift: shifts the splash centerpiece upward to make room
+  # for the result card sliding up from the bottom. Staggered per-element
+  # so the icon leads and the text follows — communicates "we're done,
+  # the result is incoming" without a hard cut.
+  #
+  # 100 px keeps the title at ~y=52 on a 240×489 logical canvas (comfortable
+  # top breathing room) while clearing the success card; failure cards
+  # with the 8-line error preview may still poke into the splash but the
+  # icon stays well above it.
+  LIFT_OFFSET_PX        = 100
+  LIFT_DURATION_FRAMES  = 36   # 0.6s ease at 60Hz
+  LIFT_DELAY_ICON       = 0
+  LIFT_DELAY_TITLE      = 3
+  LIFT_DELAY_VERSION    = 7
+  LIFT_DELAY_STATUS     = 12
+
+  # Post-lift spin-down. The rolling icon decelerates over SPIN_DOWN_FRAMES
+  # while @icon_angle keeps integrating (so motion stays smooth, just
+  # slower); past that window the angle eases back to 0 on the shortest
+  # arc and the particle boost lerps back to 1×. End state: idle splash
+  # exactly as it looked before the user tapped the logo.
+  SPIN_DOWN_FRAMES = 48        # 0.8s — slightly longer than LIFT_DURATION so the
+                               # icon is mid-decel while the lift is settling
+
   # Extra logical-px halo around the icon bitmap, so the tap target is
   # forgiving — the icon is ~64px but a fingertip is much wider.
   ICON_HIT_PADDING = 24
@@ -216,6 +248,12 @@ class Loader
     @last_status_poll_frame = -STATUS_POLL_INTERVAL_F
     @last_status_mtime      = nil
     @last_status_payload    = nil
+
+    # Post-compile lift state. @lifted_start is the frame the activity
+    # asked for the lift via LIFT_SENTINEL; nil means "splash is in its
+    # normal centered layout". Once set, never unset — the lifted layout
+    # is the new resting position.
+    @lifted_start           = nil
     # Touch events arrive in surface-pixel coordinates; the icon is laid
     # out in logical canvas units. Compute the per-axis scale once and
     # cache it, since the surface size doesn't change while the loader
@@ -764,6 +802,14 @@ class Loader
     cta_y     = cy + half_h + 8
     footer_y  = @window_height - 22
 
+    # Cache the resting y of each lift-able element so animate_text_layer
+    # can derive the per-frame y by subtracting lift_offset_for(...). The
+    # footer doesn't lift — it stays anchored to the canvas bottom while
+    # the result card slides up underneath it.
+    @title_base_y   = title_y
+    @version_base_y = version_y
+    @status_base_y  = cta_y
+
     @title_text = LiteRGSS::Text.new(0, @vp, 0, title_y, full_w, 28, @title, 1)
     @title_text.size = TITLE_FONT_SIZE
     @title_text.fill_color        = LiteRGSS::Color.new(245, 245, 250, 255)
@@ -832,6 +878,16 @@ class Loader
       @last_status_mtime = mtime
       payload = File.read(STATUS_FILE_PATH, STATUS_FILE_BYTE_LIMIT).to_s.strip
       return if payload.empty?
+      if payload.start_with?(LIFT_SENTINEL)
+        # Lift sentinel: trigger the move-up animation (idempotent —
+        # subsequent writes are ignored once @lifted_start is set), then
+        # use whatever comes after the token as the new status text.
+        # Blank tail leaves status unchanged so the last sub-step
+        # ("Finalizing…") stays put during the lift.
+        @lifted_start ||= @frame
+        payload = payload[LIFT_SENTINEL.length..].to_s.strip
+        return if payload.empty?
+      end
       return if payload == @last_status_payload
       @last_status_payload = payload
       @status_text.text = payload
@@ -875,20 +931,53 @@ class Loader
       end
     end
 
+    # Lift drains away the centerpiece's resting y to make room for the
+    # result card. The glow follows the icon exactly (same delay), so
+    # the halo never visually detaches from the logo during the slide.
+    icon_lift = lift_offset_for(LIFT_DELAY_ICON)
     icon_x = (@icon_cx + shake_x).to_i
-    icon_y = (@icon_cy + shake_y).to_i
+    icon_y = (@icon_cy + shake_y - icon_lift).to_i
 
     # Rolling spin: ramps from 0 to ROLL_SPEED_DEG_PER_FRAME over
-    # ROLL_RAMP_FRAMES, then runs at steady state forever. The glow is
-    # rotationally symmetric so only the icon sprite is rotated. Scaled
-    # by @dframe so the spin tracks wall time across a GVL hold — after
-    # a 500ms freeze, the angle snaps forward to where it would have
-    # been instead of resuming behind real time.
+    # ROLL_RAMP_FRAMES, then runs at steady state. Glow is rotationally
+    # symmetric so only the icon sprite is rotated. Scaled by @dframe so
+    # the spin tracks wall time across a GVL hold — after a 500ms freeze
+    # the angle snaps forward to where it would have been.
+    #
+    # Once @lifted_start fires (= compile finished), we transition into a
+    # two-phase spin-down:
+    #   Phase A (0..SPIN_DOWN_FRAMES): keep integrating spin, scaled by a
+    #     decay curve from 1 → 0. Icon visibly slows.
+    #   Phase B (post-SPIN_DOWN_FRAMES): pull @icon_angle toward 0 on the
+    #     shortest arc with exponential decay. Snap to 0 when within
+    #     0.5° so the angle eventually exactly matches the initial state.
     if @rolling_start
-      age   = @frame - @rolling_start
-      ramp  = ease_out_cubic([age.to_f / ROLL_RAMP_FRAMES, 1.0].min)
-      step  = ROLL_SPEED_DEG_PER_FRAME * ROLL_DIRECTION * ramp * @dframe
-      @icon_angle = (@icon_angle + step) % 360.0
+      if @lifted_start
+        spin_down_age = @frame - @lifted_start
+        if spin_down_age < SPIN_DOWN_FRAMES
+          decay = 1.0 - ease_out_cubic(spin_down_age.to_f / SPIN_DOWN_FRAMES)
+          step  = ROLL_SPEED_DEG_PER_FRAME * ROLL_DIRECTION * decay * @dframe
+          @icon_angle = (@icon_angle + step) % 360.0
+        else
+          # Shortest-arc ease toward 0. Geometric per-frame pull (15%)
+          # exponentiated by @dframe so a GVL hold doesn't overshoot.
+          delta = -@icon_angle
+          delta += 360.0 if delta < -180.0
+          delta -= 360.0 if delta >  180.0
+          if delta.abs < 0.5
+            @icon_angle = 0.0
+          else
+            @icon_angle += delta * (1.0 - 0.85 ** @dframe)
+            @icon_angle %= 360.0
+            @icon_angle += 360.0 if @icon_angle < 0.0
+          end
+        end
+      else
+        age   = @frame - @rolling_start
+        ramp  = ease_out_cubic([age.to_f / ROLL_RAMP_FRAMES, 1.0].min)
+        step  = ROLL_SPEED_DEG_PER_FRAME * ROLL_DIRECTION * ramp * @dframe
+        @icon_angle = (@icon_angle + step) % 360.0
+      end
     end
 
     if @icon && !@icon.disposed?
@@ -906,19 +995,29 @@ class Loader
   end
 
   def animate_text_layer(m)
+    # Per-element lift offset. Staggers cascade: title leads (small
+    # delay vs. icon), version chases, status trails — gives a "things
+    # following the icon up" feel rather than a rigid block-slide.
+    title_lift   = lift_offset_for(LIFT_DELAY_TITLE)
+    version_lift = lift_offset_for(LIFT_DELAY_VERSION)
+    status_lift  = lift_offset_for(LIFT_DELAY_STATUS)
+
     title_t = ease_out_cubic(((@frame - 24) / 44.0).clamp(0.0, 1.0))
     if @title_text && !@title_text.disposed?
       @title_text.opacity = (255 * title_t * m).to_i
+      @title_text.y = (@title_base_y - title_lift).to_i if @title_base_y
     end
 
     ver_t = ease_out_cubic(((@frame - 44) / 44.0).clamp(0.0, 1.0))
     if @version_text && !@version_text.disposed?
       @version_text.opacity = (235 * ver_t * m).to_i
+      @version_text.y = (@version_base_y - version_lift).to_i if @version_base_y
     end
 
     status_t = ease_out_cubic(((@frame - 60) / 36.0).clamp(0.0, 1.0))
     if @status_text && !@status_text.disposed?
       @status_text.opacity = (255 * status_t * m).to_i
+      @status_text.y = (@status_base_y - status_lift).to_i if @status_base_y
     end
 
     footer_t = ease_out_cubic(((@frame - 84) / 56.0).clamp(0.0, 1.0))
@@ -998,19 +1097,42 @@ class Loader
   end
 
   # 1.0 before the user taps the icon, ramps up to PARTICLE_SPEED_BOOST
-  # over ROLL_RAMP_FRAMES once @rolling_start fires. Same ease curve as
-  # the rolling angle ramp — see [animate_icon].
+  # over ROLL_RAMP_FRAMES once @rolling_start fires, then fades back to
+  # 1× over SPIN_DOWN_FRAMES once @lifted_start fires (compile finished).
+  # Same ease curve as the rolling angle ramp — see [animate_icon].
   def particle_speed_multiplier
     return 1.0 unless @rolling_start
-    age  = @frame - @rolling_start
-    ramp = ease_out_cubic([age.to_f / ROLL_RAMP_FRAMES, 1.0].min)
-    1.0 + (PARTICLE_SPEED_BOOST - 1.0) * ramp
+    age   = @frame - @rolling_start
+    ramp  = ease_out_cubic([age.to_f / ROLL_RAMP_FRAMES, 1.0].min)
+    boost = 1.0 + (PARTICLE_SPEED_BOOST - 1.0) * ramp
+
+    if @lifted_start
+      lift_age = @frame - @lifted_start
+      fade     = ease_out_cubic([lift_age.to_f / SPIN_DOWN_FRAMES, 1.0].min)
+      boost    = boost + (1.0 - boost) * fade
+    end
+
+    boost
   end
 
   def ease_out_cubic(t)
     return 0.0 if t <= 0.0
     return 1.0 if t >= 1.0
     1.0 - ((1.0 - t) ** 3)
+  end
+
+  # Lift offset in logical px for a splash element with the given start
+  # delay (in frames). Returns 0 before the sentinel triggers and during
+  # the per-element delay window, then eases from 0 to LIFT_OFFSET_PX
+  # over LIFT_DURATION_FRAMES and holds at the full offset thereafter.
+  # Y axis points down — callers subtract this value from y to move
+  # upward.
+  def lift_offset_for(delay_frames)
+    return 0.0 unless @lifted_start
+    age = @frame - @lifted_start - delay_frames
+    return 0.0 if age <= 0
+    t = [age.to_f / LIFT_DURATION_FRAMES, 1.0].min
+    LIFT_OFFSET_PX * ease_out_cubic(t)
   end
 end
 

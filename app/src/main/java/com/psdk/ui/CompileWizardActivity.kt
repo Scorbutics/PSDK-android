@@ -69,6 +69,22 @@ class CompileWizardActivity : AppCompatActivity() {
             viewModel.apkFolderLocation.value = it
         }
 
+        // Wipe any stale loader status file from a previous wizard
+        // session. The file lives under the app data dir and survives
+        // process restarts, so a leftover "<<LIFT>>" from last run would
+        // fire the splash lift immediately on launch (loader.rb polls
+        // this file every ~8 frames). Gated on engine == null so a
+        // mid-compile rotation — where the activity is re-created but
+        // the ViewModel-owned engine keeps running — doesn't erase the
+        // in-flight sub-step.
+        if (savedInstanceState == null && viewModel.getEngine() == null) {
+            try {
+                java.io.File(executionLocation, CompileProgressFragment.LOADER_STATUS_FILE).delete()
+            } catch (e: Exception) {
+                // best-effort — a stale file just delays the user's first lift by one compile
+            }
+        }
+
         // Block system back button once compilation starts (VM is dirty)
         val backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() {
