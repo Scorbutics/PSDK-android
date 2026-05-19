@@ -1,55 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Transparent root so the activity-owned GL splash shows behind. The
-     "+" FAB lives centred on a halo View, occupying the slot where the
-     GL splash used to render its game icon. -->
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Constellation layout: the centred "+" FAB is the gravity well; 1-3
+     project "satellites" orbit it in a shallow arc above. No cards, no
+     list chrome — each project is just a haloed icon + caption. The
+     fragment positions the slots via translationX/Y and fades the unused
+     ones out. Activity-owned GL splash shows behind everything. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:clipChildren="false"
+    android:clipToPadding="false">
 
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
+    <!-- Empty-state hint (shown only when 0 projects). -->
+    <TextView
+        android:id="@+id/emptyHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:translationY="120dp"
+        android:text="Tap + to import a game"
+        android:textAppearance="@style/TextAppearance.Psdk.Body"
+        android:textColor="@color/colorOnSurfaceVariant"
+        android:visibility="gone" />
 
-        <!-- Empty state -->
-        <LinearLayout
-            android:id="@+id/emptyState"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:visibility="gone">
+    <!-- 3 satellite slots. Initial translationX/Y are set programmatically
+         in [arrangeSlots]; XML defaults are 0/0 so the slots render at
+         centre on first measure (before the fragment arranges them) —
+         alpha=0 keeps that frame invisible. -->
+    <include layout="@layout/satellite_slot" android:id="@+id/satelliteSlot0" />
+    <include layout="@layout/satellite_slot" android:id="@+id/satelliteSlot1" />
+    <include layout="@layout/satellite_slot" android:id="@+id/satelliteSlot2" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="No projects yet"
-                android:textAppearance="@style/TextAppearance.Psdk.Title"
-                android:textColor="@color/colorOnSurfaceVariant"
-                android:layout_marginBottom="@dimen/spacing_sm" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Create a new project to get started"
-                android:textAppearance="@style/TextAppearance.Psdk.Body"
-                android:textColor="@color/colorOnSurfaceVariant" />
-        </LinearLayout>
-
-        <!-- Project list -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/projectsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:padding="@dimen/spacing_md" />
-    </FrameLayout>
-
-    <!-- Centred "+" stack — halo on bottom (drawable, alpha-breathes via
-         the fragment), FAB on top in splash-accent blue. The wrapping
-         FrameLayout sits behind the recyclerview when there are projects
-         and on top of the empty state when not; the FAB hides at
-         MAX_PROJECTS so it can never overlap a row. -->
+    <!-- Centred "+" stack. Halo on bottom, FAB on top. The fragment runs
+         alpha-breath on the halo and scale-breath on the FAB; press
+         releases spawn a particle burst (see [spawnFabParticles]). -->
     <FrameLayout
         android:id="@+id/fabContainer"
         android:layout_width="wrap_content"
@@ -77,4 +61,4 @@
             app:maxImageSize="40dp"
             app:srcCompat="@android:drawable/ic_input_add" />
     </FrameLayout>
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</FrameLayout>

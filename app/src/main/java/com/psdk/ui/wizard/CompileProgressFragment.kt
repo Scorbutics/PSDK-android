@@ -136,19 +136,21 @@ class CompileProgressFragment : Fragment() {
 
     companion object {
         /**
-         * Matches Loader::LIFT_SENTINEL in loader.rb verbatim. Writing
-         * this string to [LoaderPaths.statusFile] asks the splash to lift
-         * its centerpiece upward — see loader.rb's [poll_external_status]
-         * and the staggered offsets in animate_icon / animate_text_layer.
+         * Matches Loader::StatusFile::LIFT_SENTINEL in
+         * loader/status_file.rb verbatim. Writing this string to
+         * [LoaderPaths.statusFile] asks the splash to lift its
+         * centerpiece upward — see StatusFile#poll and the staggered
+         * SceneState::LIFT_DELAY_* offsets in the Icon / Text layers.
          */
         const val LIFT_SENTINEL = "<<LIFT>>"
 
         /**
-         * Matches Loader::TAP_SENTINEL in loader.rb verbatim. Writing
-         * this string asks the splash to play the release-on-icon
-         * combo (bang + shake + spin) without waiting for a real
-         * finger. Currently only the classic-setup bootstrap path
-         * uses it — see CompileWizardFragment.performClassicAutoTap.
+         * Matches Loader::StatusFile::TAP_SENTINEL in
+         * loader/status_file.rb verbatim. Writing this string asks the
+         * splash to play the release-on-icon combo (bang + shake +
+         * spin) without waiting for a real finger. Currently only the
+         * classic-setup bootstrap path uses it — see
+         * CompileWizardFragment.performClassicAutoTap.
          */
         const val TAP_SENTINEL = "<<TAP>>"
     }

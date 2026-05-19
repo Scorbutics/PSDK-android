@@ -215,11 +215,16 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
         val loader = PsdkInterpreter.create(this, listener, onErr)
         loaderInterpreter = loader
-        val script = if (prelude.isEmpty()) {
-            RubyScript(assets, LOADER_SCRIPT)
-        } else {
-            RubyScript(assets, LOADER_SCRIPT, prelude)
-        }
+        // loader.rb itself is the orchestrator — its dependencies live
+        // in loader/*.rb. Android's AssetManager can't expose them via
+        // require_relative (the script reaches the VM as ruby -e, so
+        // __FILE__ is "-e" and the helpers aren't on disk), so we
+        // concatenate them as preludes here. Order matches the
+        // dependency graph: util → clock → scene_state → assets →
+        // window → router → status → layers → splash. Project preludes
+        // (extract_loader_assets.rb, etc.) come after so they can rely
+        // on Loader::* being defined.
+        val script = RubyScript(assets, LOADER_SCRIPT, LOADER_PRELUDES + prelude)
         loader.enqueue(
             script = script,
             location = ScriptLocation(executionLocation = executionLocation, archive = archive),
@@ -249,10 +254,36 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         private const val LOADER_SCRIPT = "loader.rb"
         private const val LOADER_TAG = "Root-loader"
 
-        /** Matches Loader::READY_SENTINEL in loader.rb verbatim. */
+        /**
+         * Helper modules concatenated before loader.rb itself. Each file
+         * defines its piece of the Loader::* namespace; loader.rb is the
+         * top-level orchestrator that instantiates Loader::Splash.
+         *
+         * Order is the dependency graph — every file may reference any
+         * Loader::* defined earlier in this list at method-call time,
+         * but class-body code only references things defined strictly
+         * before it. Don't reorder casually.
+         */
+        private val LOADER_PRELUDES = listOf(
+            "loader/util.rb",
+            "loader/clock.rb",
+            "loader/scene_state.rb",
+            "loader/assets.rb",
+            "loader/splash_window.rb",
+            "loader/touch_router.rb",
+            "loader/status_file.rb",
+            "loader/layers/background.rb",
+            "loader/layers/ambient_particles.rb",
+            "loader/layers/dust.rb",
+            "loader/layers/icon.rb",
+            "loader/layers/text.rb",
+            "loader/splash.rb",
+        )
+
+        /** Matches Loader::Splash::READY_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_READY_SENTINEL = "[loader-ready]"
 
-        /** Matches Loader::ICON_TAPPED_SENTINEL in loader.rb verbatim. */
+        /** Matches Loader::Splash::ICON_TAPPED_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
 
         private const val LOADER_FADE_IN_MS = 180L

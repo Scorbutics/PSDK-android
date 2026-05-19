@@ -4,7 +4,10 @@ import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -13,18 +16,18 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
@@ -37,19 +40,29 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
+/**
+ * Constellation layout: 1-3 project "satellites" orbit the centred "+"
+ * FAB in a shallow arc. No card chrome, no RecyclerView — the slot count
+ * is bounded by [MAX_PROJECTS], so three include'd `satellite_slot.xml`
+ * views are enough. Each slot is positioned via translationX/Y in
+ * [arrangeSlots]; status is encoded in the halo colour; tapping a slot
+ * runs the fly-to-centre transition before launching the wizard.
+ */
 class ProjectListFragment : Fragment() {
 
-    // Scoped to the parent (ProjectHubFragment) so root-directory state set
-    // by the hub's storage menu is visible to the list.
     private val viewModel: ProjectHubViewModel by viewModels({ requireParentFragment() })
-    private lateinit var adapter: ProjectListAdapter
     private lateinit var database: AppDatabase
 
-    // Constantly-running breath animators on the centred "+" stack.
-    // Kept as fields so onDestroyView can cancel them — otherwise they
-    // hold view references past the view's lifetime.
+    private lateinit var slots: List<View>
+    private lateinit var fabContainer: FrameLayout
+    private lateinit var emptyHint: View
+
+    // Breath animators on the centred "+" stack. Kept as fields so
+    // onDestroyView can cancel them — otherwise they hold view
+    // references past the view's lifetime.
     private var fabBreath: ObjectAnimator? = null
     private var haloBreath: ObjectAnimator? = null
+    private var satelliteHaloBreaths: MutableList<ObjectAnimator> = mutableListOf()
 
     private val chooseArchiveLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -68,43 +81,44 @@ class ProjectListFragment : Fragment() {
 
         database = AppDatabase.getInstance(requireContext())
 
-        val recyclerView = view.findViewById<RecyclerView>(R.id.projectsRecyclerView)
-        val emptyState = view.findViewById<LinearLayout>(R.id.emptyState)
         val newProjectFab = view.findViewById<FloatingActionButton>(R.id.newProjectFab)
         val newProjectHalo = view.findViewById<View>(R.id.newProjectHalo)
-        val fabContainer = view.findViewById<FrameLayout>(R.id.fabContainer)
-
-        // Delete moved to the wizard's toolbar overflow menu. The adapter
-        // no longer needs a delete callback.
-        adapter = ProjectListAdapter(
-            onProjectClick = { project -> launchCompileWizard(project, autoStart = false) },
+        fabContainer = view.findViewById(R.id.fabContainer)
+        emptyHint = view.findViewById(R.id.emptyHint)
+        slots = listOf(
+            view.findViewById(R.id.satelliteSlot0),
+            view.findViewById(R.id.satelliteSlot1),
+            view.findViewById(R.id.satelliteSlot2),
         )
-
-        recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        recyclerView.adapter = adapter
 
         setupCentralAddButton(newProjectFab, newProjectHalo, fabContainer)
 
-        // Observe projects
+        // Observe projects → repaint the constellation.
         viewModel.projects.observe(viewLifecycleOwner) { projects ->
-            adapter.submitList(projects)
-            emptyState.visibility = if (projects.isEmpty()) View.VISIBLE else View.GONE
-            recyclerView.visibility = if (projects.isEmpty()) View.GONE else View.VISIBLE
-            // The "+" sits in the middle of the screen and would otherwise
-            // overlap row 3+. Hiding at the cap doubles as the enforcement
-            // mechanism for [MAX_PROJECTS] — this is a debug tool, not a
-            // general-purpose project hub.
-            newProjectFab.visibility = if (projects.size >= MAX_PROJECTS) View.GONE else View.VISIBLE
+            arrangeSlots(projects)
+            // FAB hides at the cap so it can never fly past the satellites
+            // and signals "you've maxed your debug-project budget".
+            newProjectFab.visibility =
+                if (projects.size >= MAX_PROJECTS) View.GONE else View.VISIBLE
+            emptyHint.visibility = if (projects.isEmpty()) View.VISIBLE else View.GONE
         }
 
-        // Root directory is owned by the hub fragment; refresh the project
-        // list whenever it changes.
+        // Root directory is owned by the hub fragment; refresh whenever
+        // it changes.
         viewModel.rootDirectory.observe(viewLifecycleOwner) { refreshProjects() }
     }
 
     override fun onResume() {
         super.onResume()
         refreshProjects()
+        // Returning from the wizard — restore everything the fly-to-centre
+        // transition disturbed.
+        fabContainer.alpha = 1f
+        slots.forEach { slot ->
+            slot.alpha = 1f
+            slot.scaleX = 1f
+            slot.scaleY = 1f
+        }
     }
 
     private fun refreshProjects() {
@@ -112,17 +126,180 @@ class ProjectListFragment : Fragment() {
         viewModel.projects.value = database.projectDao().getAllByDirectory(rootPath)
     }
 
+    // ── Constellation ────────────────────────────────────────────────
+
     /**
-     * Wire up the centred "+" stack:
-     *   - FAB itself: gentle scale "breath" (1.0↔1.05).
-     *   - Halo behind it: alpha breathes 0.5↔0.85 on a slower cycle so the
-     *     glow feels like it's pulsing the FAB outward, not in lock-step.
-     *   - Touch-down compresses scale + release snaps back via
-     *     OvershootInterpolator; release also spawns a particle burst
-     *     outward from the FAB centre (see [spawnFabParticles]) — same
-     *     vocabulary as loader.rb's spawn_bang.
-     *   - Click triggers the file picker.
+     * Place satellites at their resting positions and paint each with the
+     * matching project. The mapping rules:
+     *   - 1 project  → slot 1 (centre arc).
+     *   - 2 projects → slots 0 + 2 (flanking pair).
+     *   - 3 projects → all three.
+     * Unused slots are GONE so they don't intercept touches.
      */
+    private fun arrangeSlots(projects: List<Project>) {
+        // Tear down any lingering halo-breath animators before re-binding.
+        satelliteHaloBreaths.forEach { it.cancel() }
+        satelliteHaloBreaths.clear()
+
+        val density = resources.displayMetrics.density
+        val positions = listOf(
+            Pair(-SATELLITE_HORIZONTAL_DP * density, -SATELLITE_VERTICAL_DP * density),
+            Pair(0f,                                    -SATELLITE_VERTICAL_DP * density),
+            Pair(SATELLITE_HORIZONTAL_DP * density,  -SATELLITE_VERTICAL_DP * density),
+        )
+        val activeIndices = when (projects.size) {
+            0 -> emptyList()
+            1 -> listOf(1)
+            2 -> listOf(0, 2)
+            else -> listOf(0, 1, 2)
+        }
+
+        // Reset all slots, then populate the active ones.
+        slots.forEachIndexed { i, slot ->
+            val pos = positions[i]
+            slot.translationX = pos.first
+            slot.translationY = pos.second
+            slot.visibility = View.GONE
+            slot.alpha = 0f
+            slot.scaleX = 1f
+            slot.scaleY = 1f
+        }
+
+        activeIndices.forEachIndexed { activeIdx, slotIdx ->
+            val project = projects[activeIdx]
+            populateSlot(slots[slotIdx], project, slotIdx)
+        }
+    }
+
+    /**
+     * Paint one satellite with a single project's identity:
+     *   - icon: project's game.png if extracted, bundled fallback otherwise.
+     *   - halo: tinted radial gradient driven by project status (success
+     *     green / accent blue / error red). Each halo also gets its own
+     *     phase-offset alpha breath so the constellation feels alive.
+     *   - name caption: clipped at 96 dp.
+     *   - tap: fly-to-centre transition then launch the wizard.
+     */
+    private fun populateSlot(slot: View, project: Project, slotIdx: Int) {
+        val ctx = slot.context
+        val icon = slot.findViewById<ImageView>(R.id.satelliteIcon)
+        val halo = slot.findViewById<View>(R.id.satelliteHalo)
+        val name = slot.findViewById<TextView>(R.id.satelliteName)
+
+        val isReadable = File(project.directory).canRead()
+        val hasRelease = File(project.directory, "Release").exists()
+
+        name.text = project.name
+
+        // Icon (project game.png, fallback to bundled gear).
+        val logoFile = File(project.directory, "loader_assets/game.png")
+        val logo = if (isReadable && logoFile.exists()) {
+            BitmapFactory.decodeFile(logoFile.absolutePath)
+        } else null
+        if (logo != null) {
+            icon.setImageBitmap(logo)
+        } else {
+            icon.setImageResource(R.drawable.logo)
+        }
+
+        // Halo colour = project status. The drawable is built fresh per
+        // slot so the radial gradient picks up the right tint at all
+        // three alpha stops.
+        val statusColor = ContextCompat.getColor(
+            ctx,
+            when {
+                !isReadable -> R.color.colorError
+                hasRelease  -> R.color.colorSuccess
+                else        -> R.color.colorSplashAccent
+            },
+        )
+        halo.background = buildHaloDrawable(ctx, statusColor)
+
+        slot.visibility = View.VISIBLE
+        slot.alpha = if (isReadable) 1f else 0.55f
+        slot.isEnabled = isReadable
+        slot.setOnClickListener {
+            if (isReadable) flyToCentreThenLaunch(slot, project)
+        }
+        attachPressFeedback(slot)
+
+        // Halo breath: phase-offset per slot so neighbours don't pulse in
+        // lock-step. Slow cycle (~2.4s) to match the FAB halo cadence.
+        val breath = ObjectAnimator.ofFloat(halo, View.ALPHA, 0.55f, 1f).apply {
+            duration = SATELLITE_HALO_BREATH_MS
+            startDelay = slotIdx * (SATELLITE_HALO_BREATH_MS / 3)
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+        satelliteHaloBreaths.add(breath)
+    }
+
+    private fun buildHaloDrawable(context: Context, color: Int): GradientDrawable {
+        val density = context.resources.displayMetrics.density
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            gradientType = GradientDrawable.RADIAL_GRADIENT
+            gradientRadius = 40f * density
+            colors = intArrayOf(
+                ColorUtils.setAlphaComponent(color, 0x99),
+                ColorUtils.setAlphaComponent(color, 0x33),
+                ColorUtils.setAlphaComponent(color, 0x00),
+            )
+        }
+    }
+
+    private fun attachPressFeedback(slot: View) {
+        slot.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.92f).scaleY(0.92f)
+                        .setDuration(90L)
+                        .start()
+                }
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setInterpolator(OvershootInterpolator(2.4f))
+                        .setDuration(280L)
+                        .start()
+                }
+            }
+            false  // click listener still fires on UP.
+        }
+    }
+
+    /**
+     * Fly-to-centre transition: the tapped satellite arcs to the centre
+     * while scaling up; everything else dims. When the animation lands,
+     * we hand off to the wizard. The fragment-replace transaction tears
+     * down our view immediately afterwards, so we don't need to roll
+     * the animation back — [onResume] resets state on return.
+     */
+    private fun flyToCentreThenLaunch(slot: View, project: Project) {
+        // Disable the whole constellation so a second tap during the
+        // transition can't fire a second wizard.
+        slots.forEach { it.isClickable = false }
+
+        slot.animate()
+            .translationX(0f).translationY(0f)
+            .scaleX(1.45f).scaleY(1.45f)
+            .setDuration(SATELLITE_FLY_MS)
+            .setInterpolator(AccelerateInterpolator(1.4f))
+            .withEndAction {
+                if (isAdded) launchCompileWizard(project, autoStart = false)
+            }
+            .start()
+
+        slots.filter { it !== slot }.forEach { other ->
+            other.animate().alpha(0.2f).setDuration(180L).start()
+        }
+        fabContainer.animate().alpha(0.2f).setDuration(180L).start()
+    }
+
+    // ── Centred "+" stack ────────────────────────────────────────────
+
     private fun setupCentralAddButton(
         fab: FloatingActionButton,
         halo: View,
@@ -148,10 +325,6 @@ class ProjectListFragment : Fragment() {
             start()
         }
 
-        // Press response — scale dip on down, OvershootInterpolator snap
-        // back + particle burst on release. We don't pause the breath
-        // animators: when the press-release animation completes the breath
-        // resumes from wherever it had progressed to.
         fab.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -173,17 +346,15 @@ class ProjectListFragment : Fragment() {
                         .start()
                 }
             }
-            false  // Don't consume — the FAB's onClickListener still fires on UP.
+            false  // click listener still fires on UP.
         }
         fab.setOnClickListener { showArchivePicker() }
     }
 
     /**
-     * Burst of [PARTICLE_COUNT] dots from the FAB centre — same beat as
-     * loader.rb's spawn_bang. Each particle is a tiny View added to
-     * [container], animated outward at a random angle, then removed.
-     * Cheap (one View per particle, removed on end) and works without
-     * any custom drawing surface.
+     * Particle burst from the FAB centre, same beat as loader.rb's
+     * spawn_bang. Each particle is a tiny View added to [container],
+     * ejected radially, then removed on animation end.
      */
     private fun spawnFabParticles(container: FrameLayout, fab: View) {
         val ctx = container.context
@@ -196,8 +367,6 @@ class ProjectListFragment : Fragment() {
                 background = ContextCompat.getDrawable(ctx, R.drawable.bg_fab_particle)
                 val sizePx = (PARTICLE_SIZE_DP * density).toInt()
                 layoutParams = FrameLayout.LayoutParams(sizePx, sizePx)
-                // Random angle around the FAB; start just outside the
-                // FAB's edge so particles look ejected, not warped.
                 val angle = (i.toDouble() / PARTICLE_COUNT) * Math.PI * 2 +
                     Random.nextDouble(-0.2, 0.2)
                 val travel = (PARTICLE_TRAVEL_DP * density) *
@@ -215,9 +384,7 @@ class ProjectListFragment : Fragment() {
                     .scaleY(0.4f)
                     .setDuration(PARTICLE_DURATION_MS)
                     .setInterpolator(DecelerateInterpolator(1.6f))
-                    .withEndAction {
-                        (parent as? ViewGroup)?.removeView(this)
-                    }
+                    .withEndAction { (parent as? ViewGroup)?.removeView(this) }
                     .start()
             }
             container.addView(particle)
@@ -229,8 +396,12 @@ class ProjectListFragment : Fragment() {
         fabBreath = null
         haloBreath?.cancel()
         haloBreath = null
+        satelliteHaloBreaths.forEach { it.cancel() }
+        satelliteHaloBreaths.clear()
         super.onDestroyView()
     }
+
+    // ── Wizard launch + archive import (unchanged) ───────────────────
 
     private fun launchCompileWizard(project: Project, autoStart: Boolean) {
         val fragment = CompileWizardFragment.newInstance(
@@ -256,20 +427,7 @@ class ProjectListFragment : Fragment() {
         }
     }
 
-    /**
-     * Stage the picked archive into a fresh project directory and hand the
-     * wizard control. Runs off the UI thread because copying a .epsa can
-     * be tens of MB.
-     *
-     * Project name comes straight from the picked filename minus its
-     * extension ("Lethalmonv1.epsa" → "Lethalmonv1"). If the name
-     * collides with an existing project dir we append "-2", "-3", …
-     * rather than asking the user — the goal is zero-friction import.
-     */
     private fun importArchive(uri: Uri) {
-        // Defensive: the FAB is hidden at the cap so the picker shouldn't
-        // be reachable, but a stale launcher result could land after the
-        // count crossed the limit (e.g. delete happened mid-pick).
         if ((viewModel.projects.value?.size ?: 0) >= MAX_PROJECTS) {
             Toast.makeText(
                 requireContext(),
@@ -288,7 +446,6 @@ class ProjectListFragment : Fragment() {
         Thread {
             var dir: File? = null
             try {
-                // De-dupe against existing dirs on disk.
                 var projectName = baseName
                 var candidate = File("$rootDir/projects/$projectName")
                 var attempt = 1
@@ -345,11 +502,19 @@ class ProjectListFragment : Fragment() {
 
     companion object {
         /**
-         * This screen is a debug harness, not a general-purpose project
-         * hub — capping at 3 keeps the centred "+" FAB from overlapping
-         * scrolling rows and signals intent.
+         * Debug harness, not a project hub — capping at 3 matches the
+         * constellation's slot count.
          */
         private const val MAX_PROJECTS = 3
+
+        // Resting positions for the 3 slots, in dp from the FAB centre.
+        // Same Y for a clean horizontal arc; X spreads outward so the
+        // outer slots clear the FAB halo's gradient fade.
+        private const val SATELLITE_HORIZONTAL_DP = 110f
+        private const val SATELLITE_VERTICAL_DP   = 200f
+
+        private const val SATELLITE_HALO_BREATH_MS = 2400L
+        private const val SATELLITE_FLY_MS = 280L
 
         private const val PARTICLE_COUNT = 12
         private const val PARTICLE_SIZE_DP = 8
