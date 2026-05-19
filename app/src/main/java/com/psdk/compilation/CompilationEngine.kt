@@ -21,7 +21,7 @@ class CompilationEngine(
     private val context: Context,
     private val executionLocation: String,
     private val archive: ArchiveKeys,
-    private val callback: CompilationCallback
+    initialCallback: CompilationCallback? = null
 ) {
     interface CompilationCallback {
         fun onStepStarted(stepIndex: Int, stepName: String)
@@ -30,9 +30,31 @@ class CompilationEngine(
         fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File)
     }
 
+    /**
+     * Snapshot of the engine's current state at the moment of a callback
+     * swap. `stepLogs` is a deep copy (StringBuilders) so the consumer can
+     * read it on any thread without racing further log appends.
+     */
+    data class Snapshot(
+        val stepLogs: List<CompileStepLogs>,
+        val activeStepIndex: Int,
+        val finishResult: FinishResult?
+    )
+
+    data class FinishResult(val success: Boolean, val logFile: File, val errorLogFile: File)
+
+    // Swappable so the engine can outlive its current consumer (e.g.
+    // a fragment surviving a config change re-attaches via setCallback).
+    // @Volatile because it's read from the Ruby-VM dispatcher thread
+    // (step events) and the logExecutor thread (log events).
+    @Volatile
+    private var callback: CompilationCallback? = initialCallback
+
     private val allStepLogs = mutableListOf<CompileStepLogs>()
     private var currentLogIndex = 0
     private var interpreter: PsdkInterpreter? = null
+    private var finishResult: FinishResult? = null
+    private var closed = false
 
     // Log writes and step switches are serialized through this single-threaded executor.
     // Without it, logs from script N can be tagged with step N+1 because the JNI listener
@@ -58,7 +80,7 @@ class CompilationEngine(
         allStepLogs.addAll(listOf(checkEngineLogs, backupSavesLogs, compilationLogs, copySavesLogs))
 
         currentLogIndex = 0
-        callback.onStepStarted(0, checkEngineLogs.step.title)
+        callback?.onStepStarted(0, checkEngineLogs.step.title)
 
         interpreter = PsdkInterpreter.create(
             context = context,
@@ -72,12 +94,12 @@ class CompilationEngine(
                         if (isError) {
                             allStepLogs[idx].errorLogs.appendLine(msg)
                         }
-                        callback.onLogMessage(idx, msg)
+                        callback?.onLogMessage(idx, msg)
                     }
                 }
             },
             onError = { e ->
-                callback.onLogMessage(currentLogIndex, "Error: ${e.localizedMessage}")
+                callback?.onLogMessage(currentLogIndex, "Error: ${e.localizedMessage}")
             }
         )
 
@@ -88,21 +110,23 @@ class CompilationEngine(
             interpreter = null
             restoreReleaseBackup(failedStepIndex)
             val (logFile, errorLogFile) = saveLogsToFile()
-            callback.onCompilationFinished(false, logFile, errorLogFile)
+            finishResult = FinishResult(false, logFile, errorLogFile)
+            callback?.onCompilationFinished(false, logFile, errorLogFile)
         }
 
         val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
             if (returnCode != 0) {
                 allStepLogs[3].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(3, false)
+                callback?.onStepCompleted(3, false)
                 finishWithFailure(3)
             } else {
                 allStepLogs[3].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(3, true)
+                callback?.onStepCompleted(3, true)
                 interpreter?.close()
                 interpreter = null
                 val (logFile, errorLogFile) = saveLogsToFile()
-                callback.onCompilationFinished(true, logFile, errorLogFile)
+                finishResult = FinishResult(true, logFile, errorLogFile)
+                callback?.onCompilationFinished(true, logFile, errorLogFile)
             }
         }
 
@@ -110,14 +134,14 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[2].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(2, false)
+                callback?.onStepCompleted(2, false)
                 finishWithFailure(2)
             } else {
                 allStepLogs[2].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(2, true)
+                callback?.onStepCompleted(2, true)
                 setActiveStep(3)
                 allStepLogs[3].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(3, allStepLogs[3].step.title)
+                callback?.onStepStarted(3, allStepLogs[3].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCopySaves)
             }
         }
@@ -126,14 +150,14 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[1].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(1, false)
+                callback?.onStepCompleted(1, false)
                 finishWithFailure(1)
             } else {
                 allStepLogs[1].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(1, true)
+                callback?.onStepCompleted(1, true)
                 setActiveStep(2)
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(2, allStepLogs[2].step.title)
+                callback?.onStepStarted(2, allStepLogs[2].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCompilation)
             }
         }
@@ -142,27 +166,69 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[0].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(0, false)
+                callback?.onStepCompleted(0, false)
                 interpreter?.close()
                 interpreter = null
                 val (logFile, errorLogFile) = saveLogsToFile()
-                callback.onCompilationFinished(false, logFile, errorLogFile)
+                finishResult = FinishResult(false, logFile, errorLogFile)
+                callback?.onCompilationFinished(false, logFile, errorLogFile)
             } else {
                 allStepLogs[0].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(0, true)
+                callback?.onStepCompleted(0, true)
                 setActiveStep(1)
                 allStepLogs[1].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(1, allStepLogs[1].step.title)
+                callback?.onStepStarted(1, allStepLogs[1].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
             }
         }
 
         try {
-            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
+            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCheck)
         } catch (ex: Exception) {
-            callback.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
+            callback?.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
             val (logFile, errorLogFile) = saveLogsToFile()
-            callback.onCompilationFinished(false, logFile, errorLogFile)
+            finishResult = FinishResult(false, logFile, errorLogFile)
+            callback?.onCompilationFinished(false, logFile, errorLogFile)
+        }
+    }
+
+    /**
+     * Atomically swap the callback target and snapshot the engine's
+     * current step state. The snapshot reflects everything dispatched up
+     * to this call; future events go through `newCallback`. The swap is
+     * serialized through the same executor that dispatches log events, so
+     * no log event can fall between the snapshot and `newCallback`'s
+     * first invocation. Caller MUST replay the snapshot to its UI before
+     * returning to the message loop — otherwise out-of-order log events
+     * could overtake the replay.
+     */
+    fun setCallback(newCallback: CompilationCallback?): Snapshot {
+        val swap = java.util.concurrent.Callable<Snapshot> {
+            callback = newCallback
+            // Deep-copy log buffers — caller reads on the UI thread while
+            // we keep appending here. Status is an enum (atomic ref write),
+            // safe to read concurrently.
+            val copies = allStepLogs.map { sl ->
+                CompileStepLogs(
+                    step = sl.step.copy(),
+                    logs = StringBuilder(sl.logs),
+                    errorLogs = StringBuilder(sl.errorLogs)
+                )
+            }
+            Snapshot(copies, currentLogIndex, finishResult)
+        }
+        return if (logExecutor.isShutdown) swap.call() else logExecutor.submit(swap).get()
+    }
+
+    /** Tear down the engine. Safe to call from `ViewModel.onCleared()`. */
+    fun close() {
+        if (closed) return
+        closed = true
+        callback = null
+        interpreter?.close()
+        interpreter = null
+        if (!logExecutor.isShutdown) {
+            logExecutor.shutdown()
         }
     }
 
@@ -170,20 +236,20 @@ class CompilationEngine(
         val releaseDir = File(executionLocation, "Release")
         val backupDir = File(executionLocation, "ReleaseBackup")
         if (!backupDir.exists()) {
-            callback.onLogMessage(failedStepIndex, "No Release backup to restore.")
+            callback?.onLogMessage(failedStepIndex, "No Release backup to restore.")
             return
         }
         try {
             if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
-                callback.onLogMessage(failedStepIndex, "Warning: failed to fully clean Release folder before restore.")
+                callback?.onLogMessage(failedStepIndex, "Warning: failed to fully clean Release folder before restore.")
             }
             if (backupDir.renameTo(releaseDir)) {
-                callback.onLogMessage(failedStepIndex, "Restored previous Release folder from backup.")
+                callback?.onLogMessage(failedStepIndex, "Restored previous Release folder from backup.")
             } else {
-                callback.onLogMessage(failedStepIndex, "Error: failed to rename ReleaseBackup back to Release.")
+                callback?.onLogMessage(failedStepIndex, "Error: failed to rename ReleaseBackup back to Release.")
             }
         } catch (ex: Exception) {
-            callback.onLogMessage(failedStepIndex, "Error while restoring backup: ${ex.localizedMessage}")
+            callback?.onLogMessage(failedStepIndex, "Error while restoring backup: ${ex.localizedMessage}")
         }
     }
 
@@ -232,11 +298,14 @@ class CompilationEngine(
         const val COMPILATION_ERROR_LOG_FILE = "last_compilation_errors.log"
 
         // Ruby preludes prepended to scripts that mount the archive. They
-        // define EpsaFormat, EpsaStream, and ArchiveMount so compile.rb /
-        // copy_saves.rb can call ArchiveMount.mount! without a load path.
-        // Order matters: epsa_stream depends on epsa_format, and
-        // archive_mount depends on epsa_stream.
-        private val ARCHIVE_PRELUDES = listOf(
+        // define EpsaFormat, EpsaStream, and ArchiveMount so check_engine.rb
+        // / compile.rb / copy_saves.rb / extract_loader_assets.rb can call
+        // ArchiveMount.mount! without a load path. Order matters:
+        // epsa_stream depends on epsa_format, archive_mount on epsa_stream.
+        //
+        // Made `internal` (was `private`) so ArchiveValidator can reuse
+        // the same bundle for its one-shot extract_loader_assets.rb pass.
+        internal val ARCHIVE_PRELUDES = listOf(
             "lib/epsa_format.rb",
             "lib/epsa_stream.rb",
             "lib/archive_mount.rb"

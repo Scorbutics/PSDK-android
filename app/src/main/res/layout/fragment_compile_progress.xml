@@ -1,39 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<!--
+    Intentionally empty: during compilation the splash (GL surface) IS the
+    UI. CompileProgressFragment exists only to bootstrap the compile
+    engine, route sub-step labels into loader.rb's status_text via
+    <executionLocation>/.loader_status, and advance to CompileDoneFragment
+    when the engine finishes. A thin slim progress bar at the top would
+    just compete with the splash for attention — and the full per-step
+    logs are surfaced from CompileDoneFragment ("View Logs") instead.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/colorBackground">
-
-    <!-- Progress bar -->
-    <com.google.android.material.progressindicator.LinearProgressIndicator
-        android:id="@+id/progressBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:indeterminate="true"
-        app:trackColor="@color/colorSurfaceVariant"
-        app:indicatorColor="@color/colorPrimary" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="@dimen/spacing_lg">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Compiling..."
-            android:textAppearance="@style/TextAppearance.Psdk.Headline"
-            android:layout_marginBottom="@dimen/spacing_lg" />
-
-        <!-- Steps list -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/stepsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false" />
-    </LinearLayout>
-</LinearLayout>
+    android:layout_height="match_parent" />

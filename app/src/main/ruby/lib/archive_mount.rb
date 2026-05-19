@@ -18,7 +18,17 @@ module ArchiveMount
   ENV_ENC_KEY = 'PSDK_EPSA_KEY_HEX'.freeze
   ENV_MAC_KEY = 'PSDK_EPSA_MAC_KEY_HEX'.freeze
 
+  # Cheap "is the archive already mounted at /" probe. PSDK ships its build
+  # marker at this path, so existence implies a live mount with our content.
+  MOUNT_PROBE = 'Data/Studio/psdk.dat'.freeze
+
+  def mounted?
+    PhysFS.exist?(MOUNT_PROBE)
+  end
+
   def mount!
+    return if mounted?
+
     epsa_path = ENV[ENV_PATH]   or raise "Missing #{ENV_PATH} env var"
     enc_hex   = ENV[ENV_ENC_KEY] or raise "Missing #{ENV_ENC_KEY} env var"
     mac_hex   = ENV[ENV_MAC_KEY] or raise "Missing #{ENV_MAC_KEY} env var"

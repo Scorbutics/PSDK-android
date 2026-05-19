@@ -1,28 +1,46 @@
 package com.psdk.compilation
 
 import android.content.Context
+import android.util.Log
 import com.psdk.ruby.vm.ArchiveKeys
+import com.psdk.ruby.vm.PsdkInterpreter
+import com.psdk.ruby.vm.RubyScript
+import com.psdk.ruby.vm.ScriptLocation
 import com.psdk.zip.EpsaArchive
+import com.scorbutics.rubyvm.LogLevel
+import com.scorbutics.rubyvm.LogListener
+import com.scorbutics.rubyvm.LogMessage
 import java.io.File
 
 /**
  * Validates a candidate .epsa archive and resolves its decryption keys.
  *
- * v4-streaming flow: no on-disk decryption. Validation = header parse +
- * first-chunk HMAC verification (proves the cert lines up and the bundle
- * isn't tampered). The deeper "is this a valid PSDK archive" structural
- * check (pokemonsdk/, Game.rb) now happens at compile time when the Ruby
- * side mounts via EpsaStream — there's no decrypted ZIP to inspect from
- * Java.
+ * v4-streaming flow: no on-disk decryption of the bulk archive. Validation
+ * is now two stages:
+ *   1. JVM-side header parse + first-chunk HMAC verification — proves the
+ *      cert/KDF/build line up and the bundle isn't tampered.
+ *   2. A short Ruby pass (extract_loader_assets.rb) that mounts the archive
+ *      via EpsaStream, copies splash-time assets (game info / icon / a font)
+ *      into <executionLocation>/loader_assets/, and unmounts. This is both
+ *      an end-to-end smoke test of the streaming decrypter AND the source
+ *      of files loader.rb later reads off the filesystem (so loader.rb
+ *      itself has zero archive dependency).
+ *
+ * The Ruby pass treats "no font in Fonts/" as archive-invalid — without
+ * one, LiteRGSS::Text raises and the splash can't render its title bar.
  */
 object ArchiveValidator {
+    private const val TAG = "ArchiveValidator"
+    private const val EXTRACT_SCRIPT = "extract_loader_assets.rb"
+    private const val EXTRACT_TIMEOUT_MS = 120_000L
+
     data class ValidationResult(
         val isValid: Boolean,
         val error: String?,
         val archive: ArchiveKeys?
     )
 
-    fun validate(context: Context, stagingFile: File): ValidationResult {
+    fun validate(context: Context, stagingFile: File, executionLocation: String): ValidationResult {
         if (!stagingFile.exists() || !stagingFile.canRead()) {
             return ValidationResult(false, "File does not exist or is not readable", null)
         }
@@ -31,10 +49,50 @@ object ArchiveValidator {
             return ValidationResult(false, "Only encrypted .epsa archives are supported.", null)
         }
 
+        val keys = when (val r = EpsaArchive.resolve(context, stagingFile)) {
+            is EpsaArchive.Result.Failure -> return ValidationResult(false, r.message, null)
+            is EpsaArchive.Result.Ok      -> ArchiveKeys(
+                epsaPath  = r.keys.epsaPath,
+                encKeyHex = r.keys.encKey.toHex(),
+                macKeyHex = r.keys.macKey.toHex()
+            )
+        }
+
+        val extraction = runLoaderAssetExtraction(context, executionLocation, keys)
+        if (!extraction.success) {
+            return ValidationResult(false, extraction.errorSummary(), null)
+        }
+
+        return ValidationResult(true, null, keys)
+    }
+
+    /**
+     * Lightweight check used to decide whether the import wizard can skip
+     * the "import a file" step. Returns valid only if the staged .epsa
+     * exists, its header parses cleanly + first-chunk HMAC verifies, and
+     * the loader assets extract successfully.
+     *
+     * Fast path: if `loader_assets/` is present and at least as new as the
+     * staging file, the previous extraction is still authoritative — we
+     * skip the Ruby pass entirely and only re-resolve the keys from the
+     * header. That keeps the returning-user click on Compile snappy
+     * (extract_loader_assets.rb is ~2s).
+     */
+    fun validateExisting(context: Context, stagingFile: File, executionLocation: String): ValidationResult {
+        if (!stagingFile.exists() || !stagingFile.canRead()) {
+            return ValidationResult(false, null, null)
+        }
+        if (!loaderAssetsFresh(executionLocation, stagingFile)) {
+            return validate(context, stagingFile, executionLocation)
+        }
+        if (!EpsaArchive.isEpsaFile(stagingFile)) {
+            return ValidationResult(false, "Only encrypted .epsa archives are supported.", null)
+        }
         return when (val r = EpsaArchive.resolve(context, stagingFile)) {
             is EpsaArchive.Result.Failure -> ValidationResult(false, r.message, null)
             is EpsaArchive.Result.Ok      -> ValidationResult(
-                true, null,
+                true,
+                null,
                 ArchiveKeys(
                     epsaPath  = r.keys.epsaPath,
                     encKeyHex = r.keys.encKey.toHex(),
@@ -44,19 +102,98 @@ object ArchiveValidator {
         }
     }
 
+    fun getStagingFile(executionLocation: String): File = File(executionLocation, "archive.staging")
+
     /**
-     * Lightweight check used to decide whether the import wizard can skip
-     * the "import a file" step. Returns valid only if the staged .epsa
-     * exists and its header parses cleanly + first-chunk HMAC verifies.
+     * True iff `loader_assets/` holds every file extract_loader_assets.rb
+     * writes on success, and each was last modified no earlier than the
+     * staging file. icon_color.json is intentionally excluded: the script
+     * skips it on all-transparent icons, so its absence does not mean the
+     * extraction was incomplete.
      */
-    fun validateExisting(context: Context, stagingFile: File): ValidationResult {
-        if (!stagingFile.exists() || !stagingFile.canRead()) {
-            return ValidationResult(false, null, null)
-        }
-        return validate(context, stagingFile)
+    private fun loaderAssetsFresh(executionLocation: String, stagingFile: File): Boolean {
+        val dir = File(executionLocation, "loader_assets")
+        if (!dir.isDirectory) return false
+        val required = listOf("infos_config.json", "game.png", "game_font.ttf")
+        val files = required.map { File(dir, it) }
+        if (!files.all { it.exists() && it.length() > 0 }) return false
+        val stagingMtime = stagingFile.lastModified()
+        return files.all { it.lastModified() >= stagingMtime }
     }
 
-    fun getStagingFile(executionLocation: String): File = File(executionLocation, "archive.staging")
+    private data class ExtractionOutcome(
+        val success: Boolean,
+        val exitCode: Int,
+        val errorLines: List<String>
+    ) {
+        fun errorSummary(): String {
+            val tail = errorLines.lastOrNull()
+            return if (tail.isNullOrBlank())
+                "Loader asset extraction failed (exit=$exitCode)"
+            else
+                "Loader asset extraction failed: $tail"
+        }
+    }
+
+    private fun runLoaderAssetExtraction(
+        context: Context,
+        executionLocation: String,
+        keys: ArchiveKeys
+    ): ExtractionOutcome {
+        val errorLines = mutableListOf<String>()
+        val done = Object()
+        var finishedExitCode: Int? = null
+
+        val listener = object : LogListener {
+            override fun onLogMessage(logMessage: LogMessage) {
+                val msg = logMessage.message
+                if (logMessage.level === LogLevel.ERROR) {
+                    Log.w(TAG, msg)
+                    errorLines += msg
+                } else {
+                    Log.i(TAG, msg)
+                }
+            }
+        }
+
+        val interpreter = PsdkInterpreter.create(
+            context = context,
+            listener = listener,
+            onError = { e ->
+                Log.w(TAG, "extraction interpreter error", e)
+                errorLines += (e.localizedMessage ?: e.toString())
+            }
+        )
+
+        try {
+            interpreter.enqueue(
+                script = RubyScript(context.assets, EXTRACT_SCRIPT, CompilationEngine.ARCHIVE_PRELUDES),
+                location = ScriptLocation(executionLocation = executionLocation, archive = keys),
+                onComplete = { exitCode ->
+                    synchronized(done) {
+                        finishedExitCode = exitCode
+                        done.notifyAll()
+                    }
+                }
+            )
+
+            synchronized(done) {
+                if (finishedExitCode == null) done.wait(EXTRACT_TIMEOUT_MS)
+            }
+        } finally {
+            interpreter.close()
+        }
+
+        val exitCode = finishedExitCode ?: run {
+            errorLines += "Extraction timed out after ${EXTRACT_TIMEOUT_MS / 1000}s"
+            -1
+        }
+        return ExtractionOutcome(
+            success = exitCode == 0,
+            exitCode = exitCode,
+            errorLines = errorLines
+        )
+    }
 
     private fun ByteArray.toHex(): String =
         joinToString("") { "%02x".format(it) }

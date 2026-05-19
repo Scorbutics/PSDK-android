@@ -2,8 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@color/colorBackground">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -27,8 +26,11 @@
             android:textColor="@color/colorOnSurfaceVariant"
             android:layout_marginBottom="@dimen/spacing_lg" />
 
-        <!-- Archive selection card -->
+        <!-- Archive selection card. Hidden once the archive is loaded and
+             validated — the GL surface's game.png logo then becomes the
+             "start compilation" affordance, and we want it unobstructed. -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/archiveCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/spacing_md"
@@ -109,15 +111,5 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-
-        <!-- Start compilation button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/startCompilationButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/spacing_md"
-            android:text="Start Compilation"
-            android:enabled="false"
-            style="@style/Widget.Psdk.Button" />
     </LinearLayout>
 </ScrollView>

@@ -15,15 +15,34 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.psdk.AppModeDetector
 import com.psdk.R
+import com.psdk.compilation.ArchiveValidator
 import com.psdk.compilation.CompilationEngine
+import com.psdk.compilation.CompileSubStepMapper
 import com.psdk.ruby.vm.ArchiveKeys
-import com.psdk.zip.EpsaArchive
+import com.psdk.ruby.vm.PsdkInterpreter
+import com.psdk.ruby.vm.RubyScript
+import com.psdk.ruby.vm.ScriptLocation
+import com.scorbutics.rubyvm.LogListener
+import com.scorbutics.rubyvm.LogMessage
 import com.scorbutics.rubyvm.RubyVMPaths
 import java.io.File
 
 class ClassicSetupActivity : AppCompatActivity() {
 
     private var logoPulse: ObjectAnimator? = null
+
+    // Splash interpreter — runs loader.rb in its own Ruby Thread. No
+    // archive bound: loader.rb reads its assets from
+    // <executionLocation>/loader_assets/, which ArchiveValidator
+    // populated during the "Verifying archive..." step. Lifecycle: created
+    // once the GL surface is ready AND the execution location is known;
+    // closed in onDestroy.
+    private var loaderInterpreter: PsdkInterpreter? = null
+
+    private val loaderLaunchLock = Any()
+    private var loaderSurfaceReady = false
+    private var loaderExecutionLocation: String? = null
+    private var loaderLaunched = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +53,7 @@ class ClassicSetupActivity : AppCompatActivity() {
         val statusText = findViewById<TextView>(R.id.statusText)
         val progressBar = findViewById<LinearProgressIndicator>(R.id.setupProgressBar)
         val viewLogsButton = findViewById<MaterialButton>(R.id.viewLogsButton)
+        val glSurface = findViewById<LiteRgssSurfaceView>(R.id.glSurface)
 
         gameTitle.text = applicationInfo.loadLabel(packageManager)
         progressBar.isIndeterminate = true
@@ -49,6 +69,25 @@ class ClassicSetupActivity : AppCompatActivity() {
             interpolator = AccelerateDecelerateInterpolator()
             start()
         }
+
+        // Reveal the GL surface immediately so the splash interpreter
+        // can start as soon as Android lays out the SurfaceView. The
+        // compile thread runs in parallel inside its own PsdkInterpreter;
+        // both share the process Ruby VM via the fifo_interpreter
+        // dispatcher (one thread per interpreter, cooperative GVL).
+        //
+        // alpha=0 until loader.rb emits LOADER_READY_SENTINEL (its first
+        // @window.update has flipped a frame onto EGL) — hides the
+        // SurfaceView's black punch-through between attach and first draw.
+        glSurface.alpha = 0f
+        glSurface.onSurfaceReady = { w, h ->
+            android.util.Log.i(LOADER_TAG, "surface ready (${w}x${h})")
+            synchronized(loaderLaunchLock) {
+                loaderSurfaceReady = true
+                tryLaunchLoaderLocked(glSurface)
+            }
+        }
+        glSurface.visibility = View.VISIBLE
 
         Thread {
             try {
@@ -68,17 +107,25 @@ class ClassicSetupActivity : AppCompatActivity() {
                     }
                 }
 
-                // Step 3: Validate the v4 header and derive K_enc / K_mac.
-                // No on-disk decryption — the keys are passed to Ruby via env
-                // vars and used by EpsaStream to decrypt on the fly.
+                // Step 3: Validate the v4 header, derive K_enc / K_mac,
+                // and extract loader_assets/ for the splash. The Ruby
+                // extraction pass is part of validation now — its failure
+                // (e.g. no font in Fonts/) means the archive is unusable.
                 updateStatus(statusText, "Verifying archive...")
-                val archive = when (val r = EpsaArchive.resolve(this@ClassicSetupActivity, stagingFile)) {
-                    is EpsaArchive.Result.Failure -> throw Exception("Archive verification failed: ${r.message}")
-                    is EpsaArchive.Result.Ok      -> ArchiveKeys(
-                        epsaPath  = r.keys.epsaPath,
-                        encKeyHex = r.keys.encKey.toHex(),
-                        macKeyHex = r.keys.macKey.toHex()
-                    )
+                val validation = ArchiveValidator.validate(this@ClassicSetupActivity, stagingFile, executionLocation)
+                val archive = if (validation.isValid && validation.archive != null) {
+                    validation.archive
+                } else {
+                    throw Exception("Archive verification failed: ${validation.error ?: "unknown error"}")
+                }
+
+                // Publish the execution location so the splash interpreter
+                // can launch once the surface is ready. Whichever event
+                // fires last actually starts loader.rb.
+                synchronized(loaderLaunchLock) {
+                    loaderExecutionLocation = executionLocation
+                    android.util.Log.i(LOADER_TAG, "archive valid (execLoc=$executionLocation epsa=${archive.epsaPath})")
+                    tryLaunchLoaderLocked(glSurface)
                 }
 
                 // Step 4: Compile
@@ -97,7 +144,7 @@ class ClassicSetupActivity : AppCompatActivity() {
                     context = this,
                     executionLocation = executionLocation,
                     archive = archive,
-                    callback = object : CompilationEngine.CompilationCallback {
+                    initialCallback = object : CompilationEngine.CompilationCallback {
                         override fun onStepStarted(stepIndex: Int, stepName: String) {
                             updateStatus(statusText, stepName + "...")
                             runOnUiThread {
@@ -109,7 +156,7 @@ class ClassicSetupActivity : AppCompatActivity() {
 
                         override fun onLogMessage(stepIndex: Int, message: String) {
                             if (stepIndex != COMPILATION_STEP_INDEX) return
-                            val sub = inferCompilationSubStep(message) ?: return
+                            val sub = CompileSubStepMapper.fromLog(message) ?: return
                             updateStatus(statusText, sub.label)
                             val base = STEP_BASE_PROGRESS + COMPILATION_STEP_INDEX * STEP_PROGRESS_SPAN
                             val target = base + (STEP_PROGRESS_SPAN * sub.fraction).toInt()
@@ -187,11 +234,56 @@ class ClassicSetupActivity : AppCompatActivity() {
     override fun onDestroy() {
         logoPulse?.cancel()
         logoPulse = null
+
+        loaderInterpreter?.close()
+        loaderInterpreter = null
+
         super.onDestroy()
     }
 
     private fun updateStatus(statusText: TextView, text: String) {
         runOnUiThread { statusText.text = text }
+    }
+
+    /**
+     * Fire loader.rb once the SurfaceView has reported its dimensions
+     * AND the execution location is known. Caller MUST hold
+     * loaderLaunchLock.
+     */
+    private fun tryLaunchLoaderLocked(glSurface: LiteRgssSurfaceView) {
+        if (loaderLaunched) return
+        if (!loaderSurfaceReady) return
+        val executionLocation = loaderExecutionLocation ?: return
+
+        android.util.Log.i(LOADER_TAG, "launching loader.rb (execLoc=$executionLocation)")
+        val listener = object : LogListener {
+            override fun onLogMessage(logMessage: LogMessage) {
+                android.util.Log.i(LOADER_TAG, logMessage.message)
+                if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
+                    glSurface.post {
+                        glSurface.animate()
+                            .alpha(1f)
+                            .setDuration(LOADER_FADE_IN_MS)
+                            .start()
+                    }
+                }
+            }
+        }
+        val onErr: (Exception) -> Unit = { e ->
+            android.util.Log.e(LOADER_TAG, "loader error", e)
+        }
+
+        val loader = PsdkInterpreter.create(this, listener, onErr)
+        loaderInterpreter = loader
+        loader.enqueue(
+            script = RubyScript(assets, LOADER_SCRIPT),
+            location = ScriptLocation(executionLocation = executionLocation, archive = null),
+            onComplete = { exitCode ->
+                android.util.Log.i(LOADER_TAG, "loader.rb exited (code=$exitCode)")
+            }
+        )
+
+        loaderLaunched = true
     }
 
     private fun showRestartDialog() {
@@ -210,26 +302,6 @@ class ClassicSetupActivity : AppCompatActivity() {
         Runtime.getRuntime().exit(0)
     }
 
-    private fun ByteArray.toHex(): String =
-        joinToString("") { "%02x".format(it) }
-
-    private data class SubStep(val label: String, val fraction: Float)
-
-    // Fractions are calibrated from observed compile timings (~56s total): loading
-    // dominates the first half, graphics + audio copy dominate the rest.
-    private fun inferCompilationSubStep(message: String): SubStep? = when {
-        message.startsWith("Loading Game")                       -> SubStep("Loading game data...",       0.00f)
-        message.startsWith("Loading /data/")                     -> SubStep("Loading project scripts...", 0.05f)
-        message.startsWith("Progress: Start script compilation") -> SubStep("Compiling scripts...",       0.45f)
-        message.startsWith("Progress: Make graphics resources")  -> SubStep("Processing graphics...",     0.55f)
-        message.startsWith("Progress: Make data")                -> SubStep("Building data files...",     0.80f)
-        message.startsWith("Progress: Copy lib")                 -> SubStep("Copying libraries...",       0.82f)
-        message.startsWith("Progress: Copy audio")               -> SubStep("Copying audio assets...",    0.84f)
-        message.startsWith("Progress: Copy binaries")            -> SubStep("Copying binaries...",        0.98f)
-        message.startsWith("Compilation done!")                  -> SubStep("Finalizing...",              1.00f)
-        else -> null
-    }
-
     companion object {
         const val CLASSIC_MODE_PREFS = "CLASSIC_MODE"
         const val CLASSIC_MODE_STATE_KEY = "CLASSIC_MODE_STATE"
@@ -240,5 +312,15 @@ class ClassicSetupActivity : AppCompatActivity() {
         private const val STEP_BASE_PROGRESS = 33
         private const val STEP_PROGRESS_SPAN = 22
         private const val COMPILATION_STEP_INDEX = 2
+
+        private const val LOADER_SCRIPT = "loader.rb"
+
+        /** Single tag for the splash interpreter lifecycle —
+         *  searchable in logcat with `adb logcat -s 'ClassicSetup-loader'`. */
+        private const val LOADER_TAG = "ClassicSetup-loader"
+
+        /** Matches Loader::READY_SENTINEL in loader.rb. */
+        private const val LOADER_READY_SENTINEL = "[loader-ready]"
+        private const val LOADER_FADE_IN_MS = 180L
     }
 }

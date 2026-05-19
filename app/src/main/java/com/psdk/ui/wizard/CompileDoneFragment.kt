@@ -43,7 +43,9 @@ class CompileDoneFragment : Fragment() {
         val errorLogFile = File(executionLocation, CompilationEngine.COMPILATION_ERROR_LOG_FILE)
         val success = viewModel.compilationSuccess.value == true
 
-        showErrorPreview(errorCard, errorContent, errorLogFile)
+        if (!success) {
+            showErrorPreview(errorCard, errorContent, errorLogFile)
+        }
 
         if (success) {
             resultIcon.setImageResource(R.drawable.ic_check)

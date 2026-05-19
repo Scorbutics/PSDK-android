@@ -5,9 +5,13 @@
 # chunk so the plaintext archive never lands on disk.
 #
 # Threading: PhysFS may call duplicate() and use the clones from different
-# threads concurrently. Each duplicate has its own file handle and current
-# offset; the verified-chunk set is shared across duplicates and protected by
-# a Mutex so we don't re-verify chunks that another duplicate already MAC'd.
+# threads concurrently. Each duplicate has its own file handle, current
+# offset AND its own verified-chunk cache — duplicates share nothing
+# mutable. Earlier the verified-chunk Set was shared across duplicates
+# (gated by a Mutex) to avoid duplicate MAC work; that turned out to
+# deadlock under concurrent compile + render Ruby Threads, and the cache
+# savings were negligible because PhysFS duplicates are short-lived
+# (one PHYSFS_openRead -> one duplicate -> destroyed at file close).
 
 require 'openssl'
 require 'set'
@@ -27,6 +31,14 @@ class EpsaStream
 
   KEY_SIZE = 32
 
+  # Per-duplicate plaintext LRU. PhysFS scans the ZIP central directory
+  # with thousands of tiny reads at mount time — without this cache, every
+  # one of them spun up a fresh OpenSSL::Cipher and re-decrypted an
+  # AES-block-aligned slice, which dominated mount-time cost (measured 6.7s
+  # for the Lethalmon archive). 64 KiB default chunk × 64 entries = ~4 MiB
+  # ceiling per Io.
+  PLAIN_CACHE_MAX = 64
+
   # Shared across duplicates of the same archive: which chunks we've already
   # MAC-verified, plus its mutex.
   VerifiedState = Struct.new(:set, :mutex)
@@ -43,7 +55,9 @@ class EpsaStream
 
     parse_header_and_table!
 
-    @verified = _shared || VerifiedState.new(Set.new, Mutex.new)
+    @verified    = _shared || VerifiedState.new(Set.new, Mutex.new)
+    @plain_cache = {}   # k => frozen plaintext String
+    @plain_lru   = []   # k order, oldest first
   end
 
   # PhysFS_Io duck type ------------------------------------------------------
@@ -69,15 +83,13 @@ class EpsaStream
     remaining = n
 
     while remaining > 0
-      k          = cur / @chunk_size
-      ensure_verified!(k)
-
+      k            = cur / @chunk_size
+      plain        = chunk_plaintext(k)
       chunk_off    = k * @chunk_size
-      chunk_size_k = chunk_len(k)
       in_chunk     = cur - chunk_off
-      take         = [remaining, chunk_size_k - in_chunk].min
+      take         = [remaining, plain.bytesize - in_chunk].min
 
-      out << decrypt_slice(k, in_chunk, take)
+      out << plain.byteslice(in_chunk, take)
       cur       += take
       remaining -= take
     end
@@ -90,10 +102,17 @@ class EpsaStream
     @file.close unless @file.closed?
   end
 
-  # PhysFS clones the IO for thread-safety. Fresh fd, independent offset,
-  # but shared verified-chunks state to avoid duplicate MAC work.
+  # PhysFS clones the IO for thread-safety: every PHYSFS_openRead in the
+  # ZIP archiver calls io->duplicate(io). For the duplicate to actually be
+  # safe to use concurrently with the original (and with sibling
+  # duplicates), it MUST NOT share any mutable state with them — including
+  # the verified-chunk cache. PhysFS only duplicates short-lived per-file
+  # streams (the duplicate is destroyed when the file is closed), so the
+  # cache savings of sharing are minimal anyway, while the cross-thread
+  # contention on the shared Mutex was empirically deadlocking us when
+  # compile and demo Ruby Threads each had their own duplicate.
   def duplicate
-    EpsaStream.new(@path, enc_key: @enc_key, mac_key: @mac_key, _shared: @verified)
+    EpsaStream.new(@path, enc_key: @enc_key, mac_key: @mac_key)
   end
 
   # PhysFS calls flush even on read-only IOs.
@@ -151,49 +170,58 @@ class EpsaStream
     @hmac_table.byteslice(k * EpsaFormat::HMAC_SIZE, EpsaFormat::HMAC_SIZE)
   end
 
-  def ensure_verified!(k)
-    @verified.mutex.synchronize do
-      return if @verified.set.include?(k)
+  # Return the full plaintext for chunk `k`, decrypting (and verifying, if
+  # this Io hasn't seen it yet) on a cache miss. Folds the previously
+  # separate verify+slice-decrypt steps: each chunk is now read once,
+  # HMAC'd once, decrypted once via a single OpenSSL call, and reused for
+  # every subsequent read that lands in the same chunk. The cache is
+  # bounded by PLAIN_CACHE_MAX entries (per Io, never shared).
+  def chunk_plaintext(k)
+    cached = @plain_cache[k]
+    if cached
+      touch_lru(k)
+      return cached
     end
 
     ctxt = pread(chunk_file_offset(k), chunk_len(k))
     raise IntegrityError, "short read on chunk #{k}" if ctxt.bytesize != chunk_len(k)
 
-    computed = OpenSSL::HMAC.digest('SHA256', @mac_key, [k].pack('Q<') + ctxt)
-    expected = stored_hmac(k)
-
-    unless OpenSSL.fixed_length_secure_compare(computed, expected)
-      raise IntegrityError, "HMAC mismatch for chunk #{k}"
+    # HMAC once per chunk across this Io's lifetime; cache eviction (LRU)
+    # may force a re-decrypt but never a re-verify.
+    already_verified = nil
+    @verified.mutex.synchronize { already_verified = @verified.set.include?(k) }
+    unless already_verified
+      computed = OpenSSL::HMAC.digest('SHA256', @mac_key, [k].pack('Q<') + ctxt)
+      expected = stored_hmac(k)
+      unless OpenSSL.fixed_length_secure_compare(computed, expected)
+        raise IntegrityError, "HMAC mismatch for chunk #{k}"
+      end
+      @verified.mutex.synchronize { @verified.set.add(k) }
     end
 
-    @verified.mutex.synchronize { @verified.set.add(k) }
-  end
-
-  # Decrypt `length` bytes starting at `in_chunk_offset` within chunk `k`.
-  # Reads only the block-aligned ciphertext slice from disk — no full-chunk
-  # decrypt unless the read genuinely spans the whole chunk.
-  def decrypt_slice(k, in_chunk_offset, length)
-    block_start = in_chunk_offset / EpsaFormat::AES_BLOCK_SIZE
-    block_end   = (in_chunk_offset + length + EpsaFormat::AES_BLOCK_SIZE - 1) /
-                  EpsaFormat::AES_BLOCK_SIZE
-
-    ctxt_start_in_chunk  = block_start * EpsaFormat::AES_BLOCK_SIZE
-    ctxt_end_in_chunk    = [block_end * EpsaFormat::AES_BLOCK_SIZE, chunk_len(k)].min
-    ctxt_len             = ctxt_end_in_chunk - ctxt_start_in_chunk
-
-    ctxt = pread(chunk_file_offset(k) + ctxt_start_in_chunk, ctxt_len)
-
-    blocks_in_prev_chunks = k * (@chunk_size / EpsaFormat::AES_BLOCK_SIZE)
-    iv = EpsaFormat.iv_for_block(@nonce, blocks_in_prev_chunks + block_start)
-
+    # One OpenSSL::Cipher allocation per chunk instead of per read — this
+    # is the win over the old `decrypt_slice`. iv_for_block(nonce, k*N) is
+    # equivalent to iv_for_chunk(nonce, k, chunk_size).
+    iv = EpsaFormat.iv_for_block(@nonce, k * (@chunk_size / EpsaFormat::AES_BLOCK_SIZE))
     cipher = OpenSSL::Cipher.new('aes-256-ctr')
     cipher.decrypt
     cipher.key = @enc_key
     cipher.iv  = iv
-    plaintext_block_aligned = cipher.update(ctxt) + cipher.final
+    plain = (cipher.update(ctxt) + cipher.final).freeze
 
-    inner_offset = in_chunk_offset - ctxt_start_in_chunk
-    plaintext_block_aligned.byteslice(inner_offset, length)
+    @plain_cache[k] = plain
+    @plain_lru << k
+    while @plain_lru.size > PLAIN_CACHE_MAX
+      @plain_cache.delete(@plain_lru.shift)
+    end
+
+    plain
+  end
+
+  def touch_lru(k)
+    return if @plain_lru.last == k
+    @plain_lru.delete(k)
+    @plain_lru << k
   end
 
   def pread(off, len)

@@ -24,8 +24,8 @@ class ImportArchiveFragment : Fragment() {
 
     private val viewModel: CompileWizardViewModel by activityViewModels()
 
+    private lateinit var fragmentRoot: View
     private lateinit var importButton: MaterialButton
-    private lateinit var startCompilationButton: MaterialButton
     private lateinit var validationContainer: LinearLayout
     private lateinit var validationIcon: ImageView
     private lateinit var validationText: TextView
@@ -61,8 +61,8 @@ class ImportArchiveFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        fragmentRoot = view
         importButton = view.findViewById(R.id.importArchiveButton)
-        startCompilationButton = view.findViewById(R.id.startCompilationButton)
         validationContainer = view.findViewById(R.id.validationContainer)
         validationIcon = view.findViewById(R.id.validationIcon)
         validationText = view.findViewById(R.id.validationText)
@@ -70,18 +70,39 @@ class ImportArchiveFragment : Fragment() {
 
         importButton.setOnClickListener { selectFile() }
 
-        startCompilationButton.setOnClickListener {
-            viewModel.currentStep.value = 1
+        // If the activity already validated an archive on a previous attach
+        // (cache hit replayed into the ViewModel) we have no card to show —
+        // collapse straight to the GL-surface affordance.
+        if (viewModel.archive.value != null) {
+            fragmentRoot.visibility = View.GONE
         }
 
-        // Check if we already have a valid archive
+        // Check if we already have a valid archive. Off the main thread:
+        // the cache-miss path runs extract_loader_assets.rb (~2s) and even
+        // the cache-hit path does an HMAC/KDF pass, which together would
+        // freeze the activity transition into the wizard. The wizard UI
+        // stays interactive while the check runs.
         val executionLocation = viewModel.executionLocation.value
-        if (executionLocation != null) {
+        if (executionLocation != null && viewModel.archive.value == null) {
             val staged = ArchiveValidator.getStagingFile(executionLocation)
-            val result = ArchiveValidator.validateExisting(requireContext(), staged)
-            if (result.isValid) {
-                viewModel.archive.value = result.archive
-                showValidationSuccess()
+            if (staged.exists()) {
+                processingContainer.visibility = View.VISIBLE
+                val ctx = requireContext().applicationContext
+                Thread {
+                    val result = ArchiveValidator.validateExisting(ctx, staged, executionLocation)
+                    activity?.runOnUiThread {
+                        // Fragment may have detached between launching the
+                        // worker and this callback running (rotation, step
+                        // transition). `isAdded` keeps us off any view-
+                        // resource access that would throw via requireContext().
+                        if (!isAdded) return@runOnUiThread
+                        processingContainer.visibility = View.GONE
+                        if (result.isValid) {
+                            viewModel.archive.value = result.archive
+                            showValidationSuccess()
+                        }
+                    }
+                }.start()
             }
         }
     }
@@ -101,12 +122,13 @@ class ImportArchiveFragment : Fragment() {
     private fun validateArchive(stagingFile: java.io.File) {
         processingContainer.visibility = View.VISIBLE
         validationContainer.visibility = View.GONE
-        startCompilationButton.isEnabled = false
 
         val ctx = requireContext().applicationContext
+        val executionLocation = viewModel.executionLocation.value ?: return
         Thread {
-            val result = ArchiveValidator.validate(ctx, stagingFile)
+            val result = ArchiveValidator.validate(ctx, stagingFile, executionLocation)
             activity?.runOnUiThread {
+                if (!isAdded) return@runOnUiThread
                 processingContainer.visibility = View.GONE
                 if (result.isValid) {
                     viewModel.archive.value = result.archive
@@ -118,13 +140,15 @@ class ImportArchiveFragment : Fragment() {
         }.start()
     }
 
+    // Once the archive is valid the card stops being the UX focus: the
+    // activity drops back to the GL surface, whose game.png logo is now
+    // the "start compilation" tap target. Hiding the fragment root (the
+    // ScrollView) keeps the surface unobstructed while preserving the
+    // step-0 fragment so navigation back into it would still work.
     private fun showValidationSuccess() {
-        validationContainer.visibility = View.VISIBLE
-        validationIcon.setImageResource(R.drawable.ic_check)
-        validationIcon.setColorFilter(resources.getColor(R.color.colorSuccess, null))
-        validationText.text = "Archive is valid"
-        validationText.setTextColor(resources.getColor(R.color.colorSuccess, null))
-        startCompilationButton.isEnabled = true
+        if (::fragmentRoot.isInitialized) {
+            fragmentRoot.visibility = View.GONE
+        }
     }
 
     private fun showValidationError(error: String) {
@@ -133,6 +157,5 @@ class ImportArchiveFragment : Fragment() {
         validationIcon.setColorFilter(resources.getColor(R.color.colorError, null))
         validationText.text = error
         validationText.setTextColor(resources.getColor(R.color.colorError, null))
-        startCompilationButton.isEnabled = false
     }
 }
