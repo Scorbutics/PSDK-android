@@ -10,13 +10,12 @@ data class CompileSubStep(val label: String, val fraction: Float)
 
 /**
  * Maps raw `CompilationEngine.CompilationCallback#onLogMessage` lines to
- * the user-facing sub-step they imply. Used in two places now:
- *
- *  - [com.psdk.ui.ClassicSetupActivity] — drives the single-line status
- *    label and a progress bar during first-launch setup.
- *  - [com.psdk.ui.wizard.CompileProgressFragment] — writes the label to
- *    a small status file the loader.rb splash polls each frame, so the
- *    GL surface's `status_text` is the only on-screen UI during compile.
+ * the user-facing sub-step they imply. Used by
+ * [com.psdk.ui.wizard.CompileProgressFragment] — writes the label to a
+ * small status file the loader.rb splash polls each frame, so the GL
+ * surface's `status_text` is the only on-screen UI during compile.
+ * (Classic-mode first-launch setup goes through the same fragment now —
+ * see CompileWizardFragment's ARG_CLASSIC_BOOTSTRAP path.)
  *
  * Returns null when the message doesn't trigger a sub-step change —
  * callers should leave the previous status in place.

@@ -1,6 +1,5 @@
 package com.psdk.ui
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -8,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import com.google.android.material.button.MaterialButton
 import com.psdk.GameLauncher
 import com.psdk.R
@@ -20,21 +19,24 @@ import java.nio.file.Paths
 
 class ProjectDetailFragment : Fragment() {
 
-    private val viewModel: ProjectHubViewModel by activityViewModels()
+    // Scoped to the parent (ProjectHubFragment) so detail/list share state.
+    // Was activityViewModels() when the hub was its own Activity.
+    private val viewModel: ProjectHubViewModel by viewModels({ requireParentFragment() })
 
     private val startGameLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {}
 
-    private val compileWizardLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        // Refresh UI when returning from compile wizard
-        refreshUI()
-    }
-
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_project_detail, container, false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning from the wizard (popped off the activity back stack)
+        // — repaint state. Used to be triggered by an ActivityResult
+        // callback when the wizard was its own activity.
+        view?.let { onViewCreated(it, null) }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -63,20 +65,18 @@ class ProjectDetailFragment : Fragment() {
             GameLauncher.launch(requireActivity() as androidx.activity.ComponentActivity, executionLocation, releaseLocation, startGameLauncher)
         }
 
-        // Compile button
+        // Compile button — pushes the wizard onto the host activity's
+        // fragment stack so it covers the hub entirely. The shared GL
+        // surface lives on the activity, so navigation between hub and
+        // wizard doesn't tear the surface down.
         compileButton.setOnClickListener {
-            val intent = Intent(requireContext(), CompileWizardActivity::class.java)
-            intent.putExtra(CompileWizardActivity.EXTRA_EXECUTION_LOCATION, executionLocation)
-            compileWizardLauncher.launch(intent)
+            launchWizard(executionLocation, apkFolderLocation = null)
         }
 
         // Export button
         exportButton.visibility = if (releaseExists) View.VISIBLE else View.GONE
         exportButton.setOnClickListener {
-            val intent = Intent(requireContext(), CompileWizardActivity::class.java)
-            intent.putExtra(CompileWizardActivity.EXTRA_EXECUTION_LOCATION, executionLocation)
-            intent.putExtra(CompileWizardActivity.EXTRA_APK_FOLDER_LOCATION, releaseLocation)
-            compileWizardLauncher.launch(intent)
+            launchWizard(executionLocation, apkFolderLocation = releaseLocation)
         }
 
         // Game logs
@@ -105,10 +105,16 @@ class ProjectDetailFragment : Fragment() {
         }
     }
 
-    private fun refreshUI() {
-        // Re-navigate to detail to refresh state
-        val project = viewModel.selectedProject.value ?: return
-        view?.let { onViewCreated(it, null) }
+    private fun launchWizard(executionLocation: String, apkFolderLocation: String?) {
+        val fragment = CompileWizardFragment.newInstance(
+            executionLocation = executionLocation,
+            classicBootstrap = false,
+            apkFolderLocation = apkFolderLocation,
+        )
+        requireActivity().supportFragmentManager.beginTransaction()
+            .replace(R.id.fragmentContainer, fragment)
+            .addToBackStack(null)
+            .commit()
     }
 
     private fun readVersion(releaseLocation: String): String {

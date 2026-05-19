@@ -3,8 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/colorBackground">
+    android:orientation="vertical">
+
+    <!-- Wizard chrome: toolbar + step indicator. Wrapped in a single
+         container so classic-bootstrap mode can hide all of it with one
+         visibility toggle, leaving the GL surface alone on screen. -->
+    <LinearLayout
+        android:id="@+id/wizardChrome"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
     <!-- Toolbar -->
     <com.google.android.material.appbar.MaterialToolbar
@@ -141,27 +149,18 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/colorSurfaceVariant" />
+    </LinearLayout>
 
-    <!-- Wizard body: GL surface as background, fragment container overlaid.
-         SurfaceView is drawn behind the activity window and punches through;
-         the fragment root layouts are transparent so the render shows behind
-         their inner cards. Once the archive is validated, ImportArchiveFragment
-         hides itself entirely — the game.png logo rendered into the GL surface
-         then becomes the "start compilation" tap target (see loader.rb's
-         ICON_TAPPED_SENTINEL). -->
+    <!-- Wizard body. The GL surface lives in [RootActivity]'s root layout
+         behind this fragment; the wizard's sub-fragments mounted into
+         [wizardContainer] use transparent backgrounds so the surface
+         shows through. Once the archive is validated, ImportArchiveFragment
+         hides itself entirely — the game.png logo rendered into the GL
+         surface then becomes the "start compilation" tap target (see
+         loader.rb's ICON_TAPPED_SENTINEL). -->
     <FrameLayout
+        android:id="@+id/wizardContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <com.psdk.ui.LiteRgssSurfaceView
-            android:id="@+id/glSurface"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-        <FrameLayout
-            android:id="@+id/wizardContainer"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-    </FrameLayout>
+        android:layout_weight="1" />
 </LinearLayout>

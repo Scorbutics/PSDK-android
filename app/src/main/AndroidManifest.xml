@@ -23,14 +23,8 @@
             </intent-filter>
         </activity>
 
-        <!-- New activities -->
-        <activity android:name=".ui.ProjectHubActivity"
-            android:exported="false" />
-
-        <activity android:name=".ui.CompileWizardActivity"
-            android:exported="false" />
-
-        <activity android:name=".ui.ClassicSetupActivity"
+        <!-- Single in-app host (hub + wizard as fragments). -->
+        <activity android:name=".ui.RootActivity"
             android:exported="false" />
 
         <!-- Game engine (NativeActivity) -->

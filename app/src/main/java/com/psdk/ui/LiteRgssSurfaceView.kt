@@ -20,9 +20,10 @@ import com.scorbutics.litergss.NativeSurface
  * only one we are guaranteed to receive before the first frame is drawn.
  *
  * Per the project rule "Ruby VM thread = draw thread", this view does not
- * own a render thread itself — the caller (ClassicSetupActivity) launches a
- * PsdkInterpreter whose internal thread runs both the Ruby script and the
- * GL/EGL work. [onSurfaceReady] is the signal to start that thread.
+ * own a render thread itself — the host (currently CompileWizardFragment,
+ * hosted by RootActivity) launches a PsdkInterpreter whose internal
+ * thread runs both the Ruby script and the GL/EGL work. [onSurfaceReady]
+ * is the signal to start that thread.
  */
 class LiteRgssSurfaceView @JvmOverloads constructor(
     context: Context,

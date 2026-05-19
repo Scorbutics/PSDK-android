@@ -16,7 +16,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -30,7 +30,9 @@ import java.util.UUID
 
 class ProjectListFragment : Fragment() {
 
-    private val viewModel: ProjectHubViewModel by activityViewModels()
+    // Scoped to the parent (ProjectHubFragment) so detail/list share state.
+    // Was activityViewModels() when the hub was its own Activity.
+    private val viewModel: ProjectHubViewModel by viewModels({ requireParentFragment() })
     private lateinit var adapter: ProjectListAdapter
     private lateinit var database: AppDatabase
 

@@ -13,7 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import com.google.android.material.button.MaterialButton
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
@@ -22,7 +22,10 @@ import com.psdk.zip.EpsaArchive
 
 class ImportArchiveFragment : Fragment() {
 
-    private val viewModel: CompileWizardViewModel by activityViewModels()
+    // Scoped to the parent (CompileWizardFragment) so all wizard steps
+    // share the same VM instance — was activityViewModels() when the
+    // wizard was its own Activity.
+    private val viewModel: CompileWizardViewModel by viewModels({ requireParentFragment() })
 
     private lateinit var fragmentRoot: View
     private lateinit var importButton: MaterialButton

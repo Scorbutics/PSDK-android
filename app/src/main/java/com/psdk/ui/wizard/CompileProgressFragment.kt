@@ -5,7 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import com.psdk.R
 import com.psdk.compilation.CompilationEngine
 import com.psdk.compilation.CompileSubStepMapper
@@ -27,7 +27,10 @@ import java.io.File
  */
 class CompileProgressFragment : Fragment() {
 
-    private val viewModel: CompileWizardViewModel by activityViewModels()
+    // Scoped to the parent (CompileWizardFragment) so all wizard steps
+    // share the same VM instance — was activityViewModels() when the
+    // wizard was its own Activity.
+    private val viewModel: CompileWizardViewModel by viewModels({ requireParentFragment() })
 
     private var lastStatusWritten: String? = null
 
@@ -137,5 +140,14 @@ class CompileProgressFragment : Fragment() {
          * and the staggered offsets in animate_icon / animate_text_layer.
          */
         const val LIFT_SENTINEL = "<<LIFT>>"
+
+        /**
+         * Matches Loader::TAP_SENTINEL in loader.rb verbatim. Writing
+         * this string asks the splash to play the release-on-icon
+         * combo (bang + shake + spin) without waiting for a real
+         * finger. Currently only the classic-setup bootstrap path
+         * uses it — see CompileWizardFragment.performClassicAutoTap.
+         */
+        const val TAP_SENTINEL = "<<TAP>>"
     }
 }

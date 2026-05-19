@@ -10,7 +10,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.psdk.R
@@ -22,7 +22,10 @@ import java.nio.charset.StandardCharsets
 
 class CompileDoneFragment : Fragment() {
 
-    private val viewModel: CompileWizardViewModel by activityViewModels()
+    // Scoped to the parent (CompileWizardFragment) so all wizard steps
+    // share the same VM instance — was activityViewModels() when the
+    // wizard was its own Activity.
+    private val viewModel: CompileWizardViewModel by viewModels({ requireParentFragment() })
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_compile_done, container, false)

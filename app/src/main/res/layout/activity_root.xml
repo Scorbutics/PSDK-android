@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-activity host for the in-app screens (hub, wizard, etc.).
+
+     The LiteRgssSurfaceView lives here so it can outlast individual screen
+     transitions: the SurfaceView (and the EGL surface bound through
+     NativeSurface) is owned by the activity, while the foreground fragment
+     swaps inside [fragmentContainer]. The Ruby splash interpreter that
+     draws into this surface is still owned by the wizard fragment for now
+     — that fragment looks the surface up via findViewById on its host
+     activity. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground">
+
+    <com.psdk.ui.LiteRgssSurfaceView
+        android:id="@+id/glSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <FrameLayout
+        android:id="@+id/fragmentContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</FrameLayout>

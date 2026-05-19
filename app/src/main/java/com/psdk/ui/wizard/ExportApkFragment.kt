@@ -14,7 +14,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
+import androidx.fragment.app.viewModels
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
@@ -36,7 +36,10 @@ import java.security.SecureRandom
 
 class ExportApkFragment : Fragment() {
 
-    private val viewModel: CompileWizardViewModel by activityViewModels()
+    // Scoped to the parent (CompileWizardFragment) so all wizard steps
+    // share the same VM instance — was activityViewModels() when the
+    // wizard was its own Activity.
+    private val viewModel: CompileWizardViewModel by viewModels({ requireParentFragment() })
     private var applicationLogo: InputStream? = null
 
     private lateinit var appNameInput: TextInputEditText

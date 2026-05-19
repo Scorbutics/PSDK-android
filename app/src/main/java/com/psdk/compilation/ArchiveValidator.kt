@@ -105,6 +105,26 @@ object ArchiveValidator {
     fun getStagingFile(executionLocation: String): File = File(executionLocation, "archive.staging")
 
     /**
+     * Header-parse + KDF only, no extraction. Used by the wizard's
+     * classic-bootstrap path where loader.rb handles extract_loader_assets.rb
+     * itself in-process — the activity just needs the keys to bind via
+     * env vars before launching the loader interpreter. Returns null if
+     * the file isn't a valid .epsa or the KDF refuses (e.g. cert mismatch).
+     */
+    fun resolveKeys(context: Context, stagingFile: File): ArchiveKeys? {
+        if (!stagingFile.exists() || !stagingFile.canRead()) return null
+        if (!EpsaArchive.isEpsaFile(stagingFile)) return null
+        return when (val r = EpsaArchive.resolve(context, stagingFile)) {
+            is EpsaArchive.Result.Failure -> null
+            is EpsaArchive.Result.Ok      -> ArchiveKeys(
+                epsaPath  = r.keys.epsaPath,
+                encKeyHex = r.keys.encKey.toHex(),
+                macKeyHex = r.keys.macKey.toHex()
+            )
+        }
+    }
+
+    /**
      * True iff `loader_assets/` holds every file extract_loader_assets.rb
      * writes on success, and each was last modified no earlier than the
      * staging file. icon_color.json is intentionally excluded: the script

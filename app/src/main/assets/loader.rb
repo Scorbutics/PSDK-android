@@ -1,8 +1,8 @@
 # Standalone splash loop.
 #
-# Runs as the main script enqueued by CompileWizardActivity and
-# ClassicSetupActivity in its own PsdkInterpreter, separate from the
-# compile interpreter. Drawn entirely with LiteRGSS primitives
+# Runs as the main script enqueued by CompileWizardFragment in its own
+# PsdkInterpreter, separate from the compile interpreter. Drawn entirely
+# with LiteRGSS primitives
 # (DisplayWindow, Viewport, Sprite, Image, Color, Text), with no reliance
 # on PSDK's reopened Sprite / Graphics / Text.
 #
@@ -79,14 +79,14 @@ class Loader
   # Logged exactly once, on the LogListener, the first time `@window.update`
   # actually flips a frame onto the EGL surface. The host activity matches
   # against this verbatim to fade its SurfaceView in only after pixels are
-  # really on screen — change here, change CompileWizardActivity.kt and
-  # ClassicSetupActivity.kt together.
+  # really on screen — change here, change CompileWizardFragment.kt
+  # together.
   READY_SENTINEL = '[loader-ready]'.freeze
 
   # Logged every time a touch lands inside the icon's hit rect. The compile
   # wizard activity matches against this verbatim to advance from the
   # import step to the compile step — change here, change
-  # CompileWizardActivity.kt together. The activity itself decides whether
+  # CompileWizardFragment.kt together. The fragment itself decides whether
   # the tap is actionable (archive validated, still on step 0), so we
   # emit on every hit rather than one-shot.
   ICON_TAPPED_SENTINEL = '[loader-icon-tapped]'.freeze
@@ -107,6 +107,15 @@ class Loader
   # this string verbatim from onCompilationFinished, right before
   # advancing the wizard to the result step.
   LIFT_SENTINEL = '<<LIFT>>'.freeze
+
+  # Same idea, different payload: a release-on-icon "tap" requested by
+  # the activity (currently only the classic-setup bootstrap path —
+  # super-user mode still waits for an actual finger). Triggers the
+  # bang + shake + spin combo a real release would produce, minus the
+  # press-down depression (no finger to depress with). The activity
+  # advances the wizard step in parallel; the sentinel is purely the
+  # splash-side visual cue.
+  TAP_SENTINEL = '<<TAP>>'.freeze
 
   # Post-compile lift: shifts the splash centerpiece upward to make room
   # for the result card sliding up from the bottom. Staggered per-element
@@ -248,6 +257,14 @@ class Loader
     @last_status_poll_frame = -STATUS_POLL_INTERVAL_F
     @last_status_mtime      = nil
     @last_status_payload    = nil
+    # Set true the first time poll_external_status actually swaps the
+    # status_text contents (i.e., the activity wrote a real sub-step
+    # label like "Check engine…"). Read by the bottom-of-file script
+    # to decide whether to flash "‹ Tap logo to compile ›" — in
+    # classic-bootstrap mode the auto-tap fires before that line, so
+    # the engine's first sub-step has already arrived by the time we'd
+    # otherwise overwrite it with the CTA.
+    @external_status_received = false
 
     # Post-compile lift state. @lifted_start is the frame the activity
     # asked for the lift via LIFT_SENTINEL; nil means "splash is in its
@@ -341,6 +358,16 @@ class Loader
     return unless @status_text && !@status_text.disposed?
     @status_text.text = text
     STATUS_HOLD.times { return unless tick }
+  end
+
+  # True iff poll_external_status has overwritten @status_text at least
+  # once with a real activity-supplied payload (a compile sub-step,
+  # typically). The bottom-of-file script reads this after the intro
+  # hold to decide whether to flash the manual-tap CTA; in
+  # classic-bootstrap mode the auto-tap + first sub-step land before
+  # the hold ends, so the CTA would just clobber "Check engine…".
+  def external_status_received?
+    @external_status_received
   end
 
   def fade_out_and_dispose
@@ -455,7 +482,7 @@ class Loader
     # window close). Android activity teardown no longer flows through
     # here — surface destroy/recreate uses SFML's LostFocus/GainedFocus
     # path (see on_lost_focus below), and terminal shutdown uses
-    # $rgss_should_stop from CompileWizardActivity.onDestroy.
+    # $rgss_should_stop from CompileWizardFragment.onDestroy.
     @window.on_closed = proc { @window_closed = true; next true }
     # PSDK's Android pause-resume strategy (Graphics.rb on_lost_focus
     # branch): flip polling so the next event pump blocks in waitEvent
@@ -888,9 +915,24 @@ class Loader
         payload = payload[LIFT_SENTINEL.length..].to_s.strip
         return if payload.empty?
       end
+
+      if payload.start_with?(TAP_SENTINEL)
+        # Auto-tap sentinel: synthesize the release-on-icon visual that
+        # a real touch_ended would produce. @rolling_start uses ||= so
+        # repeat sentinels don't reset the spin ramp; @shake_start is
+        # plain assignment so a second tap WOULD re-shake — but the
+        # activity only fires this once per classic bootstrap so it
+        # doesn't matter in practice.
+        @rolling_start ||= @frame
+        @shake_start = @frame
+        spawn_bang(@icon_cx, @icon_cy)
+        payload = payload[TAP_SENTINEL.length..].to_s.strip
+        return if payload.empty?
+      end
       return if payload == @last_status_payload
       @last_status_payload = payload
       @status_text.text = payload
+      @external_status_received = true
     rescue StandardError => e
       loader_say "status poll: #{e.class}: #{e.message}"
     end
@@ -937,6 +979,15 @@ class Loader
     icon_lift = lift_offset_for(LIFT_DELAY_ICON)
     icon_x = (@icon_cx + shake_x).to_i
     icon_y = (@icon_cy + shake_y - icon_lift).to_i
+
+    # Keep the tap hitbox tracking the visual position so a finger
+    # landing on the lifted logo still registers as an icon press. We
+    # only follow the lift offset, not the shake — shake is brief
+    # (SHAKE_FRAMES ≈ 22) and the ICON_HIT_PADDING halo already absorbs
+    # ±SHAKE_AMPLITUDE px. y-axis only: there's no horizontal motion.
+    if @icon_hit_rect
+      @icon_hit_rect[1] = (@icon_cy - icon_lift - @icon_h / 2 - ICON_HIT_PADDING).to_i
+    end
 
     # Rolling spin: ramps from 0 to ROLL_SPEED_DEG_PER_FRAME over
     # ROLL_RAMP_FRAMES, then runs at steady state. Glow is rotationally
@@ -1147,12 +1198,20 @@ $loader_screen.run_intro
 # Decorative status progression — the splash isn't gated on real compile
 # state (the activity tears the loader interpreter down on destroy), so
 # the CTA just means "intro finished, we've been on Initializing for a
-# few seconds". hold_seconds + set_status return false if the window
-# closes mid-hold, which propagates into the final tick loop bailing
-# immediately. Copy intentionally mirrors the import card's removed
-# "Start Compilation" button — the icon is now the tap target. The
-# brackets match the caption styling in [build_text_layer].
-if $loader_screen.hold_seconds(Loader::INIT_TO_READY_SECS)
+# few seconds". hold_seconds returns false if the window closes mid-hold,
+# which propagates into the final tick loop bailing immediately. Copy
+# intentionally mirrors the import card's removed "Start Compilation"
+# button — the icon is now the tap target. The brackets match the
+# caption styling in [build_text_layer].
+#
+# Gated on `external_status_received?` so the CTA never clobbers a
+# real sub-step label. Classic-bootstrap's auto-tap fires before this
+# point and the compile engine's first onStepStarted ("Check engine…")
+# arrives via the .loader_status poll inside hold_seconds, which sets
+# the flag — so the CTA is skipped entirely in classic mode. Same
+# protection covers fast super-user taps where the user races the
+# 3-second hold.
+if $loader_screen.hold_seconds(Loader::INIT_TO_READY_SECS) && !$loader_screen.external_status_received?
   $loader_screen.set_status('‹ Tap logo to compile ›')
 end
 
