@@ -23,29 +23,53 @@
 #      interpreter down by closing it.
 
 $loader_screen = Loader::Splash.new
-$loader_screen.show!
-$loader_screen.run_intro
 
-# Decorative status progression — the splash isn't gated on real
-# compile state (the activity tears the loader interpreter down on
-# destroy), so the CTA just means "intro finished, we've been on
-# Initializing for a few seconds". hold_seconds returns false if the
-# window closes mid-hold, which propagates into the final tick loop
-# bailing immediately. Copy intentionally mirrors the import card's
-# removed "Start Compilation" button — the icon is now the tap target.
+# `ensure` is load-bearing AND must wrap the ENTIRE post-construction
+# body, not just the final loop. When the activity drives a workload
+# swap (project click → setLoaderState restart), it pushes
+# sf::Event::Closed into the loader's DisplayWindow queue. Any of the
+# update-driving calls below (show!, run_intro, hold_seconds, tick)
+# will raise LiteRGSS::DisplayWindow::ClosedWindowError from inside
+# `update` — including the hold_seconds in the splash's pre-loop CTA
+# logic. If only the loop were wrapped, an exception raised during
+# hold_seconds would unwind past the begin (never entering it) and
+# $loader_screen would leak to KMP's destroyInterpreter on the UI
+# thread. The destructor would then call setActive(false) on the
+# wrong thread (UI, not the Ruby render thread that owns the EGL
+# context) — releasing nothing, leaving the context bound to the
+# dying render thread, causing the next loader's render thread to
+# loop forever on EGL_BAD_ACCESS.
 #
-# Gated on external_status_received? so the CTA never clobbers a real
-# sub-step label. Classic-bootstrap's auto-tap fires before this point
-# and the compile engine's first onStepStarted ("Check engine…")
-# arrives via the .loader_status poll inside hold_seconds, which sets
-# the flag — so the CTA is skipped entirely in classic mode. Same
-# protection covers fast super-user taps where the user races the
-# 3-second hold.
-if $loader_screen.hold_seconds(Loader::Splash::INIT_TO_READY_SECS) &&
-   !$loader_screen.external_status_received?
-  $loader_screen.set_status('< Tap logo to compile >')
+# With this wider ensure, dispose runs on THIS render thread mid-
+# unwind regardless of which call raised. setActive(false) executes
+# on the context-owning thread, EGL releases cleanly, the log-flush
+# sentinel arrives promptly, and destroyInterpreter returns instead
+# of timing out at 5s (which is what was producing the ANR).
+begin
+  $loader_screen.show!
+  $loader_screen.run_intro
+
+  # Decorative status progression — the splash isn't gated on real
+  # compile state (the activity tears the loader interpreter down on
+  # destroy), so the CTA just means "intro finished, we've been on
+  # Initializing for a few seconds". hold_seconds returns false if the
+  # window closes mid-hold, which propagates into the final tick loop
+  # bailing immediately. Copy intentionally mirrors the import card's
+  # removed "Start Compilation" button — the icon is now the tap target.
+  #
+  # Gated on external_status_received? so the CTA never clobbers a real
+  # sub-step label. Classic-bootstrap's auto-tap fires before this point
+  # and the compile engine's first onStepStarted ("Check engine…")
+  # arrives via the .loader_status poll inside hold_seconds, which sets
+  # the flag — so the CTA is skipped entirely in classic mode. Same
+  # protection covers fast super-user taps where the user races the
+  # 3-second hold.
+  if $loader_screen.hold_seconds(Loader::Splash::INIT_TO_READY_SECS) &&
+     !$loader_screen.external_status_received?
+    $loader_screen.set_status('< Tap logo to compile >')
+  end
+
+  loop { break unless $loader_screen.tick }
+ensure
+  $loader_screen&.dispose rescue nil
 end
-
-loop { break unless $loader_screen.tick }
-
-$loader_screen&.dispose rescue nil

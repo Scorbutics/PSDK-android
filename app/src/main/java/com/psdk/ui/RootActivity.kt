@@ -131,14 +131,30 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
             firstSurfaceReadyDone = true
+            // Dispatches any workload that setLoaderState (or another
+            // path) queued BEFORE the surface was ready.
             workloadController.onSurfaceReady()
+
             val directExecLoc = directGamePendingExecLocation
-            if (directExecLoc != null) {
-                directGamePendingExecLocation = null
-                startGame(directExecLoc)
-            } else {
-                // Initial workload: whatever currentLoaderState says.
-                startLoaderForCurrentState()
+            when {
+                directExecLoc != null -> {
+                    directGamePendingExecLocation = null
+                    startGame(directExecLoc)
+                }
+                workloadController.currentWorkload() == null -> {
+                    // Only fall back to "start the default loader" if
+                    // nothing was queued AND nothing is already running.
+                    // The previous code path unconditionally re-launched
+                    // the loader here, which caused a double-launch
+                    // (queued-from-fragment + explicit-from-onSurfaceReady)
+                    // at startup — symptom was a "tearing down loader
+                    // before loader" race within ~16ms of the surface
+                    // coming up, leaving the second loader's render
+                    // thread looping on EGL_BAD_ACCESS because the
+                    // first loader's render thread still held the EGL
+                    // context.
+                    startLoaderForCurrentState()
+                }
             }
         }
 
@@ -185,7 +201,6 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      * fade-in and icon-tap callback); game workloads don't.
      */
     private fun handleWorkloadLog(logMessage: LogMessage) {
-        android.util.Log.i(TAG, logMessage.message)
         val workload = workloadController.currentWorkload() ?: return
         if (workload !is RubyWorkload.Loader) return
 
