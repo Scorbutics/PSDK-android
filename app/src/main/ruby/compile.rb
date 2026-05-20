@@ -60,17 +60,29 @@ util_flag = "--util=project_compilation"
 ARGV << util_flag unless ARGV.include?(util_flag)
 
 # The Ruby VM is a process-level singleton reused across compilation runs,
-# so `require './Game.rb'` is idempotent — the second compile in the same
-# app session would silently no-op and leave ./Release missing, tripping
-# copy_saves.rb's "Unable to find a valid release folder" guard. When the
-# previous run already loaded the compilation tool, skip the require and
-# re-invoke ProjectCompilation.start directly (the same call
-# project_compilation.rb makes at file-body, after its rgss_main {}).
-if defined?(ProjectCompilation) && ProjectCompilation.respond_to?(:start)
-  STDERR.puts "[compile] ProjectCompilation already loaded — re-invoking .start directly"
-  ProjectCompilation.start
-else
-  STDERR.puts "[compile] loading Game.rb with #{util_flag}"
+# so `require './Game.rb'` is idempotent by default — a second compile in
+# the same app session would silently no-op and leave ./Release missing,
+# tripping copy_saves.rb's "Unable to find a valid release folder" guard.
+#
+# Purge $LOADED_FEATURES entries rooted under the project's cwd so every
+# compile re-executes Game.rb + PSDK scripts from scratch, closer to a
+# clean-VM sandbox. Native extensions (LiteRGSS, physfs) live outside this
+# prefix and aren't touched — they're statically linked and re-init is
+# neither possible nor needed.
+pwd_prefix = "#{Dir.pwd}/"
+purged = $LOADED_FEATURES.reject! { |f| f.start_with?(pwd_prefix) }
+STDERR.puts "[compile] purged $LOADED_FEATURES entries under #{pwd_prefix} (#{(purged ? $LOADED_FEATURES.size : 'none')} remaining)"
+
+# Re-executing PSDK class definitions emits "already initialized constant"
+# warnings on every reopened constant — harmless but noisy enough to bury
+# real compile output. $VERBOSE=nil silences them for the require block
+# only and is restored on the way out, even if require raises.
+STDERR.puts "[compile] loading Game.rb with #{util_flag}"
+old_verbose = $VERBOSE
+$VERBOSE = nil
+begin
   require './Game.rb'
+ensure
+  $VERBOSE = old_verbose
 end
 STDERR.puts "[compile] ProjectCompilation finished"

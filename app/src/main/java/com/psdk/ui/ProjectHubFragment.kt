@@ -108,6 +108,10 @@ class ProjectHubFragment : Fragment() {
                 val releaseLocation = "${activity.applicationInfo.dataDir}/Release"
                 val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(activity, "Release", releaseLocation)
                 if (shouldAutoStart) {
+                    // Drop the splash interpreter before GameActivity spawns
+                    // its own — both share g_global_vm. See
+                    // LoaderHost.shutdownLoader for the rationale.
+                    (activity as? LoaderHost)?.shutdownLoader()
                     GameLauncher.launchDirect(activity, activity.applicationInfo.dataDir)
                 }
             }

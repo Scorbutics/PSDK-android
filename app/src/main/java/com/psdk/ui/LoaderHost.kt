@@ -31,6 +31,25 @@ interface LoaderHost {
      * loader's own prelude to populate) and restarts the interpreter.
      */
     fun setLoaderState(state: LoaderState)
+
+    /**
+     * Fully tear down the splash interpreter before handing the process
+     * to GameActivity. Must be called on the main thread.
+     *
+     * Why: the splash and GameActivity both run their Ruby scripts on the
+     * same singleton `g_global_vm` inside the embedded VM. Leaving the
+     * splash's PsdkInterpreter alive when GameActivity spawns its own
+     * means two interpreter IDs touch the same VM concurrently. Game
+     * scripts that monkey-patch built-ins via `alias` (e.g. PSDK's
+     * `41_load_data_compiled.rb` re-aliasing `File.exist?`) then get
+     * re-wrapped during the second load and recurse infinitely.
+     *
+     * Behaviour: pushes `sf::Event::Closed` (breaks the loader render
+     * loop) and synchronously waits for the interpreter to finish, in
+     * the same order [RootActivity]'s rotation/state-change path uses.
+     * Idempotent: subsequent calls are no-ops.
+     */
+    fun shutdownLoader()
 }
 
 interface LoaderListener {

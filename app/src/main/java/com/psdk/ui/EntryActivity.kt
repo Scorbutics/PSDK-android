@@ -7,6 +7,7 @@ import com.psdk.AppModeDetector
 import com.psdk.ClassicModeState
 import com.psdk.GameLauncher
 import com.psdk.ruby.vm.PsdkInterpreter
+import com.scorbutics.litergss.NativeSurface
 
 class EntryActivity : AppCompatActivity() {
 
@@ -14,6 +15,32 @@ class EntryActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         PsdkInterpreter.initialize()
+
+        // Process-wide: every cgss::DisplayWindow constructed in this
+        // process adopts the preserved (process-shared) sf::RenderWindow.
+        // Set ONCE here (the very first activity to run) and never reset,
+        // so both the splash (RootActivity) and the game (GameActivity)
+        // share the same WindowImplAndroid + EglContext.
+        //
+        // Why this matters: SFML's sf::Shader::getDefaultShader caches a
+        // process-global `static Shader instance` whose GL program handle
+        // is created against whichever EglContext was active first. If
+        // the splash creates that context (owned mode) and then tears it
+        // down, the default-shader handle goes stale — sf::Sprite renders
+        // (and any PSDK custom shader that draws over a default-rendered
+        // sprite) come out as blank rectangles in the subsequent game
+        // session. Keeping the shared sf::RenderWindow open across the
+        // splash teardown (cgss::DisplayWindow::stop's preservation
+        // branch, [DisplayWindow.cpp:232-247]) keeps that EglContext —
+        // and the default shaders' handles — alive.
+        //
+        // Trade-off (cosmetic): the preserved WindowImplAndroid keeps
+        // the ALooper of whichever thread first constructed it
+        // (the splash thread). When the game's render thread later calls
+        // processEvents, ALooper_pollAll logs "No looper for this thread"
+        // and returns -1. Not a crash; we don't use AInputQueue anyway
+        // (events are injected via NativeSurface.inject*).
+        NativeSurface.setReuseSharedWindow(true)
 
         val mode = AppModeDetector.detect(this)
         val target = when (mode) {

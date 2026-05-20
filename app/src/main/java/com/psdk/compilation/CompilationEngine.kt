@@ -53,8 +53,20 @@ class CompilationEngine(
     private val allStepLogs = mutableListOf<CompileStepLogs>()
     private var currentLogIndex = 0
     private var interpreter: PsdkInterpreter? = null
+    // Written from the Ruby dispatcher thread on completion, read from the UI
+    // thread via [isFinished] when the wizard decides whether to reuse this
+    // engine for a retry — needs visibility across threads.
+    @Volatile
     private var finishResult: FinishResult? = null
     private var closed = false
+
+    /**
+     * True once the engine has dispatched its terminal
+     * `onCompilationFinished` callback (success or failure). A finished
+     * engine cannot be restarted; callers must discard it and build a new
+     * one to retry compilation.
+     */
+    fun isFinished(): Boolean = finishResult != null
 
     // Log writes and step switches are serialized through this single-threaded executor.
     // Without it, logs from script N can be tagged with step N+1 because the JNI listener

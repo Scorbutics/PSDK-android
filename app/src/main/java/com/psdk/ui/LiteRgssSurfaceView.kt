@@ -64,6 +64,35 @@ class LiteRgssSurfaceView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Eagerly release this SurfaceView's hosted EGL/ANativeWindow binding
+     * and mark the view as already detached, so the deferred
+     * [surfaceDestroyed] callback that Android fires later becomes a no-op.
+     *
+     * Use case: handing the process from RootActivity (splash) to
+     * GameActivity. Android does NOT serialize the outgoing activity's
+     * `surfaceDestroyed` against the incoming activity's
+     * `surfaceCreated` — both go through Android's window-manager queue
+     * independently and `surfaceDestroyed` typically fires AFTER the new
+     * surface is up. Without this call, the late `NativeSurface.detach()`
+     * would clobber `states.window` (which GameActivity's attach has
+     * already filled with the new ANativeWindow) and release the game's
+     * own window pointer, leaving the EGL surface bound to a freed
+     * `ANativeWindow` — symptom is a black screen on first frame that
+     * recovers after a focus cycle, because the focus-loss / -gain
+     * round-trip naturally tears down and recreates the EGL surface via
+     * SFML's `m_windowBeingCreated` flag.
+     *
+     * Idempotent and safe to call on the main thread.
+     */
+    fun releaseHostedSurfaceNow() {
+        if (attached) {
+            onSurfaceLost?.invoke()
+            NativeSurface.detach()
+            attached = false
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,

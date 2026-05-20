@@ -561,6 +561,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     private fun launchGame() {
         val executionLocation = viewModel.executionLocation.value ?: return
         val releaseLocation = "$executionLocation/Release"
+        // Drop the splash interpreter before GameActivity spawns its own.
+        // Both share g_global_vm; running them concurrently leads to
+        // PSDK alias-method recursion. See LoaderHost.shutdownLoader.
+        (requireActivity() as? LoaderHost)?.shutdownLoader()
         GameLauncher.launch(
             requireActivity() as androidx.activity.ComponentActivity,
             executionLocation,

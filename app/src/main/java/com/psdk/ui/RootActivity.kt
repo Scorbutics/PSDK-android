@@ -236,6 +236,34 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         loaderLaunched = true
     }
 
+    override fun shutdownLoader() {
+        // Called by launch paths (CompileWizardFragment.launchGame,
+        // ProjectHubFragment) immediately before they fire GameActivity.
+        // Mirrors the teardown half of teardownAndRelaunchLocked but
+        // skips the relaunch and is safe to call when no loader was
+        // ever launched (e.g. brand-new RootActivity with the wizard
+        // not yet ready).
+        //
+        // Blocks the UI thread for as long as the interpreter takes to
+        // finish — typically tens of ms once the Closed event reaches
+        // loader.rb's render loop. Same blocking semantics as
+        // setLoaderState's restart path, which is also UI-thread.
+        synchronized(loaderLaunchLock) {
+            if (!loaderLaunched) return
+            NativeSurface.requestClose()
+            loaderInterpreter?.close()
+            loaderInterpreter = null
+            loaderLaunched = false
+        }
+        // Eagerly release the splash's hosted surface. If we let the
+        // SurfaceView's natural surfaceDestroyed run, it fires AFTER
+        // GameActivity has already attached its OWN ANativeWindow into
+        // states.window — and the late detach call would then clobber
+        // the game's surface state. See releaseHostedSurfaceNow's KDoc
+        // for the full race description.
+        findViewById<LiteRgssSurfaceView>(R.id.glSurface)?.releaseHostedSurfaceNow()
+    }
+
     override fun onDestroy() {
         // See [teardownAndRelaunchLocked] for the order rationale.
         NativeSurface.requestClose()

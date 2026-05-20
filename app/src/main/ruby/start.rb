@@ -1,4 +1,56 @@
 require 'safe_runner'
+# psdk_vm_snapshot.rb is concatenated as a prelude by GameActivity (see
+# START_PRELUDES) — same pattern as RootActivity's LOADER_PRELUDES.
+# The Android embedded VM `eval`s start.rb as a string with __FILE__ set
+# to "<socket-script-N>", so require_relative can't resolve it.
+
+# PSDK's compiled-mode console (pokemonsdk/scripts/tools/GameLoader/
+# 32_console_compiled.rb) reopens Kernel and redefines log_error /
+# log_info / log_debug as NO-OPS that just `return message`. That
+# silences every shader-compile failure, missing-asset error, and
+# PSDK-internal diagnostic in release builds — which is why
+# adb logcat shows zero shader errors even when shaders visibly
+# fail (e.g. title_button background renders as a blank rect).
+#
+# Re-route through VMLogger so the diagnostics surface in logcat
+# regardless of compiled vs uncompiled mode. Using Module#prepend
+# (not a plain reopen) so this layer sits BEFORE Kernel in the
+# method-resolution chain — PSDK's `module Kernel; def log_error;
+# ...; end; end` reopens Kernel itself, which lives after our
+# prepended module, so our wrapper is hit first and `super` falls
+# through to PSDK's no-op (which is fine — we already logged).
+#
+# Falls back to defining a no-op log_error on Kernel first, in case
+# our require is called before PSDK has had a chance to install
+# its own (`super` would NoMethodError otherwise).
+module Kernel
+  unless method_defined?(:log_error) || private_method_defined?(:log_error)
+    def log_error(message); message; end
+  end
+  unless method_defined?(:log_info)  || private_method_defined?(:log_info)
+    def log_info(message);  message; end
+  end
+  unless method_defined?(:log_debug) || private_method_defined?(:log_debug)
+    def log_debug(message); message; end
+  end
+end
+
+module PsdkLogTee
+  def log_error(message)
+    VMLogger.error("[PSDK] #{message}") if defined?(VMLogger)
+    super
+  end
+  def log_info(message)
+    VMLogger.info("[PSDK] #{message}") if defined?(VMLogger)
+    super
+  end
+  def log_debug(message)
+    VMLogger.info("[PSDK] #{message}") if defined?(VMLogger)
+    super
+  end
+end
+Kernel.prepend(PsdkLogTee)
+VMLogger.info "[start.rb] PsdkLogTee installed — PSDK log_error/info/debug routed to VMLogger"
 
 # Debug-build convenience: mirror desktop PSDK's `S.MI` shorthand for the
 # current MapInterpreter instance so the same expression works in the remote
@@ -49,7 +101,37 @@ SafeRunner.run(
   puts "Platform: #{RUBY_PLATFORM}"
   puts "Ruby version: #{RUBY_VERSION}"
 
+  # PSDK installs its own top-level rescue that writes Error.log and returns
+  # normally — so Game.rb finishing "successfully" doesn't mean nothing crashed.
+  # Snapshot Error.log's mtime before running and, in ensure, surface its
+  # contents if it appeared or was touched during this run.
+  error_log = File.join(Dir.pwd, 'Error.log')
+  error_log_mtime_before = File.exist?(error_log) ? File.mtime(error_log) : nil
+
+  # Spike Stage 1: take a baseline of the VM state right before Game.rb
+  # runs. Idempotent across sessions — the first call wins, subsequent
+  # game launches diff against the same baseline. log_diff! in the
+  # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
+  PSDKVMSnapshot.capture!
+
   VMLogger.info "[start.rb] Loading Game.rb..."
-  require './Game.rb'
-  VMLogger.info "[start.rb] Game.rb finished normally"
+  # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
+  # event constants on every run; Ruby would otherwise spam "already
+  # initialized constant" warnings to stderr for every one. $VERBOSE=nil
+  # silences those warnings for the require block only and is restored on
+  # the way out, even if require raises. Same pattern compile.rb uses.
+  old_verbose = $VERBOSE
+  $VERBOSE = nil
+  begin
+    require './Game.rb'
+    VMLogger.info "[start.rb] Game.rb finished normally"
+  ensure
+    $VERBOSE = old_verbose
+    if File.exist?(error_log) && File.mtime(error_log) != error_log_mtime_before
+      VMLogger.error "[start.rb] --- Error.log contents (#{error_log}) ---"
+      File.read(error_log).each_line { |line| VMLogger.error line.chomp }
+      VMLogger.error "[start.rb] --- end of Error.log ---"
+    end
+    PSDKVMSnapshot.log_diff!
+  end
 end

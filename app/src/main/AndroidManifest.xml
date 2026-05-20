@@ -27,15 +27,17 @@
         <activity android:name=".ui.RootActivity"
             android:exported="false" />
 
-        <!-- Game engine (NativeActivity) -->
-        <activity android:name="android.app.NativeActivity"
+        <!-- Game engine (single Activity, hosted SurfaceView + Ruby VM).
+             Replaces android.app.NativeActivity: see com.psdk.ui.GameActivity
+             for the hosted-input wiring. The "rgss_runtime" .so is loaded
+             lazily by NativeSurface / PsdkInterpreter on first use, so no
+             android.app.lib_name metadata is needed here. -->
+        <activity android:name=".ui.GameActivity"
             android:theme="@style/Theme.Psdk"
             android:icon="@drawable/logo"
             android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
-
-            <meta-data android:name="android.app.lib_name" android:value="rgss_runtime" />
-        </activity>
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden" />
 
 <provider
             android:name="androidx.core.content.FileProvider"

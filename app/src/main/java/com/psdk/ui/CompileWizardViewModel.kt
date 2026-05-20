@@ -31,7 +31,20 @@ class CompileWizardViewModel : ViewModel() {
      * an activity reference past its lifecycle.
      */
     fun ensureCompilationStarted(context: Context): CompilationEngine? {
-        engine?.let { return it }
+        engine?.let { existing ->
+            // A finished engine (success or failure) is single-use: its
+            // interpreter is closed and its logExecutor is drained. Reusing
+            // it on a retry tap would replay the prior finishResult via the
+            // setCallback snapshot and bounce the user straight back to the
+            // same done screen. Discard it and fall through to build a fresh
+            // one.
+            if (existing.isFinished()) {
+                existing.close()
+                engine = null
+            } else {
+                return existing
+            }
+        }
         val arch = archive.value ?: return null
         val loc = executionLocation.value ?: return null
         val newEngine = CompilationEngine(

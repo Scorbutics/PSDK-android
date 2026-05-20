@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-purpose host for the running game. Owns the LiteRgssSurfaceView
+     that backs LiteRGSS's EGL surface for the Ruby VM, plus a hidden
+     EditText that acts as the soft-keyboard sink when Ruby code asks for
+     IME. The EditText is 1×1 px (not 0) and has alpha=0 — fully invisible
+     but still focusable so InputMethodManager has something to attach to. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <com.psdk.ui.LiteRgssSurfaceView
+        android:id="@+id/glSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <EditText
+        android:id="@+id/imeSink"
+        android:layout_width="1px"
+        android:layout_height="1px"
+        android:alpha="0"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+</FrameLayout>
