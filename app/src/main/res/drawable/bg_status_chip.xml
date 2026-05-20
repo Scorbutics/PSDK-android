@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Status pill. Solid is white because the adapter sets a tint at runtime
-     (success/warning/error/accent) — keeping the drawable colour-neutral
-     means one resource serves all four states. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <corners android:radius="8dp" />
-    <solid android:color="@android:color/white" />
-</shape>
