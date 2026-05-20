@@ -1,6 +1,6 @@
 require 'safe_runner'
-# psdk_vm_snapshot.rb is concatenated as a prelude by GameActivity (see
-# START_PRELUDES) — same pattern as RootActivity's LOADER_PRELUDES.
+# psdk_vm_snapshot.rb is concatenated as a prelude by RootActivity (see
+# START_PRELUDES) — same pattern as the loader's LOADER_PRELUDES.
 # The Android embedded VM `eval`s start.rb as a string with __FILE__ set
 # to "<socket-script-N>", so require_relative can't resolve it.
 
@@ -61,7 +61,7 @@ VMLogger.info "[start.rb] PsdkLogTee installed — PSDK log_error/info/debug rou
 # though Interpreter isn't yet defined when start.rb runs.
 #
 # Gated on RGSS_REMOTE_EVAL_TOKEN — that env var is only set in debug builds
-# (see GameLauncher#publishRemoteListenerEnv), so release builds skip this
+# (see RootActivity#configureGameEnv), so release builds skip this
 # entirely and never get an `S` constant they didn't ask for.
 if ENV['RGSS_REMOTE_EVAL_TOKEN'] && !ENV['RGSS_REMOTE_EVAL_TOKEN'].to_s.empty?
   unless defined?(S)
@@ -112,7 +112,7 @@ SafeRunner.run(
   # runs. Idempotent across sessions — the first call wins, subsequent
   # game launches diff against the same baseline. log_diff! in the
   # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
-  PSDKVMSnapshot.capture!
+  # PSDKVMSnapshot.capture!
 
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
@@ -132,6 +132,12 @@ SafeRunner.run(
       File.read(error_log).each_line { |line| VMLogger.error line.chomp }
       VMLogger.error "[start.rb] --- end of Error.log ---"
     end
-    PSDKVMSnapshot.log_diff!
+    # Spike Stage 2: log what changed (diagnostic), then restore the VM
+    # to the captured baseline so the next game launch on this same VM
+    # starts from clean state. Without this, PSDK's alias_method chains
+    # would compound across launches and trigger SystemStackError on the
+    # second run (the original bug this spike exists to fix).
+    #PSDKVMSnapshot.log_diff!
+    #PSDKVMSnapshot.restore!
   end
 end

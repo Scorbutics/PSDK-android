@@ -4,10 +4,10 @@ import com.psdk.BuildConfig
 
 /**
  * Single source of truth for the rdbg/DAP + line-eval remote listener
- * configuration. Both PsdkInterpreter (Kotlin JNI path) and GameLauncher
- * (NativeActivity / rgss_runtime path) read from here, so the host-side
- * `adb forward` and `rdbg --attach` / `nc` commands stay the same no
- * matter which entry point spawned the VM.
+ * configuration. PsdkInterpreter (Kotlin JNI path) and RootActivity's
+ * env-var setup read from here, so the host-side `adb forward` and
+ * `rdbg --attach` / `nc` commands stay the same no matter which entry
+ * point spawned the VM.
  *
  * Debug-only by design — release builds short-circuit [enabled] to false
  * so the listeners are never armed in shipped APKs. The cookie is

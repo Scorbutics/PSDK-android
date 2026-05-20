@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Single-activity host for the in-app screens (hub, wizard, etc.).
+<!-- Single-activity host for all in-app screens (hub, wizard, splash, and
+     the game itself).
 
-     The LiteRgssSurfaceView lives here so it can outlast individual screen
-     transitions: the SurfaceView (and the EGL surface bound through
-     NativeSurface) is owned by the activity, while the foreground fragment
-     swaps inside [fragmentContainer]. The Ruby splash interpreter that
-     draws into this surface is still owned by the wizard fragment for now
-     — that fragment looks the surface up via findViewById on its host
-     activity. -->
+     Composition (back to front):
+       [glSurface]         LiteRgssSurfaceView, fills the window; backs the
+                           EGL context for both the splash and the game.
+       [fragmentContainer] Hub / wizard fragments. Hidden by SystemUiPresenter
+                           when the game workload is active.
+       [imeSink]           1×1px transparent EditText used by ImeBridge to
+                           capture soft-keyboard input when Ruby code asks
+                           for the virtual keyboard. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -22,4 +24,14 @@
         android:id="@+id/fragmentContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <EditText
+        android:id="@+id/imeSink"
+        android:layout_width="1px"
+        android:layout_height="1px"
+        android:alpha="0"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
 </FrameLayout>

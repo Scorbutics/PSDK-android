@@ -33,23 +33,27 @@ interface LoaderHost {
     fun setLoaderState(state: LoaderState)
 
     /**
-     * Fully tear down the splash interpreter before handing the process
-     * to GameActivity. Must be called on the main thread.
+     * Stop the current splash interpreter without starting a successor.
+     * Must be called on the main thread.
      *
-     * Why: the splash and GameActivity both run their Ruby scripts on the
-     * same singleton `g_global_vm` inside the embedded VM. Leaving the
-     * splash's PsdkInterpreter alive when GameActivity spawns its own
-     * means two interpreter IDs touch the same VM concurrently. Game
-     * scripts that monkey-patch built-ins via `alias` (e.g. PSDK's
-     * `41_load_data_compiled.rb` re-aliasing `File.exist?`) then get
-     * re-wrapped during the second load and recurse infinitely.
-     *
-     * Behaviour: pushes `sf::Event::Closed` (breaks the loader render
-     * loop) and synchronously waits for the interpreter to finish, in
-     * the same order [RootActivity]'s rotation/state-change path uses.
+     * Largely vestigial in the unified-Activity model where [startGame]
+     * handles loader→game handoff internally via [RubyWorkloadController].
+     * Kept for callers that need to release the interpreter without
+     * launching anything (e.g. an explicit "quit to system" flow).
      * Idempotent: subsequent calls are no-ops.
      */
     fun shutdownLoader()
+
+    /**
+     * Request that the host start the game workload for [executionLocation].
+     *
+     * Implemented by [RootActivity] as an in-process workload swap:
+     * the controller tears down the loader (if any) and enqueues
+     * start.rb on a fresh PsdkInterpreter, against the same surface
+     * and EGL context the loader was using. No separate activity, no
+     * surface destroy/create cycle.
+     */
+    fun startGame(executionLocation: String)
 }
 
 interface LoaderListener {

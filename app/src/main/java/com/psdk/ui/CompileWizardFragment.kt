@@ -1,7 +1,6 @@
 package com.psdk.ui
 
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,21 +8,17 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import com.google.android.material.appbar.MaterialToolbar
 import com.psdk.AppModeDetector
 import com.psdk.ClassicModeState
-import com.psdk.GameLauncher
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
 import com.psdk.compilation.CompilationEngine
 import com.psdk.ui.wizard.CompileDoneFragment
 import com.psdk.ui.wizard.CompileProgressFragment
-import com.psdk.ui.wizard.ImportArchiveFragment
 import java.io.File
 
 /**
@@ -55,29 +50,12 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     private var classicBootstrap: Boolean = false
 
     /**
-     * True iff the wizard was launched with a freshly-imported archive
-     * already staged at [ArchiveValidator.getStagingFile] (the
-     * ProjectListFragment "+" → file-picker flow). Causes the wizard
-     * to skip [ImportArchiveFragment] (the user already picked the
-     * file on the hub) and run the validation pass in the background
-     * — but the compile step still waits for a logo tap, same as the
-     * cold-entry path. The splash gets the project's loader_assets via
-     * the [CompileWizardViewModel.archive] observer; the user reads
-     * "Tap logo to compile" and confirms with a tap.
-     */
-    private var autoStart: Boolean = false
-
-    /**
      * True iff the project already has a `Release/` dir on disk. In this
-     * mode the wizard skips ImportArchive entirely, shows "Debug Play" in
-     * the toolbar, asks the splash to display "Tap logo to play", and a
-     * logo-tap launches the game via [GameLauncher] instead of advancing
-     * to the compile step.
+     * mode the wizard shows "Debug Play" in the toolbar, asks the splash
+     * to display "Tap logo to play", and a logo-tap launches the game via
+     * [LoaderHost.startGame] instead of advancing to the compile step.
      */
     private var debugPlayMode: Boolean = false
-
-    /** Used only in [debugPlayMode] to dispatch into the game's NativeActivity. */
-    private lateinit var gameLauncher: ActivityResultLauncher<Intent>
 
     /** Guards [slideInStepIndicator] against repeating on rotation. */
     private var stepIndicatorRevealed: Boolean = false
@@ -95,11 +73,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Registered in onCreate so the launcher is ready by the time
-        // onIconTapped fires.
-        gameLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) {}
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -113,7 +86,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         val executionLocation = args.getString(ARG_EXECUTION_LOCATION)
             ?: error("CompileWizardFragment requires ARG_EXECUTION_LOCATION")
         classicBootstrap = args.getBoolean(ARG_CLASSIC_BOOTSTRAP, false)
-        autoStart = args.getBoolean(ARG_AUTO_START, false)
 
         viewModel.executionLocation.value = executionLocation
 
@@ -250,40 +222,13 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
         if (debugPlayMode) {
             // Already compiled — the splash shows the project's assets and
-            // a "Tap logo to play" CTA; logo-tap fires [GameLauncher].
+            // a "Tap logo to play" CTA; logo-tap fires LoaderHost.startGame.
             // No wizard step fragment is mounted (see [navigateToStep]);
             // the GL surface owns the user's attention.
             val host = requireActivity() as LoaderHost
             val projectAssets = File(executionLocation, "loader_assets")
             if (projectAssets.exists()) {
                 host.setLoaderState(LoaderState.FromExtracted(projectAssets))
-            }
-        } else if (autoStart && !classicBootstrap) {
-            // Pre-staged archive (super-user import-from-hub). Validate
-            // off-thread — the cache-hit path is just HMAC + KDF (~ms);
-            // the cache-miss path runs extract_loader_assets.rb (~2s).
-            // Either way we leave the splash unobstructed while the
-            // worker runs, then let the [viewModel.archive] observer
-            // fire the autoStart advance to step 1.
-            if (savedInstanceState == null && viewModel.archive.value == null) {
-                val ctx = requireContext().applicationContext
-                val staged = ArchiveValidator.getStagingFile(executionLocation)
-                Thread {
-                    val result = ArchiveValidator.validateExisting(ctx, staged, executionLocation)
-                    activity?.runOnUiThread {
-                        if (!isAdded) return@runOnUiThread
-                        if (result.isValid) {
-                            viewModel.archive.value = result.archive
-                        } else {
-                            android.widget.Toast.makeText(
-                                requireContext(),
-                                result.error ?: "Archive validation failed",
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                            requireActivity().onBackPressedDispatcher.onBackPressed()
-                        }
-                    }
-                }.start()
             }
         } else if (classicBootstrap) {
             // Off-thread stage + key derivation. Setting viewModel.archive
@@ -322,40 +267,46 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 viewModel.currentStep.value = 0
             }
         } else {
-            if (savedInstanceState == null) {
-                viewModel.currentStep.value = 0
+            // Super-user (non-debug-play): the archive is already staged on
+            // disk (ProjectListFragment did the import). Validate off-thread
+            // — the cache-hit path is just HMAC + KDF (~ms); the cache-miss
+            // path runs extract_loader_assets.rb (~2s). The splash stays
+            // unobstructed while the worker runs; on success the
+            // [viewModel.archive] observer points the loader at the
+            // extracted assets, and the user taps the logo to compile.
+            if (savedInstanceState == null && viewModel.archive.value == null) {
+                val ctx = requireContext().applicationContext
+                val staged = ArchiveValidator.getStagingFile(executionLocation)
+                Thread {
+                    val result = ArchiveValidator.validateExisting(ctx, staged, executionLocation)
+                    activity?.runOnUiThread {
+                        if (!isAdded) return@runOnUiThread
+                        if (result.isValid) {
+                            viewModel.archive.value = result.archive
+                        } else {
+                            android.widget.Toast.makeText(
+                                requireContext(),
+                                result.error ?: "Archive validation failed",
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                            requireActivity().onBackPressedDispatcher.onBackPressed()
+                        }
+                    }
+                }.start()
             }
         }
     }
 
     private fun navigateToStep(step: Int) {
-        // Classic-bootstrap skips the import fragment: the bundled .epsa
-        // is staged headlessly and the loader interpreter handles
-        // extract_loader_assets.rb in-process, so step 0 should leave
-        // the GL surface unobstructed until the auto-tap advances.
-        if (classicBootstrap && step == 0) {
-            clearFragmentContainer()
-            return
-        }
-        // Debug-play never advances past step 0 — the logo tap launches
-        // the game directly. Short-circuiting here (instead of relying on
-        // a follow-up clearFragmentContainer in onViewCreated) prevents
-        // ImportArchiveFragment from flashing onto the GL surface when
-        // the step observer fires its initial value.
-        if (debugPlayMode) {
-            clearFragmentContainer()
-            return
-        }
-        // Auto-start (import-from-hub) likewise skips ImportArchiveFragment
-        // — the wizard validates the pre-staged archive in [onViewCreated]
-        // and flips [viewModel.archive] itself, which fires the autoStart
-        // branch in the archive observer and advances straight to step 1.
-        if (autoStart && step == 0) {
+        // Step 0 never mounts a fragment: the GL surface's "Tap logo to
+        // compile" CTA is the start-compilation affordance. Debug-play
+        // never advances past step 0 — the logo tap launches the game
+        // directly via [onIconTapped] — so it stays bare for every step.
+        if (step == 0 || debugPlayMode) {
             clearFragmentContainer()
             return
         }
         val fragment = when (step) {
-            0 -> ImportArchiveFragment()
             1 -> CompileProgressFragment()
             2 -> CompileDoneFragment()
             else -> return
@@ -419,15 +370,13 @@ class CompileWizardFragment : Fragment(), LoaderListener {
      * Failure counterpart to [onCompileDoneDismissed]. The user read the
      * error preview and tapped to dismiss; we drop back to step 0 with
      * the "Tap logo to compile" CTA so a logo tap retriggers the same
-     * compilation pipeline. [autoStart] is flipped on so step 0 stays on
-     * the bare splash instead of remounting ImportArchiveFragment — the
-     * archive is already validated and staged from the failed run.
+     * compilation pipeline. The archive is already validated and staged
+     * from the failed run, so step 0 just leaves the GL splash bare.
      */
     fun onCompileFailureDismissed() {
         if (!isAdded) return
         if (viewModel.compilationSuccess.value != false) return
 
-        autoStart = true
         try {
             LoaderPaths.statusFile(requireContext()).writeText(COMPILE_CTA)
         } catch (e: Exception) {
@@ -560,17 +509,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     private fun launchGame() {
         val executionLocation = viewModel.executionLocation.value ?: return
-        val releaseLocation = "$executionLocation/Release"
-        // Drop the splash interpreter before GameActivity spawns its own.
-        // Both share g_global_vm; running them concurrently leads to
-        // PSDK alias-method recursion. See LoaderHost.shutdownLoader.
-        (requireActivity() as? LoaderHost)?.shutdownLoader()
-        GameLauncher.launch(
-            requireActivity() as androidx.activity.ComponentActivity,
-            executionLocation,
-            releaseLocation,
-            gameLauncher,
-        )
+        // Route through the host. RootActivity.startGame performs the
+        // in-process workload swap: tears down the loader and enqueues
+        // start.rb on a fresh PsdkInterpreter against the same surface.
+        val host = requireActivity() as? LoaderHost ?: run {
+            android.util.Log.e("CompileWizard", "host activity is not a LoaderHost; cannot launch game")
+            return
+        }
+        host.startGame(executionLocation)
     }
 
     private fun showGameLogs(executionLocation: String, releaseLocation: String) {
@@ -655,15 +601,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
          */
         const val ARG_CLASSIC_BOOTSTRAP = "CLASSIC_BOOTSTRAP"
 
-        /**
-         * Super-user companion to [ARG_CLASSIC_BOOTSTRAP]: the wizard was
-         * launched with an archive already staged on disk (typically by
-         * [ProjectListFragment]'s "+" → file-picker flow). When set, the
-         * wizard skips the "tap logo to compile" CTA — see the
-         * [CompileWizardViewModel.archive] observer in [onViewCreated].
-         */
-        const val ARG_AUTO_START = "AUTO_START"
-
         private const val TAG = "CompileWizardFragment"
 
         /**
@@ -706,13 +643,11 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         fun newInstance(
             executionLocation: String,
             classicBootstrap: Boolean = false,
-            autoStart: Boolean = false,
         ): CompileWizardFragment {
             return CompileWizardFragment().apply {
                 arguments = Bundle().apply {
                     putString(ARG_EXECUTION_LOCATION, executionLocation)
                     putBoolean(ARG_CLASSIC_BOOTSTRAP, classicBootstrap)
-                    putBoolean(ARG_AUTO_START, autoStart)
                 }
             }
         }

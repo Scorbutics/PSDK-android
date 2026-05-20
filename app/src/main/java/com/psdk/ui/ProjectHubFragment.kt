@@ -17,7 +17,6 @@ import androidx.fragment.app.viewModels
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.psdk.AppInstall
-import com.psdk.GameLauncher
 import com.psdk.PathUtil
 import com.psdk.R
 import com.scorbutics.rubyvm.RubyVMPaths
@@ -108,11 +107,15 @@ class ProjectHubFragment : Fragment() {
                 val releaseLocation = "${activity.applicationInfo.dataDir}/Release"
                 val shouldAutoStart = AppInstall.unpackToStartGameIfRelease(activity, "Release", releaseLocation)
                 if (shouldAutoStart) {
-                    // Drop the splash interpreter before GameActivity spawns
-                    // its own — both share g_global_vm. See
-                    // LoaderHost.shutdownLoader for the rationale.
-                    (activity as? LoaderHost)?.shutdownLoader()
-                    GameLauncher.launchDirect(activity, activity.applicationInfo.dataDir)
+                    // Route through the host. Always RootActivity in our
+                    // app; the cast is defensive against a future host
+                    // that doesn't implement LoaderHost.
+                    val host = activity as? LoaderHost
+                    if (host != null) {
+                        host.startGame(activity.applicationInfo.dataDir)
+                    } else {
+                        android.util.Log.e("ProjectHub", "host activity is not a LoaderHost; cannot auto-start game")
+                    }
                 }
             }
         }.start()

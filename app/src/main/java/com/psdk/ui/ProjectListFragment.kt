@@ -291,7 +291,7 @@ class ProjectListFragment : Fragment() {
             .setDuration(SATELLITE_FLY_MS)
             .setInterpolator(AccelerateInterpolator(1.4f))
             .withEndAction {
-                if (isAdded) launchCompileWizard(project, autoStart = false)
+                if (isAdded) launchCompileWizard(project)
             }
             .start()
 
@@ -406,11 +406,10 @@ class ProjectListFragment : Fragment() {
 
     // ── Wizard launch + archive import (unchanged) ───────────────────
 
-    private fun launchCompileWizard(project: Project, autoStart: Boolean) {
+    private fun launchCompileWizard(project: Project) {
         val fragment = CompileWizardFragment.newInstance(
             executionLocation = project.directory,
             classicBootstrap = false,
-            autoStart = autoStart,
         )
         requireActivity().supportFragmentManager.beginTransaction()
             .replace(R.id.fragmentContainer, fragment)
@@ -478,7 +477,7 @@ class ProjectListFragment : Fragment() {
                 activity?.runOnUiThread {
                     if (!isAdded) return@runOnUiThread
                     refreshProjects()
-                    launchCompileWizard(project, autoStart = true)
+                    launchCompileWizard(project)
                 }
             } catch (e: Exception) {
                 dir?.deleteRecursively()

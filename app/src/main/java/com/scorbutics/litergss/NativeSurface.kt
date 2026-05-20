@@ -67,7 +67,7 @@ object NativeSurface {
     // -------------------------------------------------------------------
     // Hosted input injection (mirrors litergss-everywhere additions).
     //
-    // These let a hosting Activity (GameActivity) replace what SFML's
+    // These let a hosting Activity (RootActivity) replace what SFML's
     // NativeActivity glue does internally: hardware keys, text events,
     // focus lifecycle, gamepad buttons / axes / hotplug, and the
     // soft-keyboard show/hide bridge.
@@ -169,7 +169,7 @@ object NativeSurface {
      * Opt the calling process into the preserved (process-shared)
      * sf::RenderWindow path inside cgss::DisplayWindow.
      *
-     * Set true from a host Activity (e.g. GameActivity) that wants its
+     * Set true from a host Activity (e.g. RootActivity) that wants its
      * Ruby code's `DisplayWindow.new` to reuse the same underlying
      * sf::RenderWindow + WindowImplAndroid + EGL context across multiple
      * DisplayWindow lifetimes. Default false: each DisplayWindow gets

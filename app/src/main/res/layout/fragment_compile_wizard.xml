@@ -158,10 +158,9 @@
     <!-- Wizard body. The GL surface lives in [RootActivity]'s root layout
          behind this fragment; the wizard's sub-fragments mounted into
          [wizardContainer] use transparent backgrounds so the surface
-         shows through. Once the archive is validated, ImportArchiveFragment
-         hides itself entirely — the game.png logo rendered into the GL
-         surface then becomes the "start compilation" tap target (see
-         loader.rb's ICON_TAPPED_SENTINEL). -->
+         shows through. Step 0 mounts no fragment — the game.png logo
+         rendered into the GL surface IS the "start compilation" tap
+         target (see loader.rb's ICON_TAPPED_SENTINEL). -->
     <FrameLayout
         android:id="@+id/wizardContainer"
         android:layout_width="match_parent"

@@ -23,6 +23,37 @@ module PSDKVMSnapshot
     def error(msg); $stderr.puts("[E] #{msg}"); end
   end
 
+  # Look for the native unprepend extension. Lives in
+  # litergss-everywhere/external/ruby-psdk-vm-snapshot — it's
+  # cross-platform-built there and reused across consumers. The on-device
+  # path: host C code statically links the .a and calls Init_* via
+  # api.set_custom_ext_init() before any Ruby script runs, so by the time
+  # this constant is evaluated PSDKVMSnapshot::Native already exists.
+  # Dev-box path: developer can point ENV['PSDK_VM_SNAPSHOT_NATIVE_LIB']
+  # at a built .so, or rely on the sibling-checkout convention.
+  NATIVE_AVAILABLE =
+    if defined?(PSDKVMSnapshot::Native) && PSDKVMSnapshot::Native.respond_to?(:unprepend)
+      true
+    else
+      candidate_paths = [
+        ENV['PSDK_VM_SNAPSHOT_NATIVE_LIB'],
+        # Sibling litergss-everywhere checkout (dev-box convention).
+        File.expand_path(
+          '../../../../litergss-everywhere/external/ruby-psdk-vm-snapshot/psdk_vm_snapshot_native',
+          __FILE__,
+        ),
+      ].compact
+      loaded = candidate_paths.any? do |path|
+        begin
+          require path
+          true
+        rescue LoadError
+          false
+        end
+      end
+      loaded
+    end
+
   class << self
     # Pluggable logger. Tests override with a silent logger.
     def logger
@@ -134,13 +165,45 @@ module PSDKVMSnapshot
       d
     end
 
-    # Stage-2 work. For now: refuse silently if not captured, otherwise log.
+    # Roll the VM back to the captured baseline. Idempotent: calling
+    # restore! when state already matches the snapshot is a no-op.
+    #
+    # The snapshot itself is NOT cleared by restore! — captured? stays
+    # true so the next session can restore again without recapturing.
+    #
+    # Errors are caught per-item and reported in aggregate; a single
+    # broken class doesn't abort the whole restore.
     def restore!
       unless captured?
         logger.info("[PSDKVMSnapshot] restore! called before capture!; no-op")
         return self
       end
-      logger.info("[PSDKVMSnapshot] restore! is a stub (Stage 1). No-op.")
+
+      errors = []
+
+      # Wrap the whole pass in $VERBOSE=nil: redefining methods,
+      # re-setting constants, and clearing globals all trigger warnings
+      # that would otherwise spam logcat once per touched name.
+      old_verbose = $VERBOSE
+      $VERBOSE = nil
+      begin
+        @snapshot[:modules].each do |mod, snap|
+          restore_module(mod, snap, errors)
+        end
+        restore_globals(errors)
+        restore_loaded_features(errors)
+      ensure
+        $VERBOSE = old_verbose
+      end
+
+      errors.each { |msg| logger.error("[PSDKVMSnapshot] restore: #{msg}") }
+      logger.info("[PSDKVMSnapshot] restore! complete (#{errors.size} error(s))")
+
+      # Reclaim orphaned classes / closures / instances. Without this
+      # they linger until the next natural GC, which on Android may be
+      # much later than the user starting the next game session.
+      GC.start
+
       self
     end
 
@@ -321,6 +384,202 @@ module PSDKVMSnapshot
       bits << "+#{md[:added_class_ivars].size}civ" if md[:added_class_ivars]
       bits << "ANC" if md[:ancestors_changed]
       bits.join(" ")
+    end
+
+    # --- restore helpers ---
+
+    def restore_module(mod, snap, errors)
+      restore_methods(mod, snap, :instance, errors)
+      restore_methods(mod, snap, :singleton, errors)
+      restore_class_ivars(mod, snap, errors)
+      restore_class_variables(mod, snap, errors)
+      restore_constants(mod, snap, errors)
+      restore_ancestors(mod, snap, errors)
+    rescue StandardError => e
+      errors << "#{format_mod(mod)}: #{e.class}: #{e.message}"
+    end
+
+    def restore_methods(mod, snap, kind, errors)
+      now = capture_methods(mod, kind)
+      snap_methods = (kind == :instance) ? snap[:instance_methods] : snap[:singleton_methods]
+      owner = (kind == :instance) ? mod : mod.singleton_class
+
+      # Methods added since capture: remove. This is the alias-chain fix —
+      # e.g. PSDK's `:_original_initialize` gets stripped here.
+      (now.keys - snap_methods.keys).each do |name|
+        begin
+          owner.send(:remove_method, name)
+        rescue NameError => e
+          errors << "remove #{format_mod(mod)}##{name} (#{kind}): #{e.message}"
+        end
+      end
+
+      # Methods that exist both then and now but were redefined:
+      # define_method with the captured UnboundMethod puts the original
+      # iseq back in the method table. This is the *real* unwind of
+      # `def initialize; _original_initialize; ...; end`.
+      snap_methods.each do |name, unbound|
+        next unless now.key?(name)
+        next if now[name] == unbound
+        begin
+          owner.send(:define_method, name, unbound)
+        rescue StandardError => e
+          errors << "rebind #{format_mod(mod)}##{name} (#{kind}): #{e.class}: #{e.message}"
+        end
+      end
+
+      # Methods removed since capture: rare (PSDK rarely undef_methods).
+      # Restore them via the captured UnboundMethod.
+      (snap_methods.keys - now.keys).each do |name|
+        begin
+          owner.send(:define_method, name, snap_methods[name])
+        rescue StandardError => e
+          errors << "readd #{format_mod(mod)}##{name} (#{kind}): #{e.class}: #{e.message}"
+        end
+      end
+    end
+
+    def restore_constants(mod, snap, errors)
+      now = capture_constants(mod)
+
+      # Added constants — remove. This is what reaps the PSDK-defined
+      # classes (`Foo::Bar = Class.new`): once the parent stops pointing
+      # at them, the orphaned class objects are GC-eligible.
+      (now.keys - snap[:constants].keys).each do |name|
+        begin
+          mod.send(:remove_const, name) if mod.const_defined?(name, false)
+        rescue NameError => e
+          errors << "remove_const #{format_mod(mod)}::#{name}: #{e.message}"
+        end
+      end
+
+      # Changed constants — re-set to the captured value.
+      snap[:constants].each do |name, value|
+        next if value.equal?(:__unreadable__)
+        if now.key?(name)
+          next if now[name].equal?(value)
+          begin
+            mod.send(:remove_const, name) if mod.const_defined?(name, false)
+          rescue NameError
+          end
+        end
+        begin
+          mod.const_set(name, value)
+        rescue StandardError => e
+          errors << "set_const #{format_mod(mod)}::#{name}: #{e.class}: #{e.message}"
+        end
+      end
+    end
+
+    def restore_class_variables(mod, snap, errors)
+      now_names = mod.class_variables
+      (now_names - snap[:class_variables].keys).each do |name|
+        begin
+          mod.send(:remove_class_variable, name)
+        rescue NameError => e
+          errors << "remove_cv #{format_mod(mod)}.#{name}: #{e.message}"
+        end
+      end
+      snap[:class_variables].each do |name, value|
+        begin
+          current = (mod.class_variable_defined?(name) ? mod.class_variable_get(name) : nil)
+          next if current.equal?(value)
+          mod.class_variable_set(name, value)
+        rescue StandardError => e
+          errors << "set_cv #{format_mod(mod)}.#{name}: #{e.class}: #{e.message}"
+        end
+      end
+    end
+
+    def restore_class_ivars(mod, snap, errors)
+      now_names = mod.instance_variables
+      (now_names - snap[:class_ivars].keys).each do |name|
+        begin
+          mod.send(:remove_instance_variable, name)
+        rescue NameError
+          # Already gone — fine.
+        end
+      end
+      snap[:class_ivars].each do |name, value|
+        current = mod.instance_variable_get(name)
+        next if current.equal?(value)
+        mod.instance_variable_set(name, value)
+      end
+    end
+
+    # If the native extension is loaded, splice out the newly-prepended
+    # /included IClasses by direct chain manipulation in C. If it isn't,
+    # log the change so we know what the spike is missing.
+    def restore_ancestors(mod, snap, errors)
+      return if mod.ancestors == snap[:ancestors]
+      added = mod.ancestors - snap[:ancestors]
+      # `mod` itself appears in `ancestors` but never in `added` (it's
+      # in both before and after) — defensive filter anyway.
+      added.reject! { |a| a.equal?(mod) }
+      return if added.empty?
+
+      unless NATIVE_AVAILABLE
+        errors << "ancestors of #{format_mod(mod)} changed " \
+                  "(added: #{added.map { |a| format_mod(a) }.join(', ')}) " \
+                  "— native ext not loaded, not undone"
+        return
+      end
+
+      added.each do |ancestor|
+        begin
+          removed = PSDKVMSnapshot::Native.unprepend(mod, ancestor)
+          unless removed
+            # The ancestor was in mod.ancestors but not as a direct
+            # IClass in mod's chain — likely inherited via a parent
+            # class's prepend. We don't reach across the hierarchy
+            # boundary; the parent class's own restore handles it.
+            logger.info("[PSDKVMSnapshot] #{format_mod(mod)}: " \
+                        "#{format_mod(ancestor)} not in own chain (inherited?), skipping")
+          end
+        rescue StandardError => e
+          errors << "unprepend #{format_mod(mod)} from #{format_mod(ancestor)}: " \
+                    "#{e.class}: #{e.message}"
+        end
+      end
+    end
+
+    def restore_loaded_features(errors)
+      current = $LOADED_FEATURES.dup
+      (current - @snapshot[:loaded_features]).each { |f| $LOADED_FEATURES.delete(f) }
+      (@snapshot[:loaded_features] - current).each { |f| $LOADED_FEATURES << f }
+    rescue StandardError => e
+      errors << "loaded_features: #{e.class}: #{e.message}"
+    end
+
+    # Restoring globals needs eval because there's no API to assign $-vars
+    # by symbol. We build a one-shot lambda per name; the lambda body
+    # contains the literal `$foo = v` so the parser binds it as a global
+    # reference. Names that don't look like normal identifiers ($~, $`, $0…)
+    # are skipped — they're either read-only or special-purpose.
+    GLOBAL_NAME_RE = /\A\$[a-zA-Z_][a-zA-Z0-9_]*\z/
+
+    def restore_globals(errors)
+      current = capture_globals
+
+      (current.keys - @snapshot[:global_vars].keys).each do |name|
+        next unless GLOBAL_NAME_RE.match?(name.to_s)
+        begin
+          eval("->(v) { #{name} = v }").call(nil)
+        rescue StandardError => e
+          errors << "nil global #{name}: #{e.class}: #{e.message}"
+        end
+      end
+
+      @snapshot[:global_vars].each do |name, value|
+        next unless GLOBAL_NAME_RE.match?(name.to_s)
+        next unless current.key?(name)
+        next if current[name].equal?(value)
+        begin
+          eval("->(v) { #{name} = v }").call(value)
+        rescue StandardError => e
+          errors << "set global #{name}: #{e.class}: #{e.message}"
+        end
+      end
     end
 
     def format_mod(mod)

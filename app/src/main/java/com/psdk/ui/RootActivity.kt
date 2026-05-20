@@ -2,60 +2,70 @@ package com.psdk.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.widget.EditText
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.psdk.R
-import com.psdk.ruby.vm.PsdkInterpreter
-import com.psdk.ruby.vm.RubyScript
-import com.psdk.ruby.vm.ScriptLocation
+import com.psdk.ruby.vm.RemoteListenerConfig
 import com.scorbutics.litergss.NativeSurface
-import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
+import java.io.FileWriter
 
 /**
- * Single-activity host for in-app screens. Owns the [LiteRgssSurfaceView]
- * AND the splash [PsdkInterpreter] that draws into it so both survive
- * fragment-level navigation. Fragments interact with the splash through
- * the [LoaderHost] contract this activity implements.
+ * Single Activity for the whole app lifetime: hub, wizard, splash, and
+ * the game itself all live here.
  *
- * Routed into by [EntryActivity] with one of:
- *   EXTRA_TARGET = TARGET_HUB            → [ProjectHubFragment]
- *   EXTRA_TARGET = TARGET_CLASSIC_WIZARD → [CompileWizardFragment] in
- *                                          classic-bootstrap mode.
+ * Composition root for:
+ *   - [RubyWorkloadController] — Ruby script lifecycle (loader vs game)
+ *   - [SystemUiPresenter]      — window chrome (shell vs game mode)
+ *   - [GameInputForwarder]     — hardware keys + gamepad (only active
+ *                                while the game workload is running)
+ *   - [ImeBridge]              — soft-keyboard bridge (idem)
  *
- * Loader lifecycle:
- *   onCreate
- *     → LoaderPaths.resetToDefaults              (wipe + reinstall PSDK
- *                                                 defaults, clobbering
- *                                                 any project assets a
- *                                                 prior session left)
- *     → wire onSurfaceReady listener
- *   surfaceReady
- *     → launch loader interpreter for [currentState] (initially Default)
- *   setLoaderState(s)  ← called by a fragment to declare desired state
- *     → if [s] equals [currentState], no-op
- *     → else prepare on-disk assets per [s], close current interpreter,
- *       launch a new one
- *   onDestroy
- *     → requestClose + close — see the per-line comments in
- *       [teardownAndRelaunchLocked] for the deadlock that makes the
- *       order matter.
+ * Fragments (hub, wizard) interact with the host through the
+ * [LoaderHost] contract; they never touch the controller or components
+ * directly.
+ *
+ * Why one Activity: collapsing what used to be `RootActivity` (splash)
+ * and `GameActivity` (game) into a single host removes an entire class
+ * of Android-lifecycle vs SurfaceView-lifecycle vs Ruby-VM-lifecycle
+ * races we used to have to paper over (see SFML's `forwardEvent`
+ * flag-cancellation, the `releaseHostedSurfaceNow` helper, and the
+ * `setReuseSharedWindow` shared-context preservation flag — all
+ * artefacts of the two-activity model). The single Activity keeps the
+ * surface, the EGL context, and the render thread alive across the
+ * splash→game transition; the only thing that swaps is which Ruby
+ * script the controller is running.
  */
 class RootActivity : AppCompatActivity(), LoaderHost {
 
-    private var loaderInterpreter: PsdkInterpreter? = null
+    private lateinit var glSurface: LiteRgssSurfaceView
+    private lateinit var imeSink: EditText
+    private lateinit var fragmentContainer: View
 
-    private val loaderLaunchLock = Any()
-    private var loaderSurfaceReady = false
-    private var loaderLaunched = false
+    private lateinit var workloadController: RubyWorkloadController
+    private lateinit var systemUi: SystemUiPresenter
+    private lateinit var inputForwarder: GameInputForwarder
+    private lateinit var imeBridge: ImeBridge
 
-    /** Tracked under [loaderLaunchLock]; the source-of-truth for the splash. */
-    private var currentState: LoaderState = LoaderState.Default
+    /** Tracked under [stateLock]; the source-of-truth for the splash. */
+    private val stateLock = Any()
+    private var currentLoaderState: LoaderState = LoaderState.Default
 
     /** Latched true on the first READY_SENTINEL so subsequent restarts don't re-fade. */
     private var loaderFadedIn = false
+
+    /**
+     * Latched true on the first onSurfaceReady so we don't fire a
+     * spurious GainedFocus on the very first onResume (before the
+     * surface is bound).
+     */
+    private var firstSurfaceReadyDone = false
 
     private var loaderListener: LoaderListener? = null
 
@@ -67,12 +77,35 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_root)
 
-        val fragmentContainer = findViewById<android.view.View>(R.id.fragmentContainer)
+        glSurface = findViewById(R.id.glSurface)
+        imeSink = findViewById(R.id.imeSink)
+        fragmentContainer = findViewById(R.id.fragmentContainer)
+
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
+
+        // SystemUI: shell mode by default (status/nav visible, fragment
+        // container drawn). Game mode is entered explicitly in startGame.
+        systemUi = SystemUiPresenter(window, shellContent = fragmentContainer)
+        systemUi.enterShellMode()
+
+        imeBridge = ImeBridge(this, imeSink, focusRestoreTarget = glSurface)
+        inputForwarder = GameInputForwarder(this).apply {
+            keyEventShouldConsume = { _ -> !imeBridge.isImeActive }
+        }
+
+        workloadController = RubyWorkloadController(
+            context = this,
+            assets = assets,
+            onLog = { logMessage -> handleWorkloadLog(logMessage) },
+            onError = { e -> android.util.Log.e(TAG, "workload error", e) },
+            onWorkloadCompleted = { workload, exitCode ->
+                handleWorkloadCompleted(workload, exitCode)
+            },
+        )
 
         // Always reset assets back to PSDK defaults at activity start.
         // A prior session may have copied a project's loader_assets into
@@ -94,19 +127,37 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             }
         }
 
-        val glSurface = findViewById<LiteRgssSurfaceView>(R.id.glSurface)
         glSurface.alpha = 0f
         glSurface.onSurfaceReady = { w, h ->
-            android.util.Log.i(LOADER_TAG, "surface ready (${w}x${h})")
-            synchronized(loaderLaunchLock) {
-                loaderSurfaceReady = true
-                tryLaunchLoaderLocked()
+            android.util.Log.i(TAG, "surface ready (${w}x${h})")
+            firstSurfaceReadyDone = true
+            workloadController.onSurfaceReady()
+            val directExecLoc = directGamePendingExecLocation
+            if (directExecLoc != null) {
+                directGamePendingExecLocation = null
+                startGame(directExecLoc)
+            } else {
+                // Initial workload: whatever currentLoaderState says.
+                startLoaderForCurrentState()
             }
         }
 
         if (savedInstanceState != null) return
 
         val target = intent.getStringExtra(EXTRA_TARGET) ?: TARGET_HUB
+
+        // Direct-to-game path used by EntryActivity for classic-mode users
+        // whose Release/ dir is already on disk. No fragment, no splash —
+        // the game starts as soon as the surface comes up.
+        if (target == TARGET_DIRECT_GAME) {
+            val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION) ?: return finish()
+            // Defer until the surface is ready. The onSurfaceReady callback
+            // installed above unconditionally starts the loader; suppress
+            // that by setting a flag the callback consults.
+            directGamePendingExecLocation = executionLocation
+            return
+        }
+
         val fragment = when (target) {
             TARGET_HUB -> ProjectHubFragment()
             TARGET_CLASSIC_WIZARD -> CompileWizardFragment.newInstance(
@@ -121,22 +172,76 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             .commit()
     }
 
+    /**
+     * Non-null iff this activity was started with TARGET_DIRECT_GAME and
+     * the surface hasn't come up yet. Once non-null, the surface-ready
+     * callback skips the loader and goes straight to startGame.
+     */
+    private var directGamePendingExecLocation: String? = null
+
+    /**
+     * Dispatcher for log lines coming out of the workload's Ruby
+     * thread. Loader workloads need sentinel watching (for the splash
+     * fade-in and icon-tap callback); game workloads don't.
+     */
+    private fun handleWorkloadLog(logMessage: LogMessage) {
+        android.util.Log.i(TAG, logMessage.message)
+        val workload = workloadController.currentWorkload() ?: return
+        if (workload !is RubyWorkload.Loader) return
+
+        if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
+            glSurface.post {
+                if (!loaderFadedIn) {
+                    loaderFadedIn = true
+                    glSurface.animate()
+                        .alpha(1f)
+                        .setDuration(LOADER_FADE_IN_MS)
+                        .start()
+                }
+                loaderListener?.onLoaderReady()
+            }
+        }
+        if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
+            glSurface.post { loaderListener?.onIconTapped() }
+        }
+    }
+
+    /**
+     * Workload-exit handler. A game workload exiting means the user
+     * left the game (or the script terminated); we drop game-mode
+     * input/IME forwarding and return to shell mode so the user is
+     * back in the hub/wizard fragment they came from.
+     */
+    private fun handleWorkloadCompleted(workload: RubyWorkload, exitCode: Int) {
+        android.util.Log.i(TAG, "workload ${workload.name} exited (code=$exitCode)")
+        if (workload is RubyWorkload.Game) {
+            runOnUiThread {
+                inputForwarder.stop()
+                imeBridge.stop()
+                systemUi.enterShellMode()
+                // Restart the loader so the surface isn't blank when
+                // the user returns to the hub/wizard fragment.
+                startLoaderForCurrentState()
+            }
+        }
+    }
+
     override fun setLoaderListener(listener: LoaderListener?) {
         loaderListener = listener
     }
 
     override fun setLoaderState(state: LoaderState) {
-        synchronized(loaderLaunchLock) {
-            if (state == currentState && loaderLaunched) return  // idempotent
-            android.util.Log.i(LOADER_TAG, "setLoaderState (state=$state)")
-            currentState = state
-            prepareAssetsForLocked(state)
-            teardownAndRelaunchLocked()
+        synchronized(stateLock) {
+            if (state == currentLoaderState &&
+                workloadController.currentWorkload() is RubyWorkload.Loader) return
+            android.util.Log.i(TAG, "setLoaderState (state=$state)")
+            currentLoaderState = state
+            prepareAssetsFor(state)
+            startLoaderForCurrentState()
         }
     }
 
-    /** Caller MUST hold [loaderLaunchLock]. */
-    private fun prepareAssetsForLocked(state: LoaderState) {
+    private fun prepareAssetsFor(state: LoaderState) {
         when (state) {
             LoaderState.Default -> LoaderPaths.resetToDefaults(this)
             is LoaderState.FromExtracted -> LoaderPaths.replaceAssetsWith(this, state.sourceDir)
@@ -145,131 +250,125 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                 // (typically extract_loader_assets.rb) before loader.rb proper.
             }
         }
-    }
-
-    /**
-     * Caller MUST hold [loaderLaunchLock].
-     *
-     * Order matters: requestClose pushes a sf::Event::Closed into the
-     * loader's DisplayWindow event queue. loader.rb's render loop drains
-     * it on the next frame, on_closed raises rb_eClosedWindow, the script
-     * unwinds, and the worker thread becomes free. Only THEN does close()
-     * — which queues a synchronous :stop on that same worker thread —
-     * actually return. Without the requestClose, close() blocks the UI
-     * thread forever because :stop sits behind an infinite render loop.
-     */
-    private fun teardownAndRelaunchLocked() {
-        if (loaderLaunched) {
-            NativeSurface.requestClose()
-            loaderInterpreter?.close()
-            loaderInterpreter = null
-            loaderLaunched = false
-        }
-        // Clear stale status so the new loader doesn't immediately fire a
-        // sentinel left by the previous one.
+        // Clear stale status so a new loader run doesn't immediately fire
+        // a sentinel left by the previous one.
         try {
             LoaderPaths.statusFile(this).delete()
         } catch (_: Exception) {
             // best-effort
         }
-        tryLaunchLoaderLocked()
     }
 
-    /** Caller MUST hold [loaderLaunchLock]. */
-    private fun tryLaunchLoaderLocked() {
-        if (loaderLaunched) return
-        if (!loaderSurfaceReady) return
-
-        val executionLocation = LoaderPaths.executionLocation(this)
-        android.util.Log.i(LOADER_TAG, "launching loader.rb (execLoc=$executionLocation, state=$currentState)")
-
-        val glSurface = findViewById<LiteRgssSurfaceView>(R.id.glSurface)
-        val listener = object : LogListener {
-            override fun onLogMessage(logMessage: LogMessage) {
-                android.util.Log.i(LOADER_TAG, logMessage.message)
-                if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
-                    glSurface.post {
-                        if (!loaderFadedIn) {
-                            loaderFadedIn = true
-                            glSurface.animate()
-                                .alpha(1f)
-                                .setDuration(LOADER_FADE_IN_MS)
-                                .start()
-                        }
-                        loaderListener?.onLoaderReady()
-                    }
-                }
-                if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
-                    glSurface.post { loaderListener?.onIconTapped() }
-                }
-            }
-        }
-        val onErr: (Exception) -> Unit = { e ->
-            android.util.Log.e(LOADER_TAG, "loader error", e)
-        }
-
-        val (archive, prelude) = when (val s = currentState) {
-            is LoaderState.FromArchive -> s.archive to s.prelude
+    private fun startLoaderForCurrentState() {
+        val state = currentLoaderState
+        val (archive, prelude) = when (state) {
+            is LoaderState.FromArchive -> state.archive to state.prelude
             else -> null to emptyList()
         }
-
-        val loader = PsdkInterpreter.create(this, listener, onErr)
-        loaderInterpreter = loader
-        // loader.rb itself is the orchestrator — its dependencies live
-        // in loader/*.rb. Android's AssetManager can't expose them via
-        // require_relative (the script reaches the VM as ruby -e, so
-        // __FILE__ is "-e" and the helpers aren't on disk), so we
-        // concatenate them as preludes here. Order matches the
-        // dependency graph: util → clock → scene_state → assets →
-        // window → router → status → layers → splash. Project preludes
-        // (extract_loader_assets.rb, etc.) come after so they can rely
-        // on Loader::* being defined.
-        val script = RubyScript(assets, LOADER_SCRIPT, LOADER_PRELUDES + prelude)
-        loader.enqueue(
-            script = script,
-            location = ScriptLocation(executionLocation = executionLocation, archive = archive),
-            onComplete = { exitCode ->
-                android.util.Log.i(LOADER_TAG, "loader.rb exited (code=$exitCode)")
-            }
+        workloadController.start(
+            RubyWorkload.Loader(
+                executionLocation = LoaderPaths.executionLocation(this),
+                archive = archive,
+                preludes = LOADER_PRELUDES + prelude,
+            )
         )
-
-        loaderLaunched = true
     }
 
     override fun shutdownLoader() {
-        // Called by launch paths (CompileWizardFragment.launchGame,
-        // ProjectHubFragment) immediately before they fire GameActivity.
-        // Mirrors the teardown half of teardownAndRelaunchLocked but
-        // skips the relaunch and is safe to call when no loader was
-        // ever launched (e.g. brand-new RootActivity with the wizard
-        // not yet ready).
-        //
-        // Blocks the UI thread for as long as the interpreter takes to
-        // finish — typically tens of ms once the Closed event reaches
-        // loader.rb's render loop. Same blocking semantics as
-        // setLoaderState's restart path, which is also UI-thread.
-        synchronized(loaderLaunchLock) {
-            if (!loaderLaunched) return
-            NativeSurface.requestClose()
-            loaderInterpreter?.close()
-            loaderInterpreter = null
-            loaderLaunched = false
+        // Kept for back-compat with any caller that pre-dates Phase D;
+        // new code should use [startGame] which handles this internally.
+        // Stops the current workload without queueing a successor.
+        workloadController.stop()
+    }
+
+    override fun startGame(executionLocation: String) {
+        // In-process workload swap. The controller's start() will tear
+        // down the loader (if any), and then enqueue start.rb on a fresh
+        // PsdkInterpreter against the same surface + EGL context the
+        // loader was using.
+        configureGameEnv(executionLocation)
+        systemUi.enterGameMode()
+        glSurface.alpha = 1f
+        inputForwarder.start()
+        imeBridge.start()
+        workloadController.start(
+            RubyWorkload.Game(
+                executionLocation = executionLocation,
+                preludes = START_PRELUDES,
+            )
+        )
+    }
+
+    /**
+     * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
+     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_REMOTE_*_TOKEN, etc.).
+     * Called from [startGame] right before the controller enqueues
+     * the game workload.
+     */
+    private fun configureGameEnv(executionLocation: String) {
+        val releaseLocation = "$executionLocation/Release"
+        android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
+        android.system.Os.setenv("RGSS_LOG_FILE", "$executionLocation/last_stdout.log", true)
+        android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$releaseLocation/Error.log", true)
+
+        try {
+            FileWriter("$executionLocation/last_stdout.log", false).flush()
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "failed to reset stdout log: ${e.message}")
         }
-        // Eagerly release the splash's hosted surface. If we let the
-        // SurfaceView's natural surfaceDestroyed run, it fires AFTER
-        // GameActivity has already attached its OWN ANativeWindow into
-        // states.window — and the late detach call would then clobber
-        // the game's surface state. See releaseHostedSurfaceNow's KDoc
-        // for the full race description.
-        findViewById<LiteRgssSurfaceView>(R.id.glSurface)?.releaseHostedSurfaceNow()
+
+        if (RemoteListenerConfig.enabled) {
+            android.system.Os.setenv("RGSS_REMOTE_DEBUG_HOST",    RemoteListenerConfig.DEBUG_HOST,           true)
+            android.system.Os.setenv("RGSS_REMOTE_DEBUG_PORT",    RemoteListenerConfig.DEBUG_PORT.toString(), true)
+            android.system.Os.setenv("RGSS_REMOTE_DEBUG_TOKEN",   RemoteListenerConfig.TOKEN,                true)
+            android.system.Os.setenv("RGSS_REMOTE_DEBUG_SESSION", "psdk-game-debug",                          true)
+            android.system.Os.setenv("RGSS_REMOTE_EVAL_HOST",     RemoteListenerConfig.EVAL_HOST,            true)
+            android.system.Os.setenv("RGSS_REMOTE_EVAL_PORT",     RemoteListenerConfig.EVAL_PORT.toString(),  true)
+            android.system.Os.setenv("RGSS_REMOTE_EVAL_TOKEN",    RemoteListenerConfig.TOKEN,                true)
+            android.system.Os.setenv("RGSS_REMOTE_EVAL_SESSION",  "psdk-game-eval",                           true)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // PSDK's Graphics.@has_focus is gated on GainedFocus — without
+        // this, every Input.* query returns false after a pause cycle.
+        // Only fire after the surface has come up at least once
+        // (otherwise forwardEvent reads ANativeWindow_getWidth from a
+        // NULL window pointer).
+        if (firstSurfaceReadyDone && workloadController.currentWorkload() is RubyWorkload.Game) {
+            NativeSurface.injectFocusGained()
+        }
+    }
+
+    override fun onPause() {
+        if (firstSurfaceReadyDone && workloadController.currentWorkload() is RubyWorkload.Game) {
+            NativeSurface.injectFocusLost()
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {
-        // See [teardownAndRelaunchLocked] for the order rationale.
-        NativeSurface.requestClose()
-        loaderInterpreter?.close()
-        loaderInterpreter = null
+        if (::inputForwarder.isInitialized) inputForwarder.stop()
+        if (::imeBridge.isInitialized) imeBridge.stop()
+        if (::workloadController.isInitialized) {
+            workloadController.stop()
+        } else {
+            NativeSurface.requestClose()
+        }
         super.onDestroy()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // inputForwarder gates internally on its enabled flag, so this
+        // is a no-op while a non-game workload is active.
+        if (::inputForwarder.isInitialized && inputForwarder.handleKeyEvent(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (::inputForwarder.isInitialized && inputForwarder.handleMotionEvent(event)) return true
+        return super.dispatchGenericMotionEvent(event)
     }
 
     companion object {
@@ -278,9 +377,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
         const val TARGET_HUB = "HUB"
         const val TARGET_CLASSIC_WIZARD = "CLASSIC_WIZARD"
+        const val TARGET_DIRECT_GAME = "DIRECT_GAME"
 
-        private const val LOADER_SCRIPT = "loader.rb"
-        private const val LOADER_TAG = "Root-loader"
+        private const val TAG = "RootActivity"
 
         /**
          * Helper modules concatenated before loader.rb itself. Each file
@@ -308,6 +407,11 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             "loader/splash.rb",
         )
 
+        /** Helper modules concatenated before start.rb. Same convention as LOADER_PRELUDES. */
+        private val START_PRELUDES = listOf(
+            "psdk_vm_snapshot.rb",
+        )
+
         /** Matches Loader::Splash::READY_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_READY_SENTINEL = "[loader-ready]"
 
@@ -322,6 +426,11 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         fun classicWizardIntent(activity: AppCompatActivity, executionLocation: String): Intent =
             Intent(activity, RootActivity::class.java)
                 .putExtra(EXTRA_TARGET, TARGET_CLASSIC_WIZARD)
+                .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
+
+        fun directGameIntent(activity: android.app.Activity, executionLocation: String): Intent =
+            Intent(activity, RootActivity::class.java)
+                .putExtra(EXTRA_TARGET, TARGET_DIRECT_GAME)
                 .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
     }
 }
