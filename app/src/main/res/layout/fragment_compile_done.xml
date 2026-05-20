@@ -61,9 +61,11 @@
                 android:textAppearance="@style/TextAppearance.Psdk.Body"
                 android:textColor="@color/colorOnSurfaceVariant" />
 
-            <!-- Error preview card. Capped at 8 lines so a long stack
-                 trace can't push the action buttons off-screen — the
-                 full text is one tap away via "View Logs". -->
+            <!-- Error preview card. Capped at error_preview_max_height so
+                 a long stack trace can't push the action buttons off-screen;
+                 the body scrolls inside that bound and auto-scrolls to the
+                 bottom so the user lands on the most-recent line. Full log
+                 is one tap away via "View Logs". -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/errorCard"
                 android:layout_width="match_parent"
@@ -106,15 +108,21 @@
                             android:textColor="@color/colorError" />
                     </LinearLayout>
 
-                    <TextView
-                        android:id="@+id/errorContent"
+                    <ScrollView
+                        android:id="@+id/errorScroll"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:textAppearance="@style/TextAppearance.Psdk.Monospace"
-                        android:textIsSelectable="true"
-                        android:lineSpacingMultiplier="1.3"
-                        android:maxLines="8"
-                        android:ellipsize="end" />
+                        android:layout_height="@dimen/error_preview_max_height"
+                        android:fillViewport="false"
+                        android:overScrollMode="ifContentScrolls">
+
+                        <TextView
+                            android:id="@+id/errorContent"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="@style/TextAppearance.Psdk.Monospace"
+                            android:textIsSelectable="true"
+                            android:lineSpacingMultiplier="1.3" />
+                    </ScrollView>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

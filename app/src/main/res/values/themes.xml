@@ -106,4 +106,12 @@
         <item name="colorOnSurface">@color/colorOnSurface</item>
         <item name="materialAlertDialogBodyTextStyle">@style/TextAppearance.Psdk.Body</item>
     </style>
+
+    <!-- Toolbar overlay — pins the overflow (⋮) tint to the splash
+         accent so the chrome doesn't fight the FAB / constellation
+         palette. Navigation icon is tinted separately via
+         app:navigationIconTint on the MaterialToolbar itself. -->
+    <style name="ThemeOverlay.Psdk.Toolbar" parent="ThemeOverlay.MaterialComponents.Dark.ActionBar">
+        <item name="colorControlNormal">@color/colorSplashAccent</item>
+    </style>
 </resources>

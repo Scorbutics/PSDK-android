@@ -242,9 +242,12 @@ class ProjectListFragment : Fragment() {
             shape = GradientDrawable.OVAL
             gradientType = GradientDrawable.RADIAL_GRADIENT
             gradientRadius = 40f * density
+            // Stronger inner + middle stops so the halo defines the
+            // star's edge against the GL background on its own —
+            // replaces the (deleted) outline ring.
             colors = intArrayOf(
-                ColorUtils.setAlphaComponent(color, 0x99),
-                ColorUtils.setAlphaComponent(color, 0x33),
+                ColorUtils.setAlphaComponent(color, 0xE6),
+                ColorUtils.setAlphaComponent(color, 0x77),
                 ColorUtils.setAlphaComponent(color, 0x00),
             )
         }

@@ -4,6 +4,14 @@
 # LOADER_PRELUDES — so loader_say, Loader::Util, and LiteRGSS are
 # available to everything that follows.
 
+# The loader's cwd at startup — captured BEFORE any sibling interpreter
+# (the compile engine, archive validator, etc.) can run their own
+# `Dir.chdir`. `Dir.chdir` without a block is `chdir(2)`, which is
+# *process*-wide, so a concurrent compile interpreter chdir'd to a
+# project dir would silently break our relative `.loader_status` poll
+# and asset reads. Absolute paths via this constant sidestep the race.
+LOADER_BASE_DIR = Dir.pwd.freeze
+
 def loader_say(msg)
   puts "[loader] #{msg}"
 rescue StandardError

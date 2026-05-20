@@ -23,9 +23,9 @@ module Loader
       end
 
       # Stardust bitmap shared by every sparkle sprite. Soft circular
-      # falloff in cool-white (220, 230, 255) — the same hue family as
-      # the ambient twinkles, so the dust reads as "small star" rather
-      # than as a separate UI element.
+      # falloff in bright cool-white (245, 250, 255) — same hue family
+      # as the ambient twinkles (blue-biased white), but pushed close
+      # to pure white for a brighter, more luminous core.
       def build(viewport)
         @viewport = viewport
         img = LiteRGSS::Image.new(BITMAP_SIZE, BITMAP_SIZE)
@@ -36,8 +36,8 @@ module Loader
             dy = y - half
             d = Math.sqrt(dx * dx + dy * dy) / [half, 1.0].max
             next if d >= 1.0
-            a = ((1.0 - d) ** 2 * 255).to_i.clamp(0, 255)
-            img.set_pixel(x, y, LiteRGSS::Color.new(220, 230, 255, a))
+            a = ((1.0 - d) ** 1.3 * 255).to_i.clamp(0, 255)
+            img.set_pixel(x, y, LiteRGSS::Color.new(245, 250, 255, a))
           end
         end
         @bitmap = LiteRGSS::Bitmap.new(BITMAP_SIZE, BITMAP_SIZE)

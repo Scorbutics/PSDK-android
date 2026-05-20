@@ -19,6 +19,11 @@
     <!-- Card -->
     <dimen name="card_padding">16dp</dimen>
 
+    <!-- Compile-failure preview: caps the in-card error log at roughly
+         8 lines of 12sp monospace text. ScrollView scrolls automatically
+         to the bottom so the user sees the latest stack trace. -->
+    <dimen name="error_preview_max_height">144dp</dimen>
+
     <!-- Toolbar -->
     <dimen name="toolbar_height">56dp</dimen>
 

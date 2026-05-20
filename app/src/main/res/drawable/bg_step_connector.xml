@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Connector at idle: faint splash-accent line. Matches the glass
+     vocabulary of pending-step rings; the GL background bleeds through. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/colorSurfaceVariant" />
+    <solid android:color="#660F70B0" />
     <size android:height="@dimen/step_connector_height" />
 </shape>

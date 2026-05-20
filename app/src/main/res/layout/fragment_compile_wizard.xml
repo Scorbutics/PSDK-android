@@ -14,21 +14,17 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-    <!-- Toolbar -->
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/colorBackground"
+        android:background="@android:color/transparent"
+        android:theme="@style/ThemeOverlay.Psdk.Toolbar"
         app:titleTextColor="@color/colorOnSurface"
-        app:navigationIconTint="@color/colorOnSurfaceVariant"
+        app:titleTextAppearance="@style/TextAppearance.Psdk.ToolbarTitle"
+        app:navigationIconTint="@color/colorSplashAccent"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:title="Compile" />
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/colorSurfaceVariant" />
 
     <!-- Step-indicator block (indicator + its bottom divider). Hidden
          initially and slid down into place when the user taps the logo
@@ -40,7 +36,9 @@
         android:orientation="vertical"
         android:visibility="gone">
 
-    <!-- Step indicator -->
+    <!-- Step indicator — transparent so the GL splash continues
+         uninterrupted through the chrome. Step circles & connectors
+         carry their own splash-accent colours. -->
     <LinearLayout
         android:id="@+id/stepIndicator"
         android:layout_width="match_parent"
@@ -48,7 +46,7 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:padding="@dimen/spacing_md"
-        android:background="@color/colorBackground">
+        android:background="@android:color/transparent">
 
         <!-- Step 1: Import -->
         <LinearLayout
@@ -154,11 +152,6 @@
                 android:textAppearance="@style/TextAppearance.Psdk.Caption" />
         </LinearLayout>
     </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/colorSurfaceVariant" />
     </LinearLayout>
     </LinearLayout>
 

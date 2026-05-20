@@ -59,6 +59,18 @@ ARGV << "skip_binary" unless ARGV.include?('skip_binary')
 util_flag = "--util=project_compilation"
 ARGV << util_flag unless ARGV.include?(util_flag)
 
-STDERR.puts "[compile] loading Game.rb with #{util_flag}"
-require './Game.rb'
+# The Ruby VM is a process-level singleton reused across compilation runs,
+# so `require './Game.rb'` is idempotent — the second compile in the same
+# app session would silently no-op and leave ./Release missing, tripping
+# copy_saves.rb's "Unable to find a valid release folder" guard. When the
+# previous run already loaded the compilation tool, skip the require and
+# re-invoke ProjectCompilation.start directly (the same call
+# project_compilation.rb makes at file-body, after its rgss_main {}).
+if defined?(ProjectCompilation) && ProjectCompilation.respond_to?(:start)
+  STDERR.puts "[compile] ProjectCompilation already loaded — re-invoking .start directly"
+  ProjectCompilation.start
+else
+  STDERR.puts "[compile] loading Game.rb with #{util_flag}"
+  require './Game.rb'
+end
 STDERR.puts "[compile] ProjectCompilation finished"

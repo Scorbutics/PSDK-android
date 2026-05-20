@@ -43,7 +43,7 @@ $loader_screen.run_intro
 # 3-second hold.
 if $loader_screen.hold_seconds(Loader::Splash::INIT_TO_READY_SECS) &&
    !$loader_screen.external_status_received?
-  $loader_screen.set_status('‹ Tap logo to compile ›')
+  $loader_screen.set_status('< Tap logo to compile >')
 end
 
 loop { break unless $loader_screen.tick }

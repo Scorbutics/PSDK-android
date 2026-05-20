@@ -6,10 +6,16 @@ module Loader
   # wrote during archive validation. Zero archive dependency: no
   # PhysFS, no ArchiveMount, no EpsaStream.
   module Assets
-    DEFAULT_FONT_PATH = 'loader_assets/game_font.ttf'
-    ICON_PATH         = 'loader_assets/game.png'
-    INFOS_CONFIG_PATH = 'loader_assets/infos_config.json'
-    ICON_COLOR_PATH   = 'loader_assets/icon_color.json'
+    # Absolute paths anchored at the loader's startup cwd — see
+    # LOADER_BASE_DIR in util.rb for the rationale. Today these are only
+    # read in Splash#show! (before any sibling interpreter has a chance
+    # to chdir the process), so relative paths happen to work; absolute
+    # paths just make that contract explicit and survive future changes
+    # that might re-read them later.
+    DEFAULT_FONT_PATH = "#{LOADER_BASE_DIR}/loader_assets/game_font.ttf".freeze
+    ICON_PATH         = "#{LOADER_BASE_DIR}/loader_assets/game.png".freeze
+    INFOS_CONFIG_PATH = "#{LOADER_BASE_DIR}/loader_assets/infos_config.json".freeze
+    ICON_COLOR_PATH   = "#{LOADER_BASE_DIR}/loader_assets/icon_color.json".freeze
 
     # Fallback gradient hue when extract_loader_assets.rb didn't write
     # icon_color.json (e.g. all-transparent icon, decode failure).

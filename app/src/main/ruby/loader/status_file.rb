@@ -3,10 +3,12 @@ module Loader
   # compilation. Drives the splash's status_text and reacts to the two
   # sentinel payloads:
   #
-  #   <<LIFT>> — kick off the post-compile lift (move centerpiece up to
-  #              clear room for the result card).
-  #   <<TAP>>  — synthesize a release-on-icon visual (auto-tap from the
-  #              classic-bootstrap path, where there's no finger).
+  #   <<LIFT>>   — kick off the post-compile lift (move centerpiece up
+  #                to clear room for the result card).
+  #   <<UNLIFT>> — settle the centerpiece back down once the user
+  #                dismisses the result card.
+  #   <<TAP>>    — synthesize a release-on-icon visual (auto-tap from
+  #                the classic-bootstrap path, where there's no finger).
   #
   # mtime gates the read so the steady-state cost is one File.mtime
   # stat per POLL_INTERVAL_F frames — cheap on Android's ext4.
@@ -15,18 +17,23 @@ module Loader
   # the previous status in place — same "best-effort" contract as the
   # Kotlin writer (CompileProgressFragment#pushStatus).
   class StatusFile
-    # Relative path is fine because PsdkInterpreter.enqueue does
-    # Dir.chdir to the executionLocation before running this script.
-    PATH            = '.loader_status'.freeze
+    # Absolute path anchored at the loader's startup cwd. A relative
+    # path would race against any sibling Ruby interpreter's chdir
+    # (Dir.chdir is process-wide), and we know from the compile-engine
+    # path that one fires right after the user taps the logo — the
+    # splash poll then resolves `.loader_status` against the project
+    # dir instead of the app data dir and silently misses every update.
+    PATH            = "#{LOADER_BASE_DIR}/.loader_status".freeze
     POLL_INTERVAL_F = 8    # ~7.5 Hz at 60Hz — much faster than humans read
     BYTE_LIMIT      = 256  # guard vs. accidental dump of a megabyte log
 
-    # Kept identical on the Kotlin side — CompileProgressFragment
-    # writes <<LIFT>> verbatim from onCompilationFinished, right before
-    # advancing the wizard to the result step. <<TAP>> is the
-    # classic-bootstrap auto-tap from the activity.
-    LIFT_SENTINEL = '<<LIFT>>'.freeze
-    TAP_SENTINEL  = '<<TAP>>'.freeze
+    # Kept identical on the Kotlin side — CompileProgressFragment writes
+    # <<LIFT>> verbatim from onCompilationFinished and CompileDoneFragment
+    # writes <<UNLIFT>> from the success-card dismiss handler. <<TAP>> is
+    # the classic-bootstrap auto-tap from the activity.
+    LIFT_SENTINEL   = '<<LIFT>>'.freeze
+    UNLIFT_SENTINEL = '<<UNLIFT>>'.freeze
+    TAP_SENTINEL    = '<<TAP>>'.freeze
 
     def initialize(state:, text_layer:, dust:, icon:, clock:)
       @state = state
@@ -45,11 +52,26 @@ module Loader
     def poll
       return if (@clock.frame - @last_poll_frame) < POLL_INTERVAL_F
       @last_poll_frame = @clock.frame
-      return unless @text.status_present?
+      unless @text.status_present?
+        # Diagnostic: log once per ~second when status sprite is absent
+        # so we can spot the "loader stayed in hub mode" failure (no
+        # @status created → polling silently no-ops).
+        if (@clock.frame % 60).zero?
+          loader_say "status poll: NO @status (status_present?=false, file_exists?=#{File.exist?(PATH)})"
+        end
+        return
+      end
       begin
-        return unless File.exist?(PATH)
+        unless File.exist?(PATH)
+          if (@clock.frame % 120).zero?
+            loader_say "status poll: file missing at PATH=#{File.expand_path(PATH)}"
+          end
+          return
+        end
         mtime = File.mtime(PATH)
-        return if @last_mtime && mtime == @last_mtime
+        if @last_mtime && mtime == @last_mtime
+          return
+        end
         @last_mtime = mtime
         payload = File.read(PATH, BYTE_LIMIT).to_s.strip
         return if payload.empty?
@@ -62,6 +84,16 @@ module Loader
           # sub-step ("Finalizing…") stays put during the lift.
           @state.lifted_start ||= @clock.frame
           payload = payload[LIFT_SENTINEL.length..].to_s.strip
+          return if payload.empty?
+        end
+
+        if payload.start_with?(UNLIFT_SENTINEL)
+          # Mirror of LIFT: settles the centerpiece back to its resting
+          # position. ||= keeps this idempotent against repeat writes.
+          # No-op against a never-lifted scene because lift_offset_for
+          # short-circuits on lifted_start anyway.
+          @state.unlifted_start ||= @clock.frame
+          payload = payload[UNLIFT_SENTINEL.length..].to_s.strip
           return if payload.empty?
         end
 

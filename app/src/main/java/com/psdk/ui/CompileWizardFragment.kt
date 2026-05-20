@@ -57,10 +57,13 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     /**
      * True iff the wizard was launched with a freshly-imported archive
      * already staged at [ArchiveValidator.getStagingFile] (the
-     * ProjectListFragment "+" → file-picker flow). Once the import
-     * step's validation flips [CompileWizardViewModel.archive] non-null,
-     * we advance straight to the compile step instead of waiting for a
-     * user tap on the splash icon.
+     * ProjectListFragment "+" → file-picker flow). Causes the wizard
+     * to skip [ImportArchiveFragment] (the user already picked the
+     * file on the hub) and run the validation pass in the background
+     * — but the compile step still waits for a logo tap, same as the
+     * cold-entry path. The splash gets the project's loader_assets via
+     * the [CompileWizardViewModel.archive] observer; the user reads
+     * "Tap logo to compile" and confirms with a tap.
      */
     private var autoStart: Boolean = false
 
@@ -123,8 +126,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         toolbar = view.findViewById(R.id.toolbar)
         stepIndicatorBlock = view.findViewById(R.id.stepIndicatorBlock)
         toolbar.setNavigationOnClickListener {
-            val step = viewModel.currentStep.value ?: 0
-            if (step < 1) {
+            if ((viewModel.currentStep.value ?: 0) != 1) {
                 requireActivity().onBackPressedDispatcher.onBackPressed()
             }
         }
@@ -168,13 +170,13 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             view.findViewById(R.id.connector23),
         )
 
-        // Block system back button once compilation starts (VM is dirty).
-        // In classic-bootstrap mode we lock back from the start — there's
-        // no parent screen to return to; the only exit is "Restart Now"
-        // after success or "Restart App" after failure.
-        val callback = object : OnBackPressedCallback(classicBootstrap) {
+        // Block system back only while compilation is actively running
+        // (step 1) — interrupting the Ruby VM mid-build leaves on-disk
+        // state inconsistent. Step 0 (pre-compile) and step 2 (done)
+        // are safe to leave.
+        val callback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() {
-                // Swallow — restart is the only way out.
+                // Swallow — compilation in progress.
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
@@ -189,7 +191,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         viewModel.currentStep.observe(viewLifecycleOwner) { step ->
             updateStepIndicators(step)
             navigateToStep(step)
-            val locked = step >= 1 || classicBootstrap
+            val locked = step == 1
             toolbar.navigationIcon = if (locked) null
                 else androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             callback.isEnabled = locked
@@ -227,15 +229,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 LoaderState.FromExtracted(sourceDir = File(executionLocation, "loader_assets"))
             }
             host.setLoaderState(state)
-
-            // Auto-start (super-user import-from-hub flow): the user
-            // already picked the archive on the hub, so skip the "tap
-            // logo to compile" CTA and advance straight to the compile
-            // step. The `step == 0` guard makes this idempotent across
-            // rotation, where the observer re-fires with the same value.
-            if (autoStart && !classicBootstrap && viewModel.currentStep.value == 0) {
-                viewModel.currentStep.value = 1
-            }
         }
 
         // Classic-bootstrap-only chrome / state transitions.
@@ -381,6 +374,75 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         childFragmentManager.beginTransaction().remove(current).commit()
     }
 
+    /**
+     * Called by [CompileDoneFragment] once the success card finishes its
+     * slide-out animation. Flips the wizard into [debugPlayMode] in-place
+     * — no app restart — so the user can tap the logo to play immediately.
+     * Mirrors the bootstrap path in [onViewCreated] / [onLoaderReady], but
+     * runs against an already-live wizard rather than a fresh one.
+     */
+    fun onCompileDoneDismissed() {
+        if (!isAdded) return
+        if (debugPlayMode) return
+        if (viewModel.compilationSuccess.value != true) return
+
+        debugPlayMode = true
+        toolbar.title = "Debug Play"
+        if (!classicBootstrap) {
+            toolbar.menu.findItem(R.id.action_game_logs)?.isVisible = true
+        }
+        stepIndicatorBlock.visibility = View.GONE
+
+        // Re-point the loader at the compiled project's loader_assets.
+        // For super-user this is already the live state and the host
+        // treats it as a no-op; for classic-bootstrap the loader is
+        // currently bound to the bundled archive, so this swaps it onto
+        // the extracted assets the freshly-compiled project just produced.
+        val executionLocation = viewModel.executionLocation.value
+        if (executionLocation != null) {
+            val projectAssets = File(executionLocation, "loader_assets")
+            if (projectAssets.exists()) {
+                (requireActivity() as LoaderHost)
+                    .setLoaderState(LoaderState.FromExtracted(projectAssets))
+            }
+        }
+
+        try {
+            LoaderPaths.statusFile(requireContext()).writeText(PLAY_CTA)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "debug-play CTA write failed", e)
+        }
+        clearFragmentContainer()
+    }
+
+    /**
+     * Failure counterpart to [onCompileDoneDismissed]. The user read the
+     * error preview and tapped to dismiss; we drop back to step 0 with
+     * the "Tap logo to compile" CTA so a logo tap retriggers the same
+     * compilation pipeline. [autoStart] is flipped on so step 0 stays on
+     * the bare splash instead of remounting ImportArchiveFragment — the
+     * archive is already validated and staged from the failed run.
+     */
+    fun onCompileFailureDismissed() {
+        if (!isAdded) return
+        if (viewModel.compilationSuccess.value != false) return
+
+        autoStart = true
+        try {
+            LoaderPaths.statusFile(requireContext()).writeText(COMPILE_CTA)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "compile CTA write failed", e)
+        }
+        // Retreat to the pre-compile look: step indicator hidden again so
+        // the user lands on the same blank splash they saw on first entry.
+        // [stepIndicatorRevealed] is reset so a subsequent retry slides it
+        // back in with the same animation as the initial reveal.
+        stepIndicatorBlock.visibility = View.GONE
+        stepIndicatorRevealed = false
+        viewModel.compilationSuccess.value = null
+        viewModel.currentStep.value = 0
+    }
+
     private fun updateStepIndicators(currentStep: Int) {
         for (i in stepIndicators.indices) {
             when {
@@ -392,9 +454,15 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 i == currentStep -> {
                     stepIndicators[i].setBackgroundResource(R.drawable.bg_step_active)
                     stepIndicators[i].text = (i + 1).toString()
-                    stepIndicators[i].setTextColor(resources.getColor(R.color.colorOnPrimary, null))
+                    // White on splash-accent reads cleaner than the old
+                    // black-on-mint pairing did.
+                    stepIndicators[i].setTextColor(resources.getColor(R.color.white, null))
                 }
                 else -> {
+                    // Stroke-only pending circle: text sits inside the
+                    // transparent fill, so it needs its own readable
+                    // colour rather than relying on contrast against a
+                    // solid background.
                     stepIndicators[i].setBackgroundResource(R.drawable.bg_step_pending)
                     stepIndicators[i].text = (i + 1).toString()
                     stepIndicators[i].setTextColor(resources.getColor(R.color.colorOnSurfaceVariant, null))
@@ -619,7 +687,17 @@ class CompileWizardFragment : Fragment(), LoaderListener {
          * change, not a font change. Written into [LoaderPaths.statusFile]
          * in debug-play mode once the splash is ready.
          */
-        private const val PLAY_CTA = "‹ Tap logo to play ›"
+        private const val PLAY_CTA = "< Tap logo to play >"
+
+        /**
+         * Restores the loader's default CTA after a failed compile is
+         * dismissed. Matches the literal string loader.rb prints when
+         * external_status_received is still false — once we've written
+         * anything to the status file that flag is permanently true,
+         * so we have to push the text ourselves rather than rely on
+         * the loader's own default.
+         */
+        private const val COMPILE_CTA = "< Tap logo to compile >"
 
         fun newInstance(
             executionLocation: String,

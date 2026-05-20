@@ -81,7 +81,14 @@ class CompileProgressFragment : Fragment() {
                 // and the splash lift play in parallel; minor de-sync
                 // is fine because the card and lifted content land in
                 // separate regions of the screen.
-                pushStatus(LIFT_SENTINEL)
+                //
+                // The tail after the sentinel becomes the new status
+                // text (loader/status_file.rb strips the sentinel then
+                // falls through to update_status), so the splash flips
+                // from the last sub-step ("Finalizing…") to the final
+                // outcome as it lifts.
+                val finalStatus = if (success) "Compilation done" else "Compilation failed"
+                pushStatus("$LIFT_SENTINEL$finalStatus")
                 activity?.runOnUiThread {
                     viewModel.compilationSuccess.value = success
                     viewModel.currentStep.value = 2
