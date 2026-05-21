@@ -11,37 +11,47 @@ import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 
 /**
- * Async state machine over the PsdkInterpreter lifecycle. Callers
- * request workloads via [start]; the controller serialises swaps
- * (tear down old → start new) without ever blocking the calling
- * thread on interpreter teardown.
+ * Persistent-interpreter controller for the GL-rendering workload track
+ * (loader + game). One PsdkInterpreter is created lazily on first
+ * launch, owns the cgss::DisplayWindow / EGL context, and survives all
+ * subsequent workload swaps for the entire Activity lifetime. Scripts
+ * are enqueued sequentially on its single render thread; a swap is
+ * just "push Closed → wait for current script's onComplete → enqueue
+ * the next".
  *
- * State:
- *   IDLE              — nothing running.
- *   RUNNING(workload) — interpreter alive, executing workload.
- *   TEARING_DOWN      — background thread is waiting for the old
- *                       interpreter to finish; [pendingWorkload]
- *                       records what to launch next (or null for
- *                       "stop and stay idle"). Reassigning pending
- *                       during teardown is fine — last write wins.
+ * Why persistent: every workload swap in the old multi-interpreter
+ * model triggered a render-thread handoff, which forced an EGL context
+ * release-on-old / acquire-on-new dance. With multiple threads (Ruby
+ * worker, SFML sharedContext background ops, Android's HWUI renderer)
+ * all eligible to bind the context, that handoff was racy and produced
+ * the recurring "Failed to activate the window's context" spam. Pinning
+ * all GL-touching code to one persistent thread eliminates the race
+ * entirely — the context never changes hands.
  *
- * Why async: PsdkInterpreter.close() is a synchronous native call
- * that waits for the Ruby render thread to fully exit. That can
- * take anywhere from a few ms (graceful unwind through `ensure`
- * blocks) to several seconds (KMP's log-flush sentinel timeout
- * kicks in at 5s if the render thread doesn't signal cleanly).
- * Calling it on the UI thread — as the old design did — turns
- * every fragment-driven workload swap into a potential ANR. With
- * the close moved to a dedicated thread, the UI thread returns
- * immediately and the next workload launches when the close
- * finishes, on whatever thread that finally runs.
+ * What this does NOT do: reset Ruby VM state between scripts. The
+ * embedded VM evals every script at TOPLEVEL_BINDING against a
+ * process-singleton VM, so classes/constants/globals from script A
+ * coexist with script B regardless of whether we destroy the
+ * interpreter between them. The previous "destroy + recreate" model
+ * gave the illusion of isolation but didn't actually provide any —
+ * the loader's `Loader::*` constants and `$loader_screen` global lived
+ * on across destroys, surfacing as "already initialized constant"
+ * warnings on every re-eval. State reset is the job of a separate
+ * mechanism (PSDKVMSnapshot.capture! / restore! in start.rb, and the
+ * equivalent in loader.rb).
+ *
+ * Ephemeral utility interpreters (compile.rb, extract_loader_assets,
+ * epsa validation, etc.) are NOT this controller's concern. They
+ * create their own PsdkInterpreter instances, run, and destroy
+ * themselves. They share the same g_global_vm with the persistent one
+ * but never touch the DisplayWindow or EGL context, so they don't
+ * conflict with the persistent track.
  *
  * Thread safety: every public method is callable from any thread.
- * All state mutation happens inside [lock]. Callbacks ([onLog],
- * [onError], [onWorkloadCompleted]) fire from whichever thread the
- * underlying KMP layer chooses (typically the Ruby render thread)
- * — consumers are responsible for hopping to the UI thread if they
- * touch View state.
+ * All state mutation is inside [lock]. Callbacks ([onLog],
+ * [onWorkloadCompleted]) fire from the Ruby render thread or from
+ * the KMP enqueue thread that wraps it — consumers are responsible
+ * for hopping to the UI thread if they touch View state.
  */
 class RubyWorkloadController(
     private val context: Context,
@@ -54,27 +64,35 @@ class RubyWorkloadController(
     private val lock = Any()
 
     private var surfaceReady: Boolean = false
-    private var currentWorkload: RubyWorkload? = null
-    private var currentInterpreter: PsdkInterpreter? = null
 
     /**
-     * Set to the next workload while we're either:
-     *   - Waiting for the surface to come up (initial launch); or
-     *   - In TEARING_DOWN, waiting for the old interpreter to die.
-     * Cleared once launched. Last write wins — caller can spam
-     * start() with different workloads and only the final one
-     * actually runs.
+     * Created lazily on first [launchLocked] and never destroyed
+     * until [shutdown] (called from Activity.onDestroy). Survives
+     * every workload swap.
+     */
+    private var persistentInterpreter: PsdkInterpreter? = null
+
+    /** The workload whose script is currently executing on the persistent
+     *  interpreter, or null if idle. */
+    private var currentWorkload: RubyWorkload? = null
+
+    /**
+     * Set while waiting for the surface to come up (initial launch) or
+     * while waiting for the current script to finish unwinding after a
+     * swap signal. Last-write-wins — callers can spam start() and only
+     * the final workload runs.
      */
     private var pendingWorkload: RubyWorkload? = null
 
     /**
-     * True while the dedicated teardown thread is running. Reset
-     * to false in that thread's finally block. While true, no new
-     * workload can launch — we must wait for the old interpreter
-     * to fully exit so the EGL context releases cleanly before
-     * the next render thread tries to acquire it.
+     * True between "we pushed Closed to interrupt the current script"
+     * and "the script's onComplete fired". maybeRunPendingLocked won't
+     * launch the next workload while this is true — we must wait for
+     * the current script's ensure-block / dispose chain to run so the
+     * DisplayWindow is in a clean state before the next script
+     * constructs (or reuses) it.
      */
-    private var tearingDown: Boolean = false
+    private var swapping: Boolean = false
 
     /**
      * The workload currently active or about to be active.
@@ -88,7 +106,8 @@ class RubyWorkloadController(
     /**
      * Notify the controller that the GL surface is attached and
      * ready. Idempotent. If a workload was queued before the
-     * surface existed, it launches now.
+     * surface existed, it launches now (on the freshly-created
+     * persistent interpreter's worker thread).
      *
      * Safe to call from any thread.
      */
@@ -96,102 +115,111 @@ class RubyWorkloadController(
         synchronized(lock) {
             if (surfaceReady) return
             surfaceReady = true
-            maybeLaunchPendingLocked()
+            maybeRunPendingLocked()
         }
     }
 
     /**
      * Request [workload] become the active workload.
      *
-     * Non-blocking. The actual close-of-previous + launch-of-new
-     * happens on a background thread (and the launch happens on
-     * whatever thread the close finished on, since
-     * PsdkInterpreter spawns its own worker thread inside enqueue).
-     *
-     * If a workload is already running, this tears it down first.
-     * If a teardown is already in flight, the new workload replaces
-     * any queued one — last write wins.
+     * Non-blocking. Behaviour by current state:
+     *   - idle: launches immediately (lazily creating the persistent
+     *     interpreter on first call), gated on surface ready.
+     *   - currently running another workload: pushes Closed to signal
+     *     the current script to unwind, queues [workload] for launch
+     *     from the current script's onComplete callback.
+     *   - already swapping: just queues [workload]. Last write wins —
+     *     if multiple start() calls fire before the current script
+     *     unwinds, only the most recent one actually runs.
      */
     fun start(workload: RubyWorkload) {
         synchronized(lock) {
             pendingWorkload = workload
             when {
-                tearingDown -> {
-                    // Already tearing down. When the teardown thread
-                    // finishes it'll pick up pendingWorkload.
-                    Log.i(TAG, "start: '${workload.name}' queued (teardown in progress)")
+                swapping -> {
+                    Log.i(TAG, "start: '${workload.name}' queued (swap in progress)")
                 }
                 currentWorkload != null -> {
-                    // Need to tear down the current one before launching.
-                    Log.i(TAG, "start: tearing down '${currentWorkload?.name}' before '${workload.name}'")
-                    beginTeardownLocked()
+                    Log.i(TAG, "start: signalling '${currentWorkload?.name}' to unwind, then '${workload.name}'")
+                    beginSwapLocked()
                 }
                 else -> {
-                    // Idle — try to launch immediately (gated on surface ready).
-                    maybeLaunchPendingLocked()
+                    maybeRunPendingLocked()
                 }
             }
         }
     }
 
     /**
-     * Stop the current workload (if any) without queueing a
-     * successor. Non-blocking; the close happens on a background
-     * thread.
+     * Signal the current workload to stop without queueing a
+     * successor. Non-blocking; the current script's onComplete will
+     * fire from the render thread once the script unwinds. The
+     * persistent interpreter remains alive.
      *
      * Idempotent.
      */
     fun stop() {
         synchronized(lock) {
             pendingWorkload = null
-            if (!tearingDown && currentWorkload != null) {
-                beginTeardownLocked()
+            if (!swapping && currentWorkload != null) {
+                beginSwapLocked()
             }
         }
     }
 
-    /** Caller MUST hold [lock]. Kicks off async teardown. */
-    private fun beginTeardownLocked() {
-        val interp = currentInterpreter ?: return
-        val oldName = currentWorkload?.name ?: "?"
-        tearingDown = true
-        currentInterpreter = null
-        currentWorkload = null
-
-        // Push Closed so the render loop will unwind cleanly via
-        // the script's ensure block(s). The actual close() below
-        // blocks until that unwind completes (or KMP's log-flush
-        // sentinel times out at 5s).
-        NativeSurface.requestClose()
-
-        Thread {
-            try {
-                Log.i(TAG, "teardown thread: waiting for '$oldName' to exit")
-                interp.close()
-                Log.i(TAG, "teardown thread: '$oldName' exited cleanly")
-            } catch (e: Exception) {
-                Log.e(TAG, "teardown thread: '$oldName' close threw", e)
-            } finally {
-                synchronized(lock) {
-                    tearingDown = false
-                    maybeLaunchPendingLocked()
-                }
+    /**
+     * Destroy the persistent interpreter for good. Call from
+     * Activity.onDestroy. After this, no more workloads can run on
+     * this controller instance.
+     *
+     * Blocks the calling thread on the PsdkInterpreter's underlying
+     * KMP destroy, which waits for the render thread to fully exit
+     * (worst case 5s for the log-flush sentinel timeout). Acceptable
+     * here because Activity teardown is a one-shot terminal event.
+     */
+    fun shutdown() {
+        val interp: PsdkInterpreter?
+        synchronized(lock) {
+            pendingWorkload = null
+            if (currentWorkload != null) {
+                NativeSurface.requestClose()
             }
-        }.apply {
-            name = "RubyWorkloadTeardown"
-            start()
+            interp = persistentInterpreter
+            persistentInterpreter = null
+            currentWorkload = null
+            swapping = false
         }
+        // Close outside the lock — KMP destroyInterpreter blocks
+        // waiting for the worker thread to exit, and we don't want
+        // to hold the lock while that happens.
+        interp?.close()
+    }
+
+    /**
+     * Caller MUST hold [lock]. Pushes Closed into the DisplayWindow's
+     * event queue. The current script's render loop drains it on its
+     * next frame, raises rb_eClosedWindow, unwinds. The ensure block
+     * (loader.rb's `begin/ensure dispose end` and the equivalent in
+     * start.rb / Game.rb) runs on the persistent render thread,
+     * releases the EGL context cleanly via cgss::DisplayWindow::stop's
+     * setActive(false), and the script returns. PsdkInterpreter.enqueue's
+     * thread wrapper then fires onComplete, which is where we launch
+     * the next workload.
+     */
+    private fun beginSwapLocked() {
+        swapping = true
+        NativeSurface.requestClose()
     }
 
     /**
      * Caller MUST hold [lock]. Launches [pendingWorkload] iff:
      *   - the surface is ready,
-     *   - no teardown is in flight, and
+     *   - no swap is in flight, and
      *   - no workload is currently running.
      */
-    private fun maybeLaunchPendingLocked() {
+    private fun maybeRunPendingLocked() {
         if (!surfaceReady) return
-        if (tearingDown) return
+        if (swapping) return
         if (currentWorkload != null) return
         val workload = pendingWorkload ?: return
         pendingWorkload = null
@@ -202,17 +230,21 @@ class RubyWorkloadController(
     private fun launchLocked(workload: RubyWorkload) {
         Log.i(TAG, "launching workload '${workload.name}' (execLoc=${workload.executionLocation})")
 
-        val listener = object : LogListener {
-            override fun onLogMessage(logMessage: LogMessage) {
-                onLog(logMessage)
+        // Lazy first-use creation. The interpreter and its render
+        // thread (rgss-worker-N) survive every subsequent workload
+        // swap — only Activity.onDestroy via [shutdown] tears it down.
+        if (persistentInterpreter == null) {
+            val listener = object : LogListener {
+                override fun onLogMessage(logMessage: LogMessage) {
+                    onLog(logMessage)
+                }
             }
+            persistentInterpreter = PsdkInterpreter.create(context, listener, onError)
         }
-        val interp = PsdkInterpreter.create(context, listener, onError)
-        currentInterpreter = interp
         currentWorkload = workload
 
         val script = RubyScript(assets, workload.scriptAsset, workload.preludes)
-        interp.enqueue(
+        persistentInterpreter!!.enqueue(
             script = script,
             location = ScriptLocation(
                 executionLocation = workload.executionLocation,
@@ -220,7 +252,19 @@ class RubyWorkloadController(
             ),
             onComplete = { exitCode ->
                 Log.i(TAG, "workload '${workload.name}' exited (code=$exitCode)")
-                onWorkloadCompleted(workload, exitCode)
+                val justCompleted: RubyWorkload?
+                synchronized(lock) {
+                    justCompleted = currentWorkload
+                    currentWorkload = null
+                    swapping = false
+                    // Launch the next queued workload — possibly the one
+                    // that triggered our swap, possibly a more recent
+                    // overwrite (last-write-wins).
+                    maybeRunPendingLocked()
+                }
+                if (justCompleted != null) {
+                    onWorkloadCompleted(justCompleted, exitCode)
+                }
             }
         )
     }

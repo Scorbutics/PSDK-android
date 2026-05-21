@@ -17,7 +17,68 @@
 # Designed to be testable on plain MRI without VMLogger / safe_runner; the
 # logger picks up VMLogger if defined, else falls back to stderr.
 
+# Guard the whole module body so re-evaluating this file on a reused VM
+# (loader/start scripts get re-eval'd on each invocation) doesn't re-run
+# the NATIVE_AVAILABLE / GLOBAL_NAME_RE constant assignments — those
+# warn "already initialized constant" because they're inside the
+# captured baseline and restore! deliberately keeps them. The auto-
+# capture call at the bottom still fires; capture! is idempotent.
+#
+# We can't guard on `defined?(PSDKVMSnapshot)` — the C-side host
+# extension creates the module (as the parent of PSDKVMSnapshot::Native)
+# before any Ruby runs, so that constant is always defined on first eval
+# too. Probe for one of our own constants instead — NATIVE_AVAILABLE is
+# the first Ruby-defined one in the module body, so its presence means
+# this file has already finished loading on a prior pass.
+unless defined?(PSDKVMSnapshot::NATIVE_AVAILABLE)
+
+# Resolve stdlib / gem install directories so restore can tell library
+# code from app code. We must NEVER wipe stdlib state (constants like
+# JSON, $LOADED_FEATURES entries for json/ext.so etc.): C extensions
+# can't be re-dlopen'd safely, and Ruby's require-cache is the only
+# thing that prevents the second-session re-require from blowing up.
+# PSDK's own code, in contrast, must be reaped — that's the whole point
+# of restore.
+require 'rbconfig'
+
 module PSDKVMSnapshot
+  # Primary source: $LOAD_PATH at module-load time. This is runtime truth —
+  # Ruby couldn't find any stdlib file to require it without the containing
+  # directory being in $LOAD_PATH. RbConfig::CONFIG values are also folded
+  # in defensively, but on a cross-compiled Ruby (Android) those often
+  # carry build-host paths, not the device's actual install dir, so they
+  # can't be the sole source.
+  #
+  # Captured at module-eval (before any app code mutates $LOAD_PATH), so
+  # only Ruby's default stdlib/gem entries are picked up — exactly the
+  # set we want to mark as "do-not-reap".
+  STDLIB_PATH_PREFIXES = begin
+    prefixes = $LOAD_PATH.dup
+    if defined?(RbConfig::CONFIG)
+      %w[rubylibdir sitelibdir vendorlibdir archdir sitearchdir vendorarchdir rubyarchdir gemdir].each do |k|
+        v = RbConfig::CONFIG[k]
+        prefixes << v if v && !v.empty?
+      end
+    end
+    # Keep both the expanded form (matches $LOAD_PATH-derived paths
+    # verbatim) AND the realpath form (matches $LOADED_FEATURES, which on
+    # Android stores canonical /data/data/... while $LOAD_PATH uses the
+    # /data/user/0/... symlink form). File.realpath raises ENOENT for
+    # cross-compile-baked paths that don't exist on device; in that case
+    # the expanded form is the only useful entry.
+    prefixes.compact.flat_map do |p|
+      expanded = File.expand_path(p)
+      [expanded, (File.realpath(expanded) rescue nil)]
+    end.compact.uniq.freeze
+  end
+
+  # TEMP DIAGNOSTIC: print the resolved stdlib prefixes once at load time.
+  # Remove after the cross-compile path issue is understood.
+  $stderr.puts("[PSDKVMSnapshot][DIAG] STDLIB_PATH_PREFIXES (#{STDLIB_PATH_PREFIXES.size}):")
+  STDLIB_PATH_PREFIXES.each { |p| $stderr.puts("[PSDKVMSnapshot][DIAG]   #{p}") }
+  $stderr.puts("[PSDKVMSnapshot][DIAG] $LOAD_PATH at this point (#{$LOAD_PATH.size}):")
+  $LOAD_PATH.each { |p| $stderr.puts("[PSDKVMSnapshot][DIAG]   #{p}") }
+
   class StderrLogger
     def info(msg); $stderr.puts("[I] #{msg}"); end
     def error(msg); $stderr.puts("[E] #{msg}"); end
@@ -433,6 +494,15 @@ module PSDKVMSnapshot
       (snap_methods.keys - now.keys).each do |name|
         begin
           owner.send(:define_method, name, snap_methods[name])
+        rescue TypeError => e
+          # C-implemented methods carry an internal receiver-type check
+          # (e.g. IO#nonblock? from io/wait), enforced even after stdlib
+          # delegation re-exposes them on a non-subclass like Tempfile.
+          # The UnboundMethod's owner reports as the host class, but
+          # define_method still raises "bind argument must be a subclass
+          # of IO". Nothing Ruby-level can put it back; the next require
+          # of the originating stdlib file reinstalls it.
+          logger.info("[PSDKVMSnapshot] skip readd #{format_mod(mod)}##{name} (#{kind}): #{e.message}")
         rescue StandardError => e
           errors << "readd #{format_mod(mod)}##{name} (#{kind}): #{e.class}: #{e.message}"
         end
@@ -445,7 +515,17 @@ module PSDKVMSnapshot
       # Added constants — remove. This is what reaps the PSDK-defined
       # classes (`Foo::Bar = Class.new`): once the parent stops pointing
       # at them, the orphaned class objects are GC-eligible.
+      #
+      # Exception: stdlib-defined Module/Class values (e.g. ::JSON,
+      # ::OpenSSL — required mid-session) must NOT be removed. Their
+      # backing $LOADED_FEATURES entries are also kept (see
+      # restore_loaded_features), so next session's `require` is a
+      # no-op; removing the constant would leave the require cache
+      # claiming the lib is loaded while the lookup fails — exactly
+      # the NameError on ::JSON that we hit in the wild.
       (now.keys - snap[:constants].keys).each do |name|
+        value = now[name]
+        next if from_stdlib_module?(value)
         begin
           mod.send(:remove_const, name) if mod.const_defined?(name, false)
         rescue NameError => e
@@ -544,9 +624,27 @@ module PSDKVMSnapshot
     end
 
     def restore_loaded_features(errors)
+      # Re-add features removed mid-session (rare — PSDK occasionally
+      # $LOADED_FEATURES.delete to force a reload of one of its own files).
       current = $LOADED_FEATURES.dup
-      (current - @snapshot[:loaded_features]).each { |f| $LOADED_FEATURES.delete(f) }
       (@snapshot[:loaded_features] - current).each { |f| $LOADED_FEATURES << f }
+
+      # Remove features added mid-session — BUT skip anything under stdlib
+      # or gem dirs. Forcing a re-require of stdlib (especially C extensions
+      # like json/ext.so) breaks: the .so is already dlopen'd, Init_ can't
+      # safely re-run, the require raises LoadError, the .rb fallback
+      # (json/pure) isn't packaged, and the whole require chain dies.
+      # Keeping these entries means next session's `require` is a no-op and
+      # the corresponding top-level Module/Class constants (also kept by
+      # restore_constants) remain reachable.
+      (current - @snapshot[:loaded_features]).each do |f|
+        is_stdlib = from_stdlib_path?(f)
+        # TEMP DIAGNOSTIC: log every removal decision so we can see whether
+        # the path matcher is misclassifying stdlib entries (e.g. json.rb).
+        $stderr.puts("[PSDKVMSnapshot][DIAG] feature #{is_stdlib ? 'KEEP' : 'DROP'}: #{f}")
+        next if is_stdlib
+        $LOADED_FEATURES.delete(f)
+      end
     rescue StandardError => e
       errors << "loaded_features: #{e.class}: #{e.message}"
     end
@@ -586,12 +684,79 @@ module PSDKVMSnapshot
       mod.name || "(anon ##{mod.object_id})"
     end
 
+    # True for any path that lives under Ruby's stdlib or gem install dirs.
+    # Used to skip removal of stdlib state during restore — see the comment
+    # on STDLIB_PATH_PREFIXES above the module definition.
+    #
+    # Path shapes we have to handle:
+    #   /data/.../json.rb            — absolute path → prefix-match
+    #   json/ext/parser.so           — relative; stdlib C ext registration
+    #   <internal:/.../kernel_require.rb> — Ruby's wrapper for core files;
+    #                                  unwrap and prefix-match the inner path
+    #   <socket-script-1>, <main>    — user script markers; NEVER stdlib
+    #
+    # The trailing-separator guard on the prefix match prevents prefix-
+    # stealing collisions (/foo/3.1.0/x.rb falsely matching /foo/3.1).
+    def from_stdlib_path?(path)
+      return false unless path.is_a?(String)
+
+      if path.start_with?('<internal:') && path.end_with?('>')
+        inner = path[10..-2]
+        return STDLIB_PATH_PREFIXES.any? do |prefix|
+          inner == prefix || inner.start_with?(prefix + '/')
+        end
+      end
+
+      return false if path.start_with?('<')
+      return true unless path.start_with?('/')
+
+      STDLIB_PATH_PREFIXES.any? do |prefix|
+        path == prefix || path.start_with?(prefix + '/')
+      end
+    end
+
+    # True if `mod` was defined by stdlib. Heuristic uses two signals:
+    #
+    # 1. Method source_location — covers any module with Ruby-defined
+    #    methods (e.g. JSON.parse defined in stdlib's json/common.rb).
+    #
+    # 2. Constant source_location (Module#const_source_location, Ruby
+    #    2.7+) — covers pure-namespace modules with no methods of their
+    #    own but whose nested constants are defined in stdlib files
+    #    (e.g. some C-extension-backed namespaces).
+    #
+    # Both probes return `[path, line]`, and we check the path against
+    # the stdlib prefix list. We deliberately do NOT fall back to
+    # file-basename matching: that misclassifies app namespaces whose
+    # short name happens to collide with a stdlib filename (e.g. the
+    # in-tree `Loader` module vs rubygems' `loader.rb`), which causes
+    # restore to skip removal of app code and produces a flood of
+    # "already initialized constant" warnings on re-eval.
+    def from_stdlib_module?(mod)
+      return false unless mod.is_a?(Module)
+
+      (mod.instance_methods(false) + mod.singleton_methods(false)).first(10).each do |name|
+        loc = (mod.instance_method(name) rescue mod.method(name) rescue nil)&.source_location
+        return true if loc && from_stdlib_path?(loc[0])
+      end
+
+      if mod.respond_to?(:const_source_location)
+        mod.constants(false).first(10).each do |name|
+          loc = (mod.const_source_location(name, false) rescue nil)
+          return true if loc && from_stdlib_path?(loc[0])
+        end
+      end
+
+      false
+    end
+
     def log_overflow(total, cap)
       return unless total > cap
       logger.info("[PSDKVMSnapshot]   ... (#{total - cap} more)")
     end
   end
 end
+end # unless defined?(PSDKVMSnapshot)
 
 # Polyfill: Array#to_set_compat without requiring 'set' (avoids touching
 # $LOADED_FEATURES in environments where we care about it staying clean).
@@ -607,3 +772,12 @@ class SnapshotMembership
   def initialize(hash); @h = hash; end
   def include?(key); @h.key?(key); end
 end
+
+# Auto-capture at file-load time so the baseline freezes BEFORE any
+# downstream prelude (loader/util.rb etc.) defines its constants. Without
+# this, those constants land in the baseline; restore! preserves them;
+# the next session re-evals the same file and Ruby warns "already
+# initialized constant ..." for every one. capture! is idempotent —
+# explicit downstream calls (start.rb, loader.rb) become no-ops, kept
+# only as lifecycle documentation at the call site.
+PSDKVMSnapshot.capture!

@@ -112,7 +112,7 @@ SafeRunner.run(
   # runs. Idempotent across sessions — the first call wins, subsequent
   # game launches diff against the same baseline. log_diff! in the
   # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
-  # PSDKVMSnapshot.capture!
+  PSDKVMSnapshot.capture!
 
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
@@ -137,7 +137,7 @@ SafeRunner.run(
     # starts from clean state. Without this, PSDK's alias_method chains
     # would compound across launches and trigger SystemStackError on the
     # second run (the original bug this spike exists to fix).
-    #PSDKVMSnapshot.log_diff!
-    #PSDKVMSnapshot.restore!
+    PSDKVMSnapshot.log_diff!
+    PSDKVMSnapshot.restore!
   end
 end

@@ -88,8 +88,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         }
 
         // SystemUI: shell mode by default (status/nav visible, fragment
-        // container drawn). Game mode is entered explicitly in startGame.
-        systemUi = SystemUiPresenter(window, shellContent = fragmentContainer)
+        // container drawn, orientation free). Game mode is entered
+        // explicitly in startGame and locks orientation to landscape.
+        systemUi = SystemUiPresenter(this, shellContent = fragmentContainer)
         systemUi.enterShellMode()
 
         imeBridge = ImeBridge(this, imeSink, focusRestoreTarget = glSurface)
@@ -289,18 +290,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         )
     }
 
-    override fun shutdownLoader() {
-        // Kept for back-compat with any caller that pre-dates Phase D;
-        // new code should use [startGame] which handles this internally.
-        // Stops the current workload without queueing a successor.
-        workloadController.stop()
-    }
-
     override fun startGame(executionLocation: String) {
-        // In-process workload swap. The controller's start() will tear
-        // down the loader (if any), and then enqueue start.rb on a fresh
-        // PsdkInterpreter against the same surface + EGL context the
-        // loader was using.
+        // In-process workload swap on the SAME persistent interpreter
+        // and render thread the loader is running on. The controller
+        // pushes Closed to signal the loader's script to unwind; the
+        // loader's ensure block disposes its DisplayWindow; the
+        // controller then enqueues start.rb on the same interpreter.
+        // Same surface, same EGL context, same render thread — no
+        // handoff, no race.
         configureGameEnv(executionLocation)
         systemUi.enterGameMode()
         glSurface.alpha = 1f
@@ -366,8 +363,13 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     override fun onDestroy() {
         if (::inputForwarder.isInitialized) inputForwarder.stop()
         if (::imeBridge.isInitialized) imeBridge.stop()
+        // Terminal teardown: shutdown() destroys the persistent
+        // interpreter (blocks briefly waiting for the render thread
+        // to exit). The persistent interpreter survived every prior
+        // workload swap for the Activity's lifetime; this is the one
+        // place we actually tear it down.
         if (::workloadController.isInitialized) {
-            workloadController.stop()
+            workloadController.shutdown()
         } else {
             NativeSurface.requestClose()
         }
@@ -407,6 +409,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
          * before it. Don't reorder casually.
          */
         private val LOADER_PRELUDES = listOf(
+            "psdk_vm_snapshot.rb",
             "loader/util.rb",
             "loader/clock.rb",
             "loader/scene_state.rb",

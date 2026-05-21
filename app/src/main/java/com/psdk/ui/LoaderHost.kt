@@ -33,25 +33,14 @@ interface LoaderHost {
     fun setLoaderState(state: LoaderState)
 
     /**
-     * Stop the current splash interpreter without starting a successor.
-     * Must be called on the main thread.
-     *
-     * Largely vestigial in the unified-Activity model where [startGame]
-     * handles loader→game handoff internally via [RubyWorkloadController].
-     * Kept for callers that need to release the interpreter without
-     * launching anything (e.g. an explicit "quit to system" flow).
-     * Idempotent: subsequent calls are no-ops.
-     */
-    fun shutdownLoader()
-
-    /**
      * Request that the host start the game workload for [executionLocation].
      *
-     * Implemented by [RootActivity] as an in-process workload swap:
-     * the controller tears down the loader (if any) and enqueues
-     * start.rb on a fresh PsdkInterpreter, against the same surface
-     * and EGL context the loader was using. No separate activity, no
-     * surface destroy/create cycle.
+     * Implemented by [RootActivity] as an in-process script swap on
+     * the persistent interpreter: the controller pushes Closed to
+     * signal the loader script to unwind, then enqueues start.rb on
+     * the SAME interpreter / SAME render thread / SAME EGL context
+     * the loader was running on. No interpreter destroy, no thread
+     * handoff, no surface destroy/create cycle.
      */
     fun startGame(executionLocation: String)
 }

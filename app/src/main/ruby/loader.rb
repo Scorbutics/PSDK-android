@@ -72,4 +72,6 @@ begin
   loop { break unless $loader_screen.tick }
 ensure
   $loader_screen&.dispose rescue nil
+  PSDKVMSnapshot.log_diff!
+  PSDKVMSnapshot.restore!
 end
