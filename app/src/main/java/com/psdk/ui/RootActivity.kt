@@ -81,6 +81,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         imeSink = findViewById(R.id.imeSink)
         fragmentContainer = findViewById(R.id.fragmentContainer)
 
+        // Hand the host Activity to the native layer so SFML's hosted-mode
+        // JNI paths (`Sf::Keyboard.virtual_keyboard=` lives here) have a
+        // Context + Window to operate on. Cleared in onDestroy to release
+        // the JNI global ref. LiteCGSS caches the Activity and re-applies
+        // it across attach/detach surface cycles, so this single call is
+        // enough for the Activity's whole lifetime.
+        // NativeSurface.setHostActivity(this)
+
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -201,6 +209,33 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      * thread. Loader workloads need sentinel watching (for the splash
      * fade-in and icon-tap callback); game workloads don't.
      */
+    /**
+     * Synthesize a single ACTION_HOVER_MOVE that travels through the
+     * input dispatcher and reaches the SurfaceView's layer-visibility
+     * revalidation path — the same path a real touch would trigger.
+     * Used to work around the MIUI / HyperOS "SurfaceView blank until
+     * input arrives" quirk; see the call site in [handleWorkloadLog]
+     * for the symptom description.
+     *
+     * Hover events are NOT consumed by [LiteRgssSurfaceView.onTouchEvent]
+     * (it only handles ACTION_DOWN/UP/MOVE/POINTER_*CANCEL), so this
+     * does not produce a spurious icon-tap in the splash.
+     */
+    private fun wakeCompositor() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val ev = MotionEvent.obtain(
+            now, now,
+            MotionEvent.ACTION_HOVER_MOVE,
+            0f, 0f, 0
+        )
+        ev.source = android.view.InputDevice.SOURCE_CLASS_POINTER
+        try {
+            glSurface.dispatchGenericMotionEvent(ev)
+        } finally {
+            ev.recycle()
+        }
+    }
+
     private fun handleWorkloadLog(logMessage: LogMessage) {
         val workload = workloadController.currentWorkload() ?: return
         if (workload !is RubyWorkload.Loader) return
@@ -214,6 +249,29 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                         .setDuration(LOADER_FADE_IN_MS)
                         .start()
                 }
+                // The previous (requestLayout + invalidate) pair unstuck
+                // the compositor's buffer queue (no more QueueBuffer
+                // timeouts), but on MIUI / HyperOS that alone isn't
+                // enough to make the SurfaceView's *layer* actually
+                // visible — buffers are pulled but the layer stays
+                // transparent until a real input event arrives. (Symptom
+                // log: "MirrorManager this model don't Support" appears
+                // on first touch — that's MIUI's smart-view check
+                // piggybacking on the same input-arrival path the
+                // compositor is waiting on, which is why the timing of
+                // that warning correlates perfectly with the splash
+                // becoming visible.)
+                //
+                // Synthesize an ACTION_HOVER_MOVE: it travels through
+                // dispatchGenericMotionEvent, hits the input dispatcher,
+                // and triggers the same visibility-revalidation pass a
+                // real touch would — but it is NOT consumed by
+                // LiteRgssSurfaceView.onTouchEvent (which only handles
+                // ACTION_DOWN/UP/MOVE/POINTER_*/CANCEL), so it won't
+                // accidentally fire an icon-tap in the splash.
+                (glSurface.parent as? View)?.requestLayout()
+                glSurface.invalidate()
+                wakeCompositor()
                 loaderListener?.onLoaderReady()
             }
         }
@@ -401,6 +459,10 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         } else {
             NativeSurface.requestClose()
         }
+        // Drop the JNI global ref to this Activity that we registered in
+        // onCreate. Must come after the workload has finished so any
+        // late virtual-keyboard call from Ruby still finds a valid ref.
+        NativeSurface.setHostActivity(null)
         super.onDestroy()
     }
 

@@ -1,5 +1,6 @@
 package com.scorbutics.litergss
 
+import android.app.Activity
 import android.view.Surface
 
 /**
@@ -164,6 +165,27 @@ object NativeSurface {
     }
 
     @JvmStatic private external fun nativeSetVirtualKeyboardCallback(armed: Boolean)
+
+    /**
+     * Register (or clear, with null) the host Activity for SFML's hosted
+     * JNI fallbacks — currently `sf::Keyboard::setVirtualKeyboardVisible`,
+     * which needs an Activity for `getSystemService("input_method")` and
+     * `getWindow().getDecorView()`. Without this, those calls have no
+     * Activity reference and are silently dropped on hosted surfaces.
+     *
+     * Lifecycle:
+     *   - `onCreate`:  `NativeSurface.setHostActivity(this)`
+     *   - `onDestroy`: `NativeSurface.setHostActivity(null)`
+     *
+     * Safe to call before or after [attach]: the LiteCGSS layer caches the
+     * Activity ref and re-applies it across attach/detach surface cycles.
+     */
+    @JvmStatic
+    fun setHostActivity(activity: Activity?) {
+        nativeSetHostActivity(activity)
+    }
+
+    @JvmStatic private external fun nativeSetHostActivity(activity: Activity?)
 
     /**
      * Opt the calling process into the preserved (process-shared)
