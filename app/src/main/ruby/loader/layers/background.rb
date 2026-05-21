@@ -208,9 +208,16 @@ module Loader
           // Vignette applied to alpha (not RGB) so the falloff is
           // "less nebula, more gradient" toward the edges instead of
           // a dark vignette ring.
+          //
+          // Coefficients are intentionally low: 0.22 / 0.30 for the
+          // band and halo contributions, hard-capped at 0.45. The
+          // nebula reads as a faint chromatic shimmer over the
+          // gradient — present enough to give the background motion
+          // and depth, but never bright enough to compete with the
+          // foreground icon/text for the viewer's attention.
           float vig = smoothstep(1.05, 0.40, length((uv - 0.5) * aspect));
-          float intensity = (bands * 0.45 + halo * 0.55) * mix(0.4, 1.0, vig);
-          intensity = clamp(intensity * u_nebula_intensity, 0.0, 0.85);
+          float intensity = (bands * 0.22 + halo * 0.30) * mix(0.3, 1.0, vig);
+          intensity = clamp(intensity * u_nebula_intensity, 0.0, 0.45);
 
           // Standard alpha blend (in the shader, not the framebuffer)
           // — at intensity=0 result = base.rgb exactly, so disabling

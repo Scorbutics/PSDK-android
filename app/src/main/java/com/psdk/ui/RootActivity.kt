@@ -87,7 +87,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // the JNI global ref. LiteCGSS caches the Activity and re-applies
         // it across attach/detach surface cycles, so this single call is
         // enough for the Activity's whole lifetime.
-        // NativeSurface.setHostActivity(this)
+        NativeSurface.setHostActivity(this)
 
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())

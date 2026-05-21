@@ -47,18 +47,24 @@ $loader_screen = Loader::Splash.new
 # of timing out at 5s (which is what was producing the ANR).
 begin
   $loader_screen.show!
-  $loader_screen.run_intro
+  # 1.5s pre-nebula hold (vs. the full 2s run_intro). The splash's
+  # frame-based intro animations (icon scale, title/version/hint
+  # fade-ins) all complete well before this point — they key off
+  # clock.frame, not off the call to run_intro — so shortening the
+  # delay just brings the nebula reveal forward without truncating
+  # anything else. The footer fade-in is the only animation still in
+  # progress at 0.5s; it finishes during the INIT_TO_READY hold below.
+  $loader_screen.hold_seconds(0.5)
 
   # Attach the nebula shader to the background gradient sprite AFTER
-  # the standard intro has fully played out. On MIUI / HyperOS,
-  # introducing a fresh Shader.new during the same window as the
-  # FIRST surface presentation puts the compositor's layer-visibility
-  # check into a state where the layer stays invisible until a
-  # system-level input event arrives, and we can't synthesize one
-  # from a normal app (INJECT_EVENTS is system-signed). By the time
-  # we get here, the splash has been on the EGL surface for ~2s and
-  # MIUI has committed the layer; a subsequent shader compile is just
-  # an in-place update.
+  # the standard splash has been on screen for ~1.5s. On MIUI /
+  # HyperOS, introducing a fresh Shader.new during the same window as
+  # the FIRST surface presentation puts the compositor's layer-
+  # visibility check into a state where the layer stays invisible
+  # until a system-level input event arrives, and we can't synthesize
+  # one from a normal app (INJECT_EVENTS is system-signed). By the
+  # time we get here, MIUI has committed the layer; a subsequent
+  # shader compile is just an in-place update.
   #
   # See Layers::Background#enhance_with_nebula! — the shader is
   # attached to the gradient sprite itself rather than added as a
