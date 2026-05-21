@@ -281,6 +281,28 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             is LoaderState.FromArchive -> state.archive to state.prelude
             else -> null to emptyList()
         }
+        // Each new loader workload re-enters the fade-in path: the
+        // previous loader's surface content was disposed in
+        // setLoaderState's restart cycle, but the surface itself was
+        // reused (DisplayWindow.cpp:143 "Reusing existing window"), so
+        // until the next [loader-ready] re-establishes content the
+        // SurfaceView is showing stale/blank pixels.
+        //
+        // Resetting `loaderFadedIn` alone is NOT enough — if a previous
+        // run already animated alpha to 1, the `.alpha(1f)` call in the
+        // [loader-ready] handler is a no-op animation and the surface
+        // compositor never gets a state change to react to. The render
+        // thread happily queues frames; the compositor (with no fresh
+        // signal that this layer is "interesting") leaves them buffered
+        // until something — typically a user touch — wakes the
+        // view-hierarchy invalidation path. Until then the screen looks
+        // blank AND we see QueueBuffer timeouts piling up (the producer
+        // is outrunning a sleeping consumer). Forcing alpha back to 0
+        // here gives the subsequent fade animator a real 0→1 transition
+        // to perform, which both visibly cross-fades the new loader in
+        // AND kicks the compositor into pulling buffers again.
+        loaderFadedIn = false
+        glSurface.alpha = 0f
         workloadController.start(
             RubyWorkload.Loader(
                 executionLocation = LoaderPaths.executionLocation(this),
@@ -341,24 +363,30 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // PSDK's Graphics.@has_focus is gated on GainedFocus — without
-        // this, every Input.* query returns false after a pause cycle.
-        // Only fire after the surface has come up at least once
-        // (otherwise forwardEvent reads ANativeWindow_getWidth from a
-        // NULL window pointer).
-        if (firstSurfaceReadyDone && workloadController.currentWorkload() is RubyWorkload.Game) {
-            NativeSurface.injectFocusGained()
-        }
-    }
-
-    override fun onPause() {
-        if (firstSurfaceReadyDone && workloadController.currentWorkload() is RubyWorkload.Game) {
-            NativeSurface.injectFocusLost()
-        }
-        super.onPause()
-    }
+    // onPause/onResume intentionally NOT overridden to push LostFocus /
+    // GainedFocus into the native event queue. SurfaceHolder.Callback
+    // already owns that lifecycle: surfaceDestroyed → NativeSurface.detach
+    // (which pushes LostFocus inside HostSurface.cpp:84-86 so SFML flips
+    // m_windowBeingDestroyed and tears down the EGL surface on the next
+    // processEvents) and surfaceChanged → NativeSurface.attach (which
+    // pushes GainedFocus inside HostSurface.cpp:57-59 to drive surface
+    // re-creation). For loader workloads only that single path fires; for
+    // game workloads, a second push from here resulted in SFML processing
+    // two LostFocus events back-to-back — the first destroyed the surface
+    // cleanly, the second called eglDestroySurface against EGL_NO_SURFACE
+    // and returned EGL_BAD_SURFACE. The subsequent draw call then failed
+    // and the game workload exited silently, dropping the user back at
+    // the hub. Mirror symptom on resume with two GainedFocus events.
+    //
+    // Trade-off: partial-pause cases where the SurfaceView's surface
+    // survives (incoming-call overlay, split-screen handoff that keeps
+    // the surface alive) will NOT see a focus event under this design,
+    // so PSDK's Graphics.@has_focus stays true and Input.* keeps
+    // reporting taps. That's acceptable for the current single-player
+    // game model — if we ever need pause-on-partial-focus, wire it via
+    // a deduplication flag (e.g. track "surface still attached" in
+    // LiteRgssSurfaceView and only push from here when that's true)
+    // rather than re-introducing the unconditional double-push.
 
     override fun onDestroy() {
         if (::inputForwarder.isInitialized) inputForwarder.stop()
