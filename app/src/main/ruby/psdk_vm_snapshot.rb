@@ -691,6 +691,15 @@ module PSDKVMSnapshot
     # Path shapes we have to handle:
     #   /data/.../json.rb            — absolute path → prefix-match
     #   json/ext/parser.so           — relative; stdlib C ext registration
+    #                                  (Ruby's static_init table, can't be
+    #                                  re-dlopen'd → must keep across restore)
+    #   RMXP/100 Foo.rb              — PSDK iseq tag from Utils.compile (see
+    #     USER/... PSDK/... UNKNOWN/  pokemonsdk/scripts/tools/Compilation/
+    #     Game/Boot.rb                project_compilation_utils.rb:16-30).
+    #                                  These are APP CODE — must be reaped
+    #                                  or the second iseq.eval doubles up
+    #                                  alias_method chains and Options.new
+    #                                  infinite-loops.
     #   <internal:/.../kernel_require.rb> — Ruby's wrapper for core files;
     #                                  unwrap and prefix-match the inner path
     #   <socket-script-1>, <main>    — user script markers; NEVER stdlib
@@ -708,7 +717,17 @@ module PSDKVMSnapshot
       end
 
       return false if path.start_with?('<')
-      return true unless path.start_with?('/')
+
+      # Relative paths: only `.so` C-extension registrations are stdlib.
+      # PSDK-tagged `.rb` paths (RMXP/..., USER/..., PSDK/..., UNKNOWN/...,
+      # Game/Boot.rb) are app code and must be reaped. The previous
+      # `return true unless path.start_with?('/')` blanket-classified
+      # those as stdlib, so restore_constants skipped removing
+      # PFM/GamePlay/Options between sessions — the second eval on the
+      # next start_game then re-wrapped initialize a second time, forming
+      # a 4-frame cycle through Options_Functions/Auto_Save/Catch_Rename/
+      # New_Options_Functions that infinite-loops at Options.new.
+      return path.end_with?('.so') unless path.start_with?('/')
 
       STDLIB_PATH_PREFIXES.any? do |prefix|
         path == prefix || path.start_with?(prefix + '/')

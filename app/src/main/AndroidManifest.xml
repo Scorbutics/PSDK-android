@@ -23,9 +23,21 @@
             </intent-filter>
         </activity>
 
-        <!-- Single in-app host (hub + wizard as fragments). -->
+        <!-- Single in-app host (hub + wizard as fragments).
+
+             configChanges declared so the Activity survives rotation
+             (and other config flips). Without this, every requestedOrientation
+             change in SystemUiPresenter destroys + recreates the Activity,
+             which destroys the persistent RubyWorkloadController interpreter
+             mid-workload — the loader's render thread crashes with
+             ClosedWindowError, then a fresh interpreter spins up on the new
+             Activity and fails its first frame with libEGL "no current context".
+             The SurfaceView's underlying surface still gets destroyed/recreated
+             on real rotation; that's a more contained problem the render thread
+             handles via SFML's surfaceCreated/surfaceDestroyed callbacks. -->
         <activity android:name=".ui.RootActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
 
         <!-- The game runs in-process inside RootActivity now; no separate
              activity is needed. The "rgss_runtime" .so is loaded lazily by
