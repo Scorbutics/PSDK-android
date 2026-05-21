@@ -36,7 +36,7 @@
              on real rotation; that's a more contained problem the render thread
              handles via SFML's surfaceCreated/surfaceDestroyed callbacks. -->
         <activity android:name=".ui.RootActivity"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
 
         <!-- The game runs in-process inside RootActivity now; no separate

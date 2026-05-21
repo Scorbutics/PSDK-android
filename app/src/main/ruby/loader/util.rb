@@ -19,7 +19,6 @@ rescue StandardError
 end
 
 require 'LiteRGSS'
-LiteRGSS::Shader.available = false
 
 module Loader
   module Util

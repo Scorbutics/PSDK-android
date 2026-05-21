@@ -95,3 +95,5 @@ PhysFS.unmount('archive.zip') rescue nil
 
 puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
      " (font_src=#{font_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
+
+ArchiveMount.unmount! # cleanup

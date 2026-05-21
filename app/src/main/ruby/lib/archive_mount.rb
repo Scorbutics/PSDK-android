@@ -39,4 +39,9 @@ module ArchiveMount
     io = EpsaStream.new(epsa_path, enc_key: enc_key, mac_key: mac_key)
     PhysFS.mount_io(io, 'archive.zip', '/', false)
   end
+
+  def unmount!
+    return unless mounted?
+    PhysFS.unmount('archive.zip')
+  end
 end

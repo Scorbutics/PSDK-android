@@ -84,5 +84,6 @@ begin
   require './Game.rb'
 ensure
   $VERBOSE = old_verbose
+  ArchiveMount.unmount! # cleanup
 end
 STDERR.puts "[compile] ProjectCompilation finished"

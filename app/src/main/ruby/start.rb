@@ -91,6 +91,20 @@ SafeRunner.run(
 
   VMLogger.info "[start.rb] Current directory after chdir: #{Dir.pwd}"
 
+  # DIAG: log whether PhysFS is still mounted from a prior workload.
+  # In the open-app → start-game path nothing should have mounted the
+  # archive, so this should print "PhysFS not mounted". If it prints
+  # mounted=true, some earlier workload (copy_saves.rb / extract_loader_assets.rb
+  # / compile.rb's check_engine.rb prelude) leaked a mount and File.read /
+  # Dir.glob during the game session are silently routing through the
+  # PhysFS shim, which could surface as shader files read from the
+  # decrypted-stream pipeline instead of disk.
+  if defined?(PhysFS) && defined?(ArchiveMount)
+    VMLogger.info "[start.rb][DIAG] PhysFS mounted? #{ArchiveMount.mounted? rescue 'probe failed'}"
+  else
+    VMLogger.info "[start.rb][DIAG] PhysFS / ArchiveMount module not loaded — definitely not mounted"
+  end
+
   ARGV << 'verbose'
   ARGV << 'fullscreen'
   ARGV << "--scale=4"
