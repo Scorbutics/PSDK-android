@@ -344,22 +344,22 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         }
         stepIndicatorBlock.visibility = View.GONE
 
-        // Re-point the loader at the compiled project's loader_assets.
-        // For super-user this is already the live state and the host
-        // treats it as a no-op; for classic-bootstrap the loader is
-        // currently bound to the bundled archive, so this swaps it onto
-        // the extracted assets the freshly-compiled project just produced.
-        val executionLocation = viewModel.executionLocation.value
-        if (executionLocation != null) {
-            val projectAssets = File(executionLocation, "loader_assets")
-            if (projectAssets.exists()) {
-                (requireActivity() as LoaderHost)
-                    .setLoaderState(LoaderState.FromExtracted(projectAssets))
-            }
-        }
-
+        // Reset the splash's Ruby SceneState in-place via the status-file
+        // sentinel, then write the play CTA in the same payload. A full
+        // workload restart was tempting (clean slate), but in this app the
+        // loader's `ensure` block runs PSDKVMSnapshot.log_diff!/restore! —
+        // and because compile.rb loaded ~hundreds of PSDK scripts on the
+        // shared g_global_vm, log_diff! enumerates every entry as a "DROP"
+        // and STDERR.puts each one. The Ruby render thread is blocked for
+        // seconds, the glSurfaceOverlay stays opaque (no [loader-ready] to
+        // fade it out), and the user sees only the activity background.
+        // The sentinel keeps the same Loader::Splash alive — its next poll
+        // wipes lifted_start / unlifted_start / rolling_start / shake_start /
+        // pressed_finger and resets the icon angle to 0, then the trailing
+        // payload becomes the new status text.
         try {
-            LoaderPaths.statusFile(requireContext()).writeText(PLAY_CTA)
+            LoaderPaths.statusFile(requireContext())
+                .writeText(SCENE_RESET_SENTINEL + PLAY_CTA)
         } catch (e: Exception) {
             android.util.Log.w(TAG, "debug-play CTA write failed", e)
         }
@@ -377,8 +377,16 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         if (!isAdded) return
         if (viewModel.compilationSuccess.value != false) return
 
+        // Mirror of [onCompileDoneDismissed]'s in-place reset. The Ruby
+        // SceneState is just as dirty on the failure path (lifted_start +
+        // unlifted_start fired, rolling_start pinned, icon angle non-zero) —
+        // a retry tap on a stale scene leaves the icon in its post-unlift
+        // position with a stuck rotation. The sentinel clears that state
+        // without paying the workload-restart cost (see kdoc on the success
+        // path for why a restart is wrong here).
         try {
-            LoaderPaths.statusFile(requireContext()).writeText(COMPILE_CTA)
+            LoaderPaths.statusFile(requireContext())
+                .writeText(SCENE_RESET_SENTINEL + COMPILE_CTA)
         } catch (e: Exception) {
             android.util.Log.w(TAG, "compile CTA write failed", e)
         }
@@ -639,6 +647,16 @@ class CompileWizardFragment : Fragment(), LoaderListener {
          * the loader's own default.
          */
         private const val COMPILE_CTA = "< Tap logo to compile >"
+
+        /**
+         * Matches Loader::StatusFile::RESET_SENTINEL in
+         * loader/status_file.rb verbatim. Writing this prefix on the
+         * status file asks the splash to wipe its SceneState in-place
+         * (lifted/unlifted/rolling/shake/pressed all back to nil, icon
+         * angle back to 0) without restarting the workload — anything
+         * after the prefix becomes the new status text in the same poll.
+         */
+        private const val SCENE_RESET_SENTINEL = "<<RESET>>"
 
         fun newInstance(
             executionLocation: String,

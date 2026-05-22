@@ -11,6 +11,13 @@
 # exist in process memory for the duration of the compile run), the bytes
 # are useless.
 
+# Guard the whole module body — same rationale as epsa_format.rb / epsa_stream.rb.
+# ARCHIVE_PRELUDES prepends this file to every compile-VM script, so on the
+# reused VM it gets evaluated 3+ times per compile flow. Probe ENV_PATH (the
+# first internal const) instead of the module name, which gets autodefined on
+# first reopen.
+unless defined?(ArchiveMount::ENV_PATH)
+
 module ArchiveMount
   module_function
 
@@ -45,3 +52,5 @@ module ArchiveMount
     PhysFS.unmount('archive.zip')
   end
 end
+
+end # unless defined?(ArchiveMount::ENV_PATH)

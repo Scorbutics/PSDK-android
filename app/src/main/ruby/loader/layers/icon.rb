@@ -237,6 +237,19 @@ module Loader
         lx >= rx && lx < rx + rw && ly >= ry && ly < ry + rh
       end
 
+      # Drop any lingering rotation. After a compile cycle the icon's
+      # spin-down may not have reached 0 yet (especially if the user
+      # dismissed the result card before SPIN_DOWN_FRAMES elapsed); and
+      # because animate's `@icon.angle = @icon_angle if state.rolling_start`
+      # write is gated on state.rolling_start, nulling rolling_start alone
+      # would freeze the sprite at its last non-zero angle. Reset both the
+      # tracked angle AND push it to the sprite so the next frame draws
+      # axis-aligned regardless of what the spin-down was mid-easing.
+      def reset_visual!
+        @icon_angle = 0.0
+        @icon.angle = 0.0 if @icon && !@icon.disposed?
+      end
+
       def present?
         !@icon.nil?
       end

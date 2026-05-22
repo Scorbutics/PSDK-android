@@ -45,6 +45,7 @@ import java.io.FileWriter
 class RootActivity : AppCompatActivity(), LoaderHost {
 
     private lateinit var glSurface: LiteRgssSurfaceView
+    private lateinit var glSurfaceOverlay: View
     private lateinit var imeSink: EditText
     private lateinit var fragmentContainer: View
 
@@ -78,6 +79,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         setContentView(R.layout.activity_root)
 
         glSurface = findViewById(R.id.glSurface)
+        glSurfaceOverlay = findViewById(R.id.glSurfaceOverlay)
         imeSink = findViewById(R.id.imeSink)
         fragmentContainer = findViewById(R.id.fragmentContainer)
 
@@ -136,7 +138,6 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             }
         }
 
-        glSurface.alpha = 0f
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
             firstSurfaceReadyDone = true
@@ -244,8 +245,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             glSurface.post {
                 if (!loaderFadedIn) {
                     loaderFadedIn = true
-                    glSurface.animate()
-                        .alpha(1f)
+                    glSurfaceOverlay.animate()
+                        .alpha(0f)
                         .setDuration(LOADER_FADE_IN_MS)
                         .start()
                 }
@@ -360,7 +361,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // to perform, which both visibly cross-fades the new loader in
         // AND kicks the compositor into pulling buffers again.
         loaderFadedIn = false
-        glSurface.alpha = 0f
+        glSurfaceOverlay.alpha = 1f
         workloadController.start(
             RubyWorkload.Loader(
                 executionLocation = LoaderPaths.executionLocation(this),
@@ -380,7 +381,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // handoff, no race.
         configureGameEnv(executionLocation)
         systemUi.enterGameMode()
-        glSurface.alpha = 1f
+        glSurfaceOverlay.alpha = 0f
         inputForwarder.start()
         imeBridge.start()
         workloadController.start(
@@ -526,7 +527,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         /** Matches Loader::Splash::ICON_TAPPED_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
 
-        private const val LOADER_FADE_IN_MS = 180L
+        private const val LOADER_FADE_IN_MS = 80L
 
         fun hubIntent(activity: AppCompatActivity): Intent =
             Intent(activity, RootActivity::class.java).putExtra(EXTRA_TARGET, TARGET_HUB)

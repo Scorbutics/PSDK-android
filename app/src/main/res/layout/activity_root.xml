@@ -20,6 +20,18 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Opaque mask over the SurfaceView during workload warm-up. SurfaceFlinger
+         applies standard View alpha uniformly; applying alpha to the SurfaceView
+         itself is non-uniform on some vendor compositors (the bottom band of
+         the surface leaks through at alpha=0 until the next layout pass).
+         Fading THIS view out instead of fading the SurfaceView in keeps the
+         cross-fade clean everywhere. -->
+    <View
+        android:id="@+id/glSurfaceOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/colorBackground" />
+
     <FrameLayout
         android:id="@+id/fragmentContainer"
         android:layout_width="match_parent"

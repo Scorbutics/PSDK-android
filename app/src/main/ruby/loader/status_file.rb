@@ -30,10 +30,13 @@ module Loader
     # Kept identical on the Kotlin side — CompileProgressFragment writes
     # <<LIFT>> verbatim from onCompilationFinished and CompileDoneFragment
     # writes <<UNLIFT>> from the success-card dismiss handler. <<TAP>> is
-    # the classic-bootstrap auto-tap from the activity.
+    # the classic-bootstrap auto-tap from the activity. <<RESET>> is the
+    # wizard's post-dismiss in-place state wipe — see the handler below
+    # for why we don't restart the workload to achieve the same.
     LIFT_SENTINEL   = '<<LIFT>>'.freeze
     UNLIFT_SENTINEL = '<<UNLIFT>>'.freeze
     TAP_SENTINEL    = '<<TAP>>'.freeze
+    RESET_SENTINEL  = '<<RESET>>'.freeze
 
     def initialize(state:, text_layer:, dust:, icon:, clock:)
       @state = state
@@ -53,19 +56,10 @@ module Loader
       return if (@clock.frame - @last_poll_frame) < POLL_INTERVAL_F
       @last_poll_frame = @clock.frame
       unless @text.status_present?
-        # Diagnostic: log once per ~second when status sprite is absent
-        # so we can spot the "loader stayed in hub mode" failure (no
-        # @status created → polling silently no-ops).
-        if (@clock.frame % 60).zero?
-          loader_say "status poll: NO @status (status_present?=false, file_exists?=#{File.exist?(PATH)})"
-        end
         return
       end
       begin
         unless File.exist?(PATH)
-          if (@clock.frame % 120).zero?
-            loader_say "status poll: file missing at PATH=#{File.expand_path(PATH)}"
-          end
           return
         end
         mtime = File.mtime(PATH)
@@ -75,6 +69,30 @@ module Loader
         @last_mtime = mtime
         payload = File.read(PATH, BYTE_LIMIT).to_s.strip
         return if payload.empty?
+
+        if payload.start_with?(RESET_SENTINEL)
+          # Reset sentinel: wipe the SceneState fields the compile cycle
+          # accumulated (lifted/unlifted/rolling/shake/pressed) and snap
+          # the icon's angle back to 0. Used by the wizard's success and
+          # failure dismiss handlers in lieu of a workload restart —
+          # restarting would have to pay the loader.rb ensure block's
+          # PSDKVMSnapshot.log_diff!/restore! cost, which on a post-
+          # compile shared VM enumerates every PSDK script as a "DROP"
+          # and blocks the render thread for seconds. In-place reset
+          # keeps the same Loader::Splash alive, so the next status
+          # poll picks up the trailing CTA payload immediately. We
+          # intentionally do NOT touch external_status_received: the
+          # wizard always writes a real CTA in the same payload, so the
+          # loader.rb default-CTA branch should stay suppressed.
+          @state.rolling_start    = nil
+          @state.lifted_start     = nil
+          @state.unlifted_start   = nil
+          @state.shake_start      = nil
+          @state.pressed_finger   = nil
+          @icon.reset_visual!
+          payload = payload[RESET_SENTINEL.length..].to_s.strip
+          return if payload.empty?
+        end
 
         if payload.start_with?(LIFT_SENTINEL)
           # Lift sentinel: trigger the move-up animation (idempotent —

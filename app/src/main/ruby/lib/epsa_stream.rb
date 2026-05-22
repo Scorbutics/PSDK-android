@@ -25,6 +25,14 @@ require 'set'
 # runs before this file's content, so EpsaFormat is already defined.
 # Desktop unit tests explicitly load epsa_format before this file.
 
+# Guard the whole class body — same rationale as epsa_format.rb: this file is
+# re-evaluated on every compile-VM script (check_engine / compile / copy_saves),
+# and Ruby warns "already initialized constant" on the second eval for every
+# top-level constant inside. Probe KEY_SIZE (first internal const) so a
+# `defined?(EpsaStream)` race against the auto-defined-on-first-eval class
+# doesn't false-positive.
+unless defined?(EpsaStream::KEY_SIZE)
+
 class EpsaStream
   class IntegrityError < StandardError; end
   class FormatError    < StandardError; end
@@ -229,3 +237,5 @@ class EpsaStream
     @file.read(len) || ''.b
   end
 end
+
+end # unless defined?(EpsaStream::KEY_SIZE)

@@ -1,7 +1,11 @@
 require 'fileutils'
 
-RELEASE_DIR = './Release'
-BACKUP_DIR = './ReleaseBackup'
+# Self-guard: backup_saves.rb and copy_saves.rb both run on the same reused
+# compile VM and both assign these top-level constants. Without the guard,
+# whichever script runs second emits "already initialized constant" warnings.
+# Same value in both files, so the guard is content-safe.
+RELEASE_DIR = './Release'        unless defined?(RELEASE_DIR)
+BACKUP_DIR  = './ReleaseBackup'  unless defined?(BACKUP_DIR)
 
 # Clean any stale backup from a previous failed attempt
 FileUtils.rm_rf(BACKUP_DIR) if File.exist?(BACKUP_DIR)

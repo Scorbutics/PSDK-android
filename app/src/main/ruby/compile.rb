@@ -73,24 +73,6 @@ pwd_prefix = "#{Dir.pwd}/"
 purged = $LOADED_FEATURES.reject! { |f| f.start_with?(pwd_prefix) }
 STDERR.puts "[compile] purged $LOADED_FEATURES entries under #{pwd_prefix} (#{(purged ? $LOADED_FEATURES.size : 'none')} remaining)"
 
-# Game.rb's psdk_path probe falls through to a Windows/Linux ENV fallback
-# (`(ENV['APPDATA'] || ENV['HOME']).dup.force_encoding('UTF-8')`) when
-# both `Dir.exist?('pokemonsdk')` and `ENV['PSDK_BINARY_PATH']` are
-# missing — on Android both ENV vars are unset, so that fallback raises
-# NoMethodError on nil. Setting PSDK_BINARY_PATH unconditionally makes
-# Game.rb's line 8 succeed regardless of whether the PhysFS shim's
-# Dir.exist? sees pokemonsdk through the mount, so the compile no longer
-# depends on shim+mount state being healthy at this exact moment.
-ENV['PSDK_BINARY_PATH'] = Dir.pwd
-
-# Diagnostic for the "import-then-compile fails, restart-then-compile
-# works" repro: dumps the four layers Game.rb's `Dir.exist?('pokemonsdk')`
-# depends on, so we can tell which one is lying when the bug recurs.
-STDERR.puts "[compile][diag] shim_installed=#{PhysFS.shim_installed?} " \
-            "mounted_probe=#{PhysFS.exist?('Data/Studio/psdk.dat')} " \
-            "pokemonsdk_dir=#{PhysFS.directory?('pokemonsdk')} " \
-            "ruby_dir_exist=#{Dir.exist?('pokemonsdk')}"
-
 # Re-executing PSDK class definitions emits "already initialized constant"
 # warnings on every reopened constant — harmless but noisy enough to bury
 # real compile output. $VERBOSE=nil silences them for the require block
