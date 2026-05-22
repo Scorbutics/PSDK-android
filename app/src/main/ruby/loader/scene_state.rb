@@ -1,3 +1,5 @@
+unless defined?(Loader::SceneState::LIFT_OFFSET_PX)
+
 module Loader
   # Shared event/trigger state for the splash. Mutated by the touch
   # router and the external-status poller; read by every layer's
@@ -68,3 +70,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::SceneState::LIFT_OFFSET_PX)

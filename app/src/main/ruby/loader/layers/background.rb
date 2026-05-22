@@ -1,3 +1,5 @@
+unless defined?(Loader::Layers::Background::GRADIENT_TOP_PEAK)
+
 module Loader
   module Layers
     # Vertical gradient: icon-tinted dark at top → near-black at bottom.
@@ -231,3 +233,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Layers::Background::GRADIENT_TOP_PEAK)

@@ -1,3 +1,5 @@
+unless defined?(Loader::SplashWindow::LOGICAL_SHORT_EDGE)
+
 module Loader
   # Wraps LiteRGSS::DisplayWindow + Viewport. Owns the canvas size
   # computation, the focus callbacks (Android pause/resume), and the
@@ -125,3 +127,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::SplashWindow::LOGICAL_SHORT_EDGE)

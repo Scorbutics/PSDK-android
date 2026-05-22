@@ -1,3 +1,5 @@
+unless defined?(Loader::TouchRouter)
+
 module Loader
   # Maps the SplashWindow's touch callbacks onto SceneState mutations
   # and Dust spawns. Receives logical canvas coordinates already (the
@@ -39,3 +41,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::TouchRouter)

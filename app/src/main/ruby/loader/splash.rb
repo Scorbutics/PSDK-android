@@ -1,3 +1,5 @@
+unless defined?(Loader::Splash::INTRO_FRAMES)
+
 module Loader
   # Composes the clock, scene state, window, asset bundle, layers,
   # touch router, and status-file poller. The orchestrator at the
@@ -134,3 +136,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Splash::INTRO_FRAMES)

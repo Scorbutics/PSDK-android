@@ -1,3 +1,5 @@
+unless defined?(Loader::StatusFile::PATH)
+
 module Loader
   # Polls the one-line status file the compile wizard writes during
   # compilation. Drives the splash's status_text and reacts to the two
@@ -75,12 +77,12 @@ module Loader
           # accumulated (lifted/unlifted/rolling/shake/pressed) and snap
           # the icon's angle back to 0. Used by the wizard's success and
           # failure dismiss handlers in lieu of a workload restart —
-          # restarting would have to pay the loader.rb ensure block's
-          # PSDKVMSnapshot.log_diff!/restore! cost, which on a post-
-          # compile shared VM enumerates every PSDK script as a "DROP"
-          # and blocks the render thread for seconds. In-place reset
-          # keeps the same Loader::Splash alive, so the next status
-          # poll picks up the trailing CTA payload immediately. We
+          # restarting would pay show!'s asset reload + the intro hold
+          # before the new splash is visible (the overlay is opaque
+          # until the new loader's first [loader-ready] frame). In-place
+          # reset keeps the same Loader::Splash alive, so the next
+          # status poll picks up the trailing CTA payload immediately
+          # and the user sees the icon settle without a flash. We
           # intentionally do NOT touch external_status_received: the
           # wizard always writes a real CTA in the same payload, so the
           # loader.rb default-CTA branch should stay suppressed.
@@ -139,3 +141,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::StatusFile::PATH)

@@ -1,3 +1,8 @@
+# Guarded against re-eval on every loader workload swap — see util.rb
+# for the rationale; the rest of the loader preludes follow the same
+# `unless defined?(<first-constant-in-this-file>)` pattern.
+unless defined?(Loader::Clock::FRAME_RATE)
+
 module Loader
   # Wall-clock-driven animation clock.
   #
@@ -51,3 +56,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Clock::FRAME_RATE)

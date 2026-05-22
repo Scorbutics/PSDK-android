@@ -3,6 +3,15 @@
 # Concatenated as the first prelude by RubyScript — see RootActivity.kt's
 # LOADER_PRELUDES — so loader_say, Loader::Util, and LiteRGSS are
 # available to everything that follows.
+#
+# The whole body is guarded by `unless defined?(LOADER_BASE_DIR)` so a
+# second loader workload start (after a swap-and-restart) doesn't re-
+# eval the constant assignments — that path would otherwise spam
+# "already initialized constant" warnings into logcat for every prelude
+# the persistent interpreter re-runs. The classes/methods/requires
+# inside are all idempotent on their own, but constants warn on reassign.
+
+unless defined?(LOADER_BASE_DIR)
 
 # The loader's cwd at startup — captured BEFORE any sibling interpreter
 # (the compile engine, archive validator, etc.) can run their own
@@ -37,3 +46,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(LOADER_BASE_DIR)

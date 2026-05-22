@@ -1,3 +1,5 @@
+unless defined?(Loader::Layers::Icon::GLOW_SIZE)
+
 module Loader
   module Layers
     # Centerpiece icon + soft halo glow.
@@ -294,3 +296,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Layers::Icon::GLOW_SIZE)

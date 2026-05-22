@@ -1,3 +1,5 @@
+unless defined?(Loader::Layers::AmbientParticles::COUNT)
+
 module Loader
   module Layers
     # Tiny drifting "stars" — gives the screen low-frequency motion.
@@ -88,3 +90,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Layers::AmbientParticles::COUNT)

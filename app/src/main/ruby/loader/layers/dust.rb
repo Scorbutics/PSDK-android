@@ -1,3 +1,5 @@
+unless defined?(Loader::Layers::Dust::BITMAP_SIZE)
+
 module Loader
   module Layers
     # Stardust feedback layer — every touch spawns short-lived
@@ -158,3 +160,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Layers::Dust::BITMAP_SIZE)

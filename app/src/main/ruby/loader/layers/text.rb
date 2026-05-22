@@ -1,3 +1,5 @@
+unless defined?(Loader::Layers::Text::TITLE_FONT_SIZE)
+
 module Loader
   module Layers
     # Caption-style text stack centered on the icon:
@@ -220,3 +222,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Layers::Text::TITLE_FONT_SIZE)

@@ -1,5 +1,7 @@
 require 'json'
 
+unless defined?(Loader::Assets::DEFAULT_FONT_PATH)
+
 module Loader
   # Reads project metadata, icon color, icon bitmap, and the splash
   # font from <pwd>/loader_assets/ — files extract_loader_assets.rb
@@ -94,3 +96,5 @@ module Loader
     end
   end
 end
+
+end # unless defined?(Loader::Assets::DEFAULT_FONT_PATH)
