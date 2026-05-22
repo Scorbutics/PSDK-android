@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
@@ -216,10 +217,23 @@ class ProjectListFragment : Fragment() {
         halo.background = buildHaloDrawable(ctx, statusColor)
 
         slot.visibility = View.VISIBLE
-        slot.alpha = if (isReadable) 1f else 0.55f
-        slot.isEnabled = isReadable
+        // arrangeSlots resets alpha to 0; fade up to the resting opacity
+        // so the constellation eases in instead of popping.
+        val targetAlpha = if (isReadable) 1f else 0.55f
+        slot.animate()
+            .alpha(targetAlpha)
+            .setDuration(SATELLITE_FADE_IN_MS)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .start()
+        // Stay enabled even when unreadable so long-press → delete still
+        // works; the click handler guards against launching the wizard.
+        slot.isEnabled = true
         slot.setOnClickListener {
             if (isReadable) flyToCentreThenLaunch(slot, project)
+        }
+        slot.setOnLongClickListener {
+            confirmDeleteProject(project)
+            true
         }
         attachPressFeedback(slot)
 
@@ -406,6 +420,38 @@ class ProjectListFragment : Fragment() {
 
     // ── Wizard launch + archive import (unchanged) ───────────────────
 
+    private fun confirmDeleteProject(project: Project) {
+        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Psdk_Dialog)
+            .setTitle("Delete project")
+            .setMessage("Delete \"${project.name}\"? This removes its files from disk.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Delete") { _, _ -> deleteProject(project) }
+            .show()
+    }
+
+    private fun deleteProject(project: Project) {
+        val ctx = requireContext().applicationContext
+        Thread {
+            try {
+                database.projectDao().delete(project)
+                File(project.directory).deleteRecursively()
+                activity?.runOnUiThread {
+                    if (!isAdded) return@runOnUiThread
+                    refreshProjects()
+                }
+            } catch (e: Exception) {
+                activity?.runOnUiThread {
+                    if (!isAdded) return@runOnUiThread
+                    Toast.makeText(
+                        ctx,
+                        "Delete failed: ${e.localizedMessage ?: e.javaClass.simpleName}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }.start()
+    }
+
     private fun launchCompileWizard(project: Project) {
         val fragment = CompileWizardFragment.newInstance(
             executionLocation = project.directory,
@@ -517,6 +563,7 @@ class ProjectListFragment : Fragment() {
 
         private const val SATELLITE_HALO_BREATH_MS = 2400L
         private const val SATELLITE_FLY_MS = 280L
+        private const val SATELLITE_FADE_IN_MS = 2000L
 
         private const val PARTICLE_COUNT = 12
         private const val PARTICLE_SIZE_DP = 8
