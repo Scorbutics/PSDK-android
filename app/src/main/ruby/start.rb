@@ -175,34 +175,63 @@ SafeRunner.run(
   # window, so the Kotlin-side "starting…" overlay can fade out and
   # reveal Game.rb's first frame.
   #
-  # Installed via Module#prepend on LiteRGSS::DisplayWindow rather than
-  # by hooking PSDK directly — PSDK is end-user code we don't own, but
-  # the LiteRGSS API is stable and PSDK necessarily constructs exactly
-  # one DisplayWindow on boot (its Graphics module). The prepend wraps
-  # `initialize`, calls super first (so a constructor failure does NOT
-  # mis-fire the sentinel), then emits on first successful return.
+  # Implemented as a marker file written from inside a `.new` wrapper on
+  # LiteRGSS::DisplayWindow. The file path is the env var
+  # RGSS_GAME_READY_FILE that RootActivity sets on workload launch;
+  # RootActivity polls for it via Handler and fades the overlay out as
+  # soon as it appears.
   #
-  # The @@signaled class variable + the prepend module itself live above
-  # the PSDKVMSnapshot baseline, so restore! reaps both at the end of
-  # this session. Next session starts with no prepend and @@signaled
-  # back to false — re-prepended cleanly on the next run.
+  # Why a file and not a log sentinel: the VMLogger/STDOUT pipeline
+  # delivers reliably for the loader workload but is silently dropped
+  # for the game workload on this host (observed: C-side LiteRGSS
+  # warnings reach the LogListener but Ruby-side puts/VMLogger.info do
+  # not). File-based sync sidesteps that entirely — and the
+  # mechanism is already proven by the wizard ↔ loader status file.
   #
-  # `ancestors.include?` guard is defensive against a restore that
-  # somehow leaves the IClass in the chain (e.g., a native unprepend
-  # failure logged but tolerated). Without it we'd double-prepend and
-  # emit twice — harmless but noisy.
-  unless LiteRGSS::DisplayWindow.ancestors.any? { |a| a.name == 'GameDisplayReadySignal' }
-    module GameDisplayReadySignal
-      @@signaled = false
-      def initialize(*args, **kwargs)
-        super
-        unless @@signaled
-          @@signaled = true
-          VMLogger.info '[game-display-ready]' if defined?(VMLogger)
+  # Aliasing `.new` on the singleton class (rather than prepending on
+  # `initialize`) is dispatch-agnostic: `.new` is the public entry
+  # point regardless of how the C side wires up internals, so it works
+  # even if the litergss2 C code ever takes a `rb_class_new_instance`
+  # shortcut around Ruby-level method lookup.
+  #
+  # The signaled flag lives in @@__game_display_signaled on
+  # DisplayWindow itself; PSDKVMSnapshot.restore! reaps class variables
+  # added since baseline, so the flag resets cleanly between sessions.
+  ready_file_path = ENV['RGSS_GAME_READY_FILE']
+  if ready_file_path.nil? || ready_file_path.empty?
+    STDERR.puts '[start.rb] RGSS_GAME_READY_FILE not set; sentinel skipped'
+  elsif !defined?(LiteRGSS::DisplayWindow)
+    STDERR.puts '[start.rb] LiteRGSS::DisplayWindow not defined; sentinel skipped'
+  else
+    # Stale file from a prior session would tell the host the game is
+    # ready before this session has constructed anything. Wipe it before
+    # installing the wrapper.
+    File.delete(ready_file_path) rescue nil
+
+    if LiteRGSS::DisplayWindow.singleton_class.method_defined?(:__game_display_orig_new)
+      # Already installed in a prior session whose restore! didn't
+      # manage to strip the singleton alias (rare; native unprepend only
+      # touches IClass chains, not singleton-class method tables). Reset
+      # the flag and reuse the existing wrapper.
+      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
+    else
+      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
+      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_ready_path, ready_file_path)
+      LiteRGSS::DisplayWindow.singleton_class.send(:alias_method, :__game_display_orig_new, :new)
+      LiteRGSS::DisplayWindow.singleton_class.send(:define_method, :new) do |*args, &block|
+        instance = __game_display_orig_new(*args, &block)
+        unless class_variable_get(:@@__game_display_signaled)
+          class_variable_set(:@@__game_display_signaled, true)
+          path = class_variable_get(:@@__game_display_ready_path)
+          begin
+            File.write(path, "ready\n")
+          rescue StandardError => e
+            STDERR.puts "[start.rb] failed to write ready file #{path}: #{e.class}: #{e.message}"
+          end
         end
+        instance
       end
     end
-    LiteRGSS::DisplayWindow.prepend(GameDisplayReadySignal)
   end
 
   VMLogger.info "[start.rb] Loading Game.rb..."

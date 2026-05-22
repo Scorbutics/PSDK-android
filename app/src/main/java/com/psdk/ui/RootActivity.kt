@@ -54,6 +54,28 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     /** Continuous rotation on [gameStartIcon] while the start overlay is up. */
     private var gameStartIconAnimator: android.animation.ObjectAnimator? = null
 
+    /** Posted on [showGameStartOverlay]; cancelled on [hideGameStartOverlay]. */
+    private val gameStartTimeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val gameStartTimeoutRunnable = Runnable {
+        android.util.Log.w(TAG, "game-start overlay timeout reached without sentinel — forcing hide")
+        hideGameStartOverlay()
+    }
+
+    /** File [start.rb] writes when PSDK's first LiteRGSS::DisplayWindow.new returns. */
+    private var gameReadyFile: java.io.File? = null
+    private val gameReadyPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val gameReadyPollRunnable = object : Runnable {
+        override fun run() {
+            val f = gameReadyFile
+            if (f != null && f.exists()) {
+                android.util.Log.i(TAG, "game-ready file appeared at ${f.absolutePath} — hiding overlay")
+                hideGameStartOverlay()
+                return
+            }
+            gameReadyPollHandler.postDelayed(this, GAME_READY_POLL_INTERVAL_MS)
+        }
+    }
+
     private lateinit var workloadController: RubyWorkloadController
     private lateinit var systemUi: SystemUiPresenter
     private lateinit var inputForwarder: GameInputForwarder
@@ -286,17 +308,12 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         }
         val workload = workloadController.currentWorkload() ?: return
 
-        // Game workload's only sentinel of interest: the start overlay can
-        // come down because Game.rb's first DisplayWindow just spun up.
-        // start.rb's prepended GameDisplayReadySignal module emits this
-        // exactly once per session; any further matches are ignored by
-        // [hideGameStartOverlay]'s visibility guard.
-        if (workload is RubyWorkload.Game) {
-            if (logMessage.message.contains(GAME_DISPLAY_READY_SENTINEL)) {
-                hideGameStartOverlay()
-            }
-            return
-        }
+        // Game workloads don't drive any UI state from log messages anymore.
+        // The start-overlay-hide signal moved to a marker file the Ruby side
+        // writes (see [gameReadyFile] + the polling Handler) because Ruby
+        // logs from start.rb were not reaching this listener reliably on
+        // some hosts.
+        if (workload is RubyWorkload.Game) return
         if (workload !is RubyWorkload.Loader) return
 
         if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
@@ -536,6 +553,27 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             interpolator = android.view.animation.LinearInterpolator()
             start()
         }
+
+        // Defensive timeout. If start.rb's marker file never appears
+        // (script error before DisplayWindow.new, the wrapper code didn't
+        // catch the construction path for some reason, etc.) we still
+        // reveal the GL surface so the user sees whatever the game IS
+        // rendering. Long enough to cover a cold debug-uncompiled boot
+        // (PSDK's script load on PhysFS is ~10–25s on a mid-range device);
+        // the marker-file path normally pre-empts it.
+        gameStartTimeoutHandler.removeCallbacks(gameStartTimeoutRunnable)
+        gameStartTimeoutHandler.postDelayed(gameStartTimeoutRunnable, GAME_START_TIMEOUT_MS)
+
+        // Wipe any stale marker file from a prior run and start polling.
+        // The Ruby wrapper writes this once on first DisplayWindow.new;
+        // the poller hops the result back to UI thread via [hideGameStartOverlay].
+        val readyFile = gameReadyFile(executionLocation)
+        try {
+            if (readyFile.exists()) readyFile.delete()
+        } catch (_: Exception) { /* best-effort */ }
+        gameReadyFile = readyFile
+        gameReadyPollHandler.removeCallbacks(gameReadyPollRunnable)
+        gameReadyPollHandler.postDelayed(gameReadyPollRunnable, GAME_READY_POLL_INTERVAL_MS)
     }
 
     /**
@@ -549,6 +587,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      */
     private fun hideGameStartOverlay() {
         runOnUiThread {
+            gameStartTimeoutHandler.removeCallbacks(gameStartTimeoutRunnable)
+            gameReadyPollHandler.removeCallbacks(gameReadyPollRunnable)
+            gameReadyFile = null
             if (gameStartOverlay.visibility != View.VISIBLE) return@runOnUiThread
             gameStartOverlay.animate()
                 .alpha(0f)
@@ -563,8 +604,20 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     }
 
     /**
+     * Marker file [start.rb]'s LiteRGSS::DisplayWindow.new wrapper writes
+     * the moment PSDK's main window is constructed. Lives next to the
+     * other per-session log files so a single rm -rf on the execution
+     * dir cleans it up. The poller in [showGameStartOverlay] watches
+     * this path; deletion is deferred to [hideGameStartOverlay] so a
+     * subsequent start cycle starts from a clean slate.
+     */
+    private fun gameReadyFile(executionLocation: String): java.io.File =
+        java.io.File(executionLocation, ".game_ready")
+
+    /**
      * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
-     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_REMOTE_*_TOKEN, etc.).
+     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE,
+     * RGSS_GAME_READY_FILE, RGSS_REMOTE_*_TOKEN, etc.).
      * Called from [startGame] right before the controller enqueues
      * the game workload.
      */
@@ -581,6 +634,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         android.system.Os.setenv("RGSS_LOG_FILE", "$executionLocation/last_stdout.log", true)
         android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$errorLogLocation/Error.log", true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
+        android.system.Os.setenv("RGSS_GAME_READY_FILE", gameReadyFile(executionLocation).absolutePath, true)
 
         try {
             FileWriter("$executionLocation/last_stdout.log", false).flush()
@@ -772,15 +826,10 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         /** Matches Loader::Splash::ICON_TAPPED_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
 
-        /**
-         * Emitted by the [GameDisplayReadySignal] prepend installed in
-         * start.rb the first time `LiteRGSS::DisplayWindow.new` returns
-         * — i.e., the moment Game.rb's main window exists on the GL
-         * surface. Cue for [hideGameStartOverlay].
-         */
-        private const val GAME_DISPLAY_READY_SENTINEL = "[game-display-ready]"
-
         private const val LOADER_FADE_IN_MS = 80L
+
+        /** Poll interval for [gameReadyFile]. Cheap stat call, 100ms feels instant. */
+        private const val GAME_READY_POLL_INTERVAL_MS = 100L
 
         /**
          * Window inside which a second BACK press is treated as
@@ -795,6 +844,15 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
         /** Fade-out duration for the start overlay when the game is ready. */
         private const val GAME_START_FADE_MS = 180L
+
+        /**
+         * Force-hide the start overlay after this long without
+         * [GAME_DISPLAY_READY_SENTINEL]. Sized to a generous cold-boot
+         * worst case (PSDK script load on PhysFS in debug mode, no
+         * mega_script.deflate, mid-range device) plus headroom; the
+         * sentinel path takes precedence whenever it reaches us.
+         */
+        private const val GAME_START_TIMEOUT_MS = 30_000L
 
         fun hubIntent(activity: AppCompatActivity): Intent =
             Intent(activity, RootActivity::class.java).putExtra(EXTRA_TARGET, TARGET_HUB)
