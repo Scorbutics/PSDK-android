@@ -46,8 +46,13 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
     private lateinit var glSurface: LiteRgssSurfaceView
     private lateinit var glSurfaceOverlay: View
+    private lateinit var gameStartOverlay: View
+    private lateinit var gameStartIcon: android.widget.ImageView
     private lateinit var imeSink: EditText
     private lateinit var fragmentContainer: View
+
+    /** Continuous rotation on [gameStartIcon] while the start overlay is up. */
+    private var gameStartIconAnimator: android.animation.ObjectAnimator? = null
 
     private lateinit var workloadController: RubyWorkloadController
     private lateinit var systemUi: SystemUiPresenter
@@ -70,6 +75,22 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
     private var loaderListener: LoaderListener? = null
 
+    /**
+     * True iff this activity was launched via the classic-user flow
+     * (TARGET_CLASSIC_WIZARD or TARGET_DIRECT_GAME) — i.e., one project
+     * baked into the APK, no hub to fall back to. Gates the
+     * back-to-quit-game UX in [dispatchKeyEvent]: in classic mode
+     * there's no "project page" to return to, so BACK keeps being
+     * consumed by [inputForwarder] as before.
+     */
+    private var isClassicMode: Boolean = false
+
+    /** [SystemClock.uptimeMillis] of the most recent in-game BACK press, or 0 if armed/expired. */
+    private var lastGameBackPressUptimeMs: Long = 0L
+
+    /** Active "press again to quit" toast so the second press can dismiss it instantly. */
+    private var gameBackToast: android.widget.Toast? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Draw the GL surface edge-to-edge so the background fills the whole
@@ -80,6 +101,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
         glSurface = findViewById(R.id.glSurface)
         glSurfaceOverlay = findViewById(R.id.glSurfaceOverlay)
+        gameStartOverlay = findViewById(R.id.gameStartOverlay)
+        gameStartIcon = findViewById(R.id.gameStartIcon)
         imeSink = findViewById(R.id.imeSink)
         fragmentContainer = findViewById(R.id.fragmentContainer)
 
@@ -170,9 +193,13 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             }
         }
 
-        if (savedInstanceState != null) return
-
         val target = intent.getStringExtra(EXTRA_TARGET) ?: TARGET_HUB
+        // Cache once: the intent doesn't change on rotation, but
+        // computing this before the savedInstanceState early return
+        // keeps the value populated on restored instances too.
+        isClassicMode = (target == TARGET_DIRECT_GAME) || (target == TARGET_CLASSIC_WIZARD)
+
+        if (savedInstanceState != null) return
 
         // Direct-to-game path used by EntryActivity for classic-mode users
         // whose Release/ dir is already on disk. No fragment, no splash —
@@ -258,6 +285,18 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                 "(currentWorkload=${workloadController.currentWorkload()?.name})")
         }
         val workload = workloadController.currentWorkload() ?: return
+
+        // Game workload's only sentinel of interest: the start overlay can
+        // come down because Game.rb's first DisplayWindow just spun up.
+        // start.rb's prepended GameDisplayReadySignal module emits this
+        // exactly once per session; any further matches are ignored by
+        // [hideGameStartOverlay]'s visibility guard.
+        if (workload is RubyWorkload.Game) {
+            if (logMessage.message.contains(GAME_DISPLAY_READY_SENTINEL)) {
+                hideGameStartOverlay()
+            }
+            return
+        }
         if (workload !is RubyWorkload.Loader) return
 
         if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
@@ -321,7 +360,16 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             runOnUiThread {
                 inputForwarder.stop()
                 imeBridge.stop()
+                resetGameBackQuitState()
                 systemUi.enterShellMode()
+                // Belt-and-braces: if Game.rb died before constructing its
+                // DisplayWindow (script error in start.rb's preludes, or in
+                // Game.rb itself before LiteRGSS::DisplayWindow.new fires),
+                // [GAME_DISPLAY_READY_SENTINEL] never reached the log
+                // pipeline and the overlay would stay opaque forever.
+                // Tearing it down here guarantees the user gets back to the
+                // hub / wizard splash whatever path the game took.
+                hideGameStartOverlay()
                 // Restart the loader so the surface isn't blank when
                 // the user returns to the hub/wizard fragment.
                 startLoaderForCurrentState()
@@ -427,6 +475,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         configureGameEnv(executionLocation, mode)
         systemUi.enterGameMode()
         glSurfaceOverlay.alpha = 0f
+        // Cover the surface with a spinning project icon for the duration
+        // of the loader→game handoff. Without this, the loader's last
+        // frame sits frozen on the GL surface while PSDK's require chain
+        // runs (1–5s depending on mode + cold/warm), reading as "the app
+        // stalled" to the user. The sentinel handler in handleWorkloadLog
+        // (matched against GAME_DISPLAY_READY_SENTINEL) fades this out as
+        // soon as Game.rb constructs its first LiteRGSS::DisplayWindow.
+        showGameStartOverlay(executionLocation)
         inputForwarder.start()
         imeBridge.start()
         workloadController.start(
@@ -437,6 +493,73 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                 preludes = if (mode == GameMode.DEBUG_UNCOMPILED) START_PRELUDES_DEBUG else START_PRELUDES,
             )
         )
+    }
+
+    /**
+     * Open the start overlay: bind the project's icon, animate a continuous
+     * rotation. Caller is responsible for triggering [hideGameStartOverlay]
+     * later — typically on the [GAME_DISPLAY_READY_SENTINEL] sentinel from
+     * start.rb, but also from [handleWorkloadCompleted] in case the game
+     * exits without ever constructing a window (script error before PSDK
+     * boots its display).
+     */
+    private fun showGameStartOverlay(executionLocation: String) {
+        // Project icon. extract_loader_assets.rb writes game.png alongside
+        // game_font.ttf and infos_config.json in <exec>/loader_assets/. If
+        // it's not there (e.g. first debug-uncompiled run on a project
+        // that's never been validated), fall back to the bundled logo so
+        // the overlay still has something to spin.
+        val projectIcon = java.io.File(executionLocation, "loader_assets/game.png")
+        if (projectIcon.exists()) {
+            val bitmap = android.graphics.BitmapFactory.decodeFile(projectIcon.absolutePath)
+            if (bitmap != null) {
+                gameStartIcon.setImageBitmap(bitmap)
+            } else {
+                gameStartIcon.setImageResource(R.drawable.logo)
+            }
+        } else {
+            gameStartIcon.setImageResource(R.drawable.logo)
+        }
+
+        gameStartOverlay.alpha = 1f
+        gameStartOverlay.visibility = View.VISIBLE
+        gameStartOverlay.bringToFront()  // sit above glSurfaceOverlay
+
+        // Stop any prior animator (re-entry from a quick exit-and-retry).
+        gameStartIconAnimator?.cancel()
+        gameStartIcon.rotation = 0f
+        gameStartIconAnimator = android.animation.ObjectAnimator.ofFloat(
+            gameStartIcon, View.ROTATION, 0f, 360f
+        ).apply {
+            duration = GAME_START_ICON_SPIN_MS
+            repeatCount = android.animation.ObjectAnimator.INFINITE
+            interpolator = android.view.animation.LinearInterpolator()
+            start()
+        }
+    }
+
+    /**
+     * Cross-fade the start overlay out (revealing Game.rb's first frame on
+     * the GL surface), then stop the rotation animator + hide the View so
+     * subsequent touches reach the surface instead of getting eaten by the
+     * overlay's clickable=true.
+     *
+     * Safe to call from any thread (hops to UI internally) and safe to call
+     * when the overlay isn't visible (idempotent — no animation queued).
+     */
+    private fun hideGameStartOverlay() {
+        runOnUiThread {
+            if (gameStartOverlay.visibility != View.VISIBLE) return@runOnUiThread
+            gameStartOverlay.animate()
+                .alpha(0f)
+                .setDuration(GAME_START_FADE_MS)
+                .withEndAction {
+                    gameStartOverlay.visibility = View.GONE
+                    gameStartIconAnimator?.cancel()
+                    gameStartIconAnimator = null
+                }
+                .start()
+        }
     }
 
     /**
@@ -523,10 +646,57 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Super-user flow only: intercept BACK while a game workload is
+        // running so the user can leave the game and return to the
+        // project page. In classic mode there is no page to return to,
+        // so BACK keeps being consumed by inputForwarder unchanged.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK
+            && !isClassicMode
+            && ::workloadController.isInitialized
+            && workloadController.currentWorkload() is RubyWorkload.Game
+        ) {
+            if (event.action == KeyEvent.ACTION_UP) {
+                handleGameBackPress()
+            }
+            return true
+        }
         // inputForwarder gates internally on its enabled flag, so this
         // is a no-op while a non-game workload is active.
         if (::inputForwarder.isInitialized && inputForwarder.handleKeyEvent(event)) return true
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Double-tap-to-quit handler for the in-game BACK key. First press
+     * shows a transient toast and arms a timer; a second press within
+     * [BACK_QUIT_WINDOW_MS] requests the game workload to stop, which
+     * routes through [handleWorkloadCompleted] and lands the user back
+     * on the hub/project page.
+     */
+    private fun handleGameBackPress() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val armed = lastGameBackPressUptimeMs != 0L &&
+            (now - lastGameBackPressUptimeMs) <= BACK_QUIT_WINDOW_MS
+        if (armed) {
+            gameBackToast?.cancel()
+            gameBackToast = null
+            lastGameBackPressUptimeMs = 0L
+            workloadController.stop()
+            return
+        }
+        lastGameBackPressUptimeMs = now
+        gameBackToast?.cancel()
+        gameBackToast = android.widget.Toast.makeText(
+            this,
+            "Press back again to quit the game (progress won't be saved)",
+            android.widget.Toast.LENGTH_SHORT,
+        ).also { it.show() }
+    }
+
+    private fun resetGameBackQuitState() {
+        gameBackToast?.cancel()
+        gameBackToast = null
+        lastGameBackPressUptimeMs = 0L
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
@@ -602,7 +772,29 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         /** Matches Loader::Splash::ICON_TAPPED_SENTINEL in loader/splash.rb verbatim. */
         private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
 
+        /**
+         * Emitted by the [GameDisplayReadySignal] prepend installed in
+         * start.rb the first time `LiteRGSS::DisplayWindow.new` returns
+         * — i.e., the moment Game.rb's main window exists on the GL
+         * surface. Cue for [hideGameStartOverlay].
+         */
+        private const val GAME_DISPLAY_READY_SENTINEL = "[game-display-ready]"
+
         private const val LOADER_FADE_IN_MS = 80L
+
+        /**
+         * Window inside which a second BACK press is treated as
+         * "confirm quit". Toast LENGTH_SHORT is ~2s, so anything in
+         * that ballpark gives the user the visible toast as their cue
+         * for the second tap.
+         */
+        private const val BACK_QUIT_WINDOW_MS = 2500L
+
+        /** One full rotation duration for the start-overlay icon spin. */
+        private const val GAME_START_ICON_SPIN_MS = 1200L
+
+        /** Fade-out duration for the start overlay when the game is ready. */
+        private const val GAME_START_FADE_MS = 180L
 
         fun hubIntent(activity: AppCompatActivity): Intent =
             Intent(activity, RootActivity::class.java).putExtra(EXTRA_TARGET, TARGET_HUB)

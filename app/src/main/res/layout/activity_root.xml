@@ -32,6 +32,48 @@
         android:layout_height="match_parent"
         android:background="@color/colorBackground" />
 
+    <!-- Game-start overlay: covers the GL surface from the moment the user
+         taps "play" until Game.rb has constructed its DisplayWindow and the
+         first frame is on screen. Holds a spinning project icon + caption
+         so the screen never goes blank during the loader→game handoff (the
+         loader's last frame would otherwise sit frozen for ~seconds while
+         PSDK's require chain runs). Shown / hidden by [RootActivity]; the
+         `[game-display-ready]` sentinel from start.rb is the cue. -->
+    <FrameLayout
+        android:id="@+id/gameStartOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/colorBackground"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <ImageView
+                android:id="@+id/gameStartIcon"
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:src="@drawable/logo"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/gameStartCaption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="Starting…"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textSize="13sp"
+                android:letterSpacing="0.06" />
+        </LinearLayout>
+    </FrameLayout>
+
     <FrameLayout
         android:id="@+id/fragmentContainer"
         android:layout_width="match_parent"

@@ -171,6 +171,40 @@ SafeRunner.run(
   error_log = File.join(Dir.pwd, 'Error.log')
   error_log_mtime_before = File.exist?(error_log) ? File.mtime(error_log) : nil
 
+  # One-shot signal to the Android host: PSDK has constructed its main
+  # window, so the Kotlin-side "starting…" overlay can fade out and
+  # reveal Game.rb's first frame.
+  #
+  # Installed via Module#prepend on LiteRGSS::DisplayWindow rather than
+  # by hooking PSDK directly — PSDK is end-user code we don't own, but
+  # the LiteRGSS API is stable and PSDK necessarily constructs exactly
+  # one DisplayWindow on boot (its Graphics module). The prepend wraps
+  # `initialize`, calls super first (so a constructor failure does NOT
+  # mis-fire the sentinel), then emits on first successful return.
+  #
+  # The @@signaled class variable + the prepend module itself live above
+  # the PSDKVMSnapshot baseline, so restore! reaps both at the end of
+  # this session. Next session starts with no prepend and @@signaled
+  # back to false — re-prepended cleanly on the next run.
+  #
+  # `ancestors.include?` guard is defensive against a restore that
+  # somehow leaves the IClass in the chain (e.g., a native unprepend
+  # failure logged but tolerated). Without it we'd double-prepend and
+  # emit twice — harmless but noisy.
+  unless LiteRGSS::DisplayWindow.ancestors.any? { |a| a.name == 'GameDisplayReadySignal' }
+    module GameDisplayReadySignal
+      @@signaled = false
+      def initialize(*args, **kwargs)
+        super
+        unless @@signaled
+          @@signaled = true
+          VMLogger.info '[game-display-ready]' if defined?(VMLogger)
+        end
+      end
+    end
+    LiteRGSS::DisplayWindow.prepend(GameDisplayReadySignal)
+  end
+
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
   # event constants on every run; Ruby would otherwise spam "already
