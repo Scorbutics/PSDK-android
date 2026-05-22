@@ -24,7 +24,48 @@
         app:titleTextAppearance="@style/TextAppearance.Psdk.ToolbarTitle"
         app:navigationIconTint="@color/colorSplashAccent"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="Compile" />
+        app:title="Compile">
+
+        <!-- Mode toggle for super-user debug-play. Hidden by default; shown
+             by [CompileWizardFragment] only when a project's archive has
+             been validated (so DEBUG is meaningful) and the wizard is not
+             in classic-bootstrap. Selection drives [host.startGame]'s mode
+             argument and the splash CTA text.
+
+             Visual is intentionally minimal: glass-stroke chips that match
+             the pending step indicator + FAB halo palette, so the toggle
+             reads as part of the splash chrome rather than a Material
+             widget on top. See [Widget.Psdk.ModeToggleButton] for the
+             state-list rationale. -->
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/modeToggleGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="@dimen/spacing_md"
+            android:visibility="gone"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/modeReleaseChip"
+                style="@style/Widget.Psdk.ModeToggleButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="Release" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/modeDebugChip"
+                style="@style/Widget.Psdk.ModeToggleButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="Debug" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <!-- Step-indicator block (indicator + its bottom divider). Hidden
          initially and slid down into place when the user taps the logo

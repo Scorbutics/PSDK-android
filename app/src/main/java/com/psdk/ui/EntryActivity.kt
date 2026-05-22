@@ -56,6 +56,11 @@ class EntryActivity : AppCompatActivity() {
      *
      * An APK upgrade (new versionCode) forces back to NEEDS_SETUP so the
      * fresh .epsa gets re-compiled.
+     *
+     * The launch mode (release vs debug-uncompiled) is baked into the APK
+     * at export time via the [META_DATA_CLASSIC_DEFAULT_MODE] manifest tag.
+     * Debug-mode APKs skip the compile pipeline entirely and run Game.rb
+     * straight out of the bundled .epsa.
      */
     private fun classicTarget(): Intent? {
         val prefs = getSharedPreferences(ClassicModeState.PREFS, MODE_PRIVATE)
@@ -67,12 +72,14 @@ class EntryActivity : AppCompatActivity() {
                 .apply()
         }
 
+        val defaultMode = classicDefaultMode()
+
         return when (prefs.getString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_NEEDS_SETUP)) {
             ClassicModeState.STATE_READY -> {
                 // Unified-Activity model: RootActivity hosts the game
                 // in-process via TARGET_DIRECT_GAME (no splash, no
                 // intermediate fragment).
-                RootActivity.directGameIntent(this, applicationInfo.dataDir)
+                RootActivity.directGameIntent(this, applicationInfo.dataDir, defaultMode)
             }
             ClassicModeState.STATE_SETUP_COMPLETE -> {
                 // First launch after a successful wizard run — flip to
@@ -80,9 +87,46 @@ class EntryActivity : AppCompatActivity() {
                 prefs.edit()
                     .putString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_READY)
                     .apply()
-                RootActivity.directGameIntent(this, applicationInfo.dataDir)
+                RootActivity.directGameIntent(this, applicationInfo.dataDir, defaultMode)
             }
-            else -> RootActivity.classicWizardIntent(this, applicationInfo.dataDir)
+            else -> {
+                // Wizard path always uses RELEASE — debug-uncompiled mode is
+                // post-setup. The wizard's job is to produce Release/, which
+                // only matters for the release path; debug-mode APKs skip
+                // the wizard's compile step at the next branch above (the
+                // wizard's compilationSuccess listener writes STATE_SETUP_COMPLETE
+                // which lands us on the directGameIntent branch with the
+                // manifest-supplied mode).
+                RootActivity.classicWizardIntent(this, applicationInfo.dataDir)
+            }
         }
+    }
+
+    /**
+     * Resolve the classic-mode default launch mode from the APK manifest.
+     * `export_android.rb` injects a `<meta-data>` tag during APK assembly when
+     * the maker passes `--debug-mode`. Absent the tag, default to RELEASE.
+     *
+     * Manifest excerpt the export plugin produces:
+     *   <meta-data android:name="com.psdk.CLASSIC_DEFAULT_MODE"
+     *              android:value="debug_uncompiled"/>
+     */
+    private fun classicDefaultMode(): GameMode {
+        val raw = runCatching {
+            packageManager.getApplicationInfo(
+                packageName,
+                android.content.pm.PackageManager.GET_META_DATA,
+            ).metaData?.getString(META_DATA_CLASSIC_DEFAULT_MODE)
+        }.getOrNull()
+        return GameMode.fromEnvValue(raw)
+    }
+
+    companion object {
+        /**
+         * AndroidManifest `<meta-data>` key. Honored only in classic-user mode.
+         * Value is one of [GameMode.envValue]: "release" (default) or
+         * "debug_uncompiled". Anything else falls through to release.
+         */
+        const val META_DATA_CLASSIC_DEFAULT_MODE = "com.psdk.CLASSIC_DEFAULT_MODE"
     }
 }

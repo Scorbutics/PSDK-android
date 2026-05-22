@@ -12,6 +12,8 @@ import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.psdk.AppModeDetector
 import com.psdk.ClassicModeState
 import com.psdk.R
@@ -46,16 +48,42 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     private lateinit var connectors: List<View>
     private lateinit var toolbar: MaterialToolbar
     private lateinit var stepIndicatorBlock: View
+    private lateinit var modeToggleGroup: MaterialButtonToggleGroup
+    private lateinit var modeReleaseChip: MaterialButton
+    private lateinit var modeDebugChip: MaterialButton
 
     private var classicBootstrap: Boolean = false
 
     /**
-     * True iff the project already has a `Release/` dir on disk. In this
-     * mode the wizard shows "Debug Play" in the toolbar, asks the splash
-     * to display "Tap logo to play", and a logo-tap launches the game via
-     * [LoaderHost.startGame] instead of advancing to the compile step.
+     * Persisted across rotations + restarts: which mode the user picked
+     * for this project. Reset to a sensible default (RELEASE if Release/
+     * exists, DEBUG_UNCOMPILED otherwise) the first time the wizard sees
+     * the project. Drives [onIconTapped]'s launch path and the splash CTA.
      */
-    private var debugPlayMode: Boolean = false
+    private var selectedMode: GameMode = GameMode.RELEASE
+
+    /**
+     * True iff the wizard's current screen is "press logo to launch the
+     * game" (vs "press logo to start compiling"). Computed from
+     * [selectedMode] + Release/ presence; updated by [recomputeLaunchReady].
+     *
+     *   selectedMode==RELEASE & Release/ missing → false (compile gate)
+     *   selectedMode==RELEASE & Release/ exists  → true  (launch release)
+     *   selectedMode==DEBUG_UNCOMPILED           → true  (launch debug;
+     *                                              compile step is skipped)
+     *
+     * Suppresses the step indicator and the step-1/step-2 fragments. The
+     * wizard chrome (toolbar) stays so the user can still toggle modes,
+     * trigger Game Logs, delete project, etc.
+     */
+    private var launchReady: Boolean = false
+
+    /**
+     * Set true while we're programmatically calling [MaterialButtonToggleGroup.check]
+     * so the listener it fires can skip its re-entry path. Prevents
+     * "revert visual state" inside the same listener from going recursive.
+     */
+    private var suppressToggleListener = false
 
     /** Guards [slideInStepIndicator] against repeating on rotation. */
     private var stepIndicatorRevealed: Boolean = false
@@ -89,33 +117,40 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
         viewModel.executionLocation.value = executionLocation
 
-        // Detect debug-play mode: a Release/ dir already exists on disk
-        // (built by a prior compile). Mutually exclusive with classic
-        // mode, which pins its own flow.
+        // Resolve initial state. selectedMode comes from per-project prefs;
+        // if none stored, default by Release/ presence (RELEASE if compiled,
+        // else DEBUG_UNCOMPILED — the maker probably hasn't compiled yet).
+        // launchReady tells us whether the splash should say "play" or
+        // "compile"; recomputed any time selectedMode changes or a compile
+        // run finishes.
         val releaseLocation = "$executionLocation/Release"
-        debugPlayMode = !classicBootstrap && File(releaseLocation).exists()
+        val hasRelease = File(releaseLocation).exists()
+        selectedMode = loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease)
+        recomputeLaunchReady(hasRelease)
 
         toolbar = view.findViewById(R.id.toolbar)
         stepIndicatorBlock = view.findViewById(R.id.stepIndicatorBlock)
+        modeToggleGroup = view.findViewById(R.id.modeToggleGroup)
+        modeReleaseChip = view.findViewById(R.id.modeReleaseChip)
+        modeDebugChip = view.findViewById(R.id.modeDebugChip)
         toolbar.setNavigationOnClickListener {
             if ((viewModel.currentStep.value ?: 0) != 1) {
                 requireActivity().onBackPressedDispatcher.onBackPressed()
             }
         }
 
-        if (debugPlayMode) {
-            toolbar.title = "Debug Play"
-        }
+        applyToolbarTitle()
         // Toolbar overflow lives in every super-user flow (compile and
         // debug-play); classic-bootstrap hides the whole chrome so the
         // menu never paints there. Item visibility is mode-dependent:
-        //   - Game Logs: only when the release dir exists (debug-play).
+        //   - Game Logs: only when the release dir exists (a compile has
+        //     run at least once — log files exist to inspect).
         //   - Delete project: any time we know which project this is
         //     (super-user always; classic has no Project entity).
         if (!classicBootstrap) {
             toolbar.inflateMenu(R.menu.compile_wizard_menu)
             val menu = toolbar.menu
-            menu.findItem(R.id.action_game_logs)?.isVisible = debugPlayMode
+            menu.findItem(R.id.action_game_logs)?.isVisible = hasRelease
             menu.findItem(R.id.action_delete_project)?.isVisible = true
             toolbar.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
@@ -171,7 +206,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             // (i.e., the user tapped the logo to begin compiling). Skipped
             // in classic-bootstrap (chrome is hidden whole-cloth) and in
             // debug-play (there's nothing to compile).
-            if (step >= 1 && !classicBootstrap && !debugPlayMode) {
+            if (step >= 1 && !classicBootstrap && !launchReady) {
                 slideInStepIndicator()
             }
         }
@@ -220,17 +255,37 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             }
         }
 
-        if (debugPlayMode) {
-            // Already compiled — the splash shows the project's assets and
-            // a "Tap logo to play" CTA; logo-tap fires LoaderHost.startGame.
-            // No wizard step fragment is mounted (see [navigateToStep]);
-            // the GL surface owns the user's attention.
+        // Set up the toggle. The toggle is meaningful for super-user only —
+        // classic-bootstrap hides its entire chrome via wizardChrome.GONE.
+        // Visibility flips to VISIBLE once the archive validates AND the
+        // wizard is on step 0 (no compile in flight). Selecting Debug
+        // without a compiled Release/ still works — RootActivity resolves
+        // keys on demand and mounts the archive at start.rb's prelude.
+        if (!classicBootstrap) {
+            wireModeToggle()
+            // Show the toggle right now if the wizard opened directly into
+            // a launch-ready state (e.g. existing Release/ on disk). For the
+            // compile flow, the toggle stays hidden until step 0 is
+            // re-reached after a finish/failure dismissal.
+            modeToggleGroup.visibility = if (launchReady) View.VISIBLE else View.GONE
+        }
+
+        if (launchReady) {
+            // Already in a launch-ready state. Project assets are usually
+            // already extracted to <exec>/loader_assets from a prior compile
+            // (release path) or a prior archive validation (debug path).
+            // Drive the splash to those assets immediately; if they don't
+            // exist yet (first debug-launch on a project that hasn't been
+            // compiled), the super-user validation pass below will create
+            // them and the archive observer will catch up.
             val host = requireActivity() as LoaderHost
             val projectAssets = File(executionLocation, "loader_assets")
             if (projectAssets.exists()) {
                 host.setLoaderState(LoaderState.FromExtracted(projectAssets))
             }
-        } else if (classicBootstrap) {
+        }
+
+        if (classicBootstrap) {
             // Off-thread stage + key derivation. Setting viewModel.archive
             // fires the observer above which restarts the loader with
             // archive+prelude bound; loader.rb's own thread then runs
@@ -302,7 +357,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         // compile" CTA is the start-compilation affordance. Debug-play
         // never advances past step 0 — the logo tap launches the game
         // directly via [onIconTapped] — so it stays bare for every step.
-        if (step == 0 || debugPlayMode) {
+        if (step == 0 || launchReady) {
             clearFragmentContainer()
             return
         }
@@ -327,20 +382,23 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     /**
      * Called by [CompileDoneFragment] once the success card finishes its
-     * slide-out animation. Flips the wizard into [debugPlayMode] in-place
+     * slide-out animation. Flips the wizard into launch-ready state in-place
      * — no app restart — so the user can tap the logo to play immediately.
      * Mirrors the bootstrap path in [onViewCreated] / [onLoaderReady], but
      * runs against an already-live wizard rather than a fresh one.
      */
     fun onCompileDoneDismissed() {
         if (!isAdded) return
-        if (debugPlayMode) return
+        if (launchReady) return
         if (viewModel.compilationSuccess.value != true) return
 
-        debugPlayMode = true
-        toolbar.title = "Debug Play"
+        // Release/ exists now (compile.rb produced it). Force launchReady;
+        // selectedMode stays whatever the user last picked (default RELEASE).
+        recomputeLaunchReady(hasRelease = true)
+        applyToolbarTitle()
         if (!classicBootstrap) {
             toolbar.menu.findItem(R.id.action_game_logs)?.isVisible = true
+            modeToggleGroup.visibility = View.VISIBLE
         }
         stepIndicatorBlock.visibility = View.GONE
 
@@ -359,7 +417,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         // payload becomes the new status text.
         try {
             LoaderPaths.statusFile(requireContext())
-                .writeText(SCENE_RESET_SENTINEL + PLAY_CTA)
+                .writeText(SCENE_RESET_SENTINEL + currentPlayCta())
         } catch (e: Exception) {
             android.util.Log.w(TAG, "debug-play CTA write failed", e)
         }
@@ -479,16 +537,16 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     // ── LoaderListener ───────────────────────────────────────────────
 
     override fun onLoaderReady() {
-        if (debugPlayMode) {
+        if (launchReady) {
             // Override loader.rb's default "‹ Tap logo to compile ›" CTA
             // with the play variant. The write also flips
             // `external_status_received` inside the loader so the default
             // CTA branch is suppressed (see loader.rb's
             // poll_external_status).
             try {
-                LoaderPaths.statusFile(requireContext()).writeText(PLAY_CTA)
+                LoaderPaths.statusFile(requireContext()).writeText(currentPlayCta())
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "debug-play CTA write failed", e)
+                android.util.Log.w(TAG, "play CTA write failed", e)
             }
             return
         }
@@ -505,8 +563,17 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     }
 
     override fun onIconTapped() {
-        if (!isAdded) return
-        if (debugPlayMode) {
+        // Diagnostic: every early-return branch logs its reason so a
+        // user-reported "tap log appears but nothing happens" can be
+        // narrowed down without instrumenting the build. Remove once
+        // the launchGame dispatch path is confirmed stable.
+        if (!isAdded) {
+            android.util.Log.w(TAG, "onIconTapped: !isAdded, dropping")
+            return
+        }
+        android.util.Log.i(TAG, "onIconTapped: launchReady=$launchReady mode=$selectedMode " +
+            "step=${viewModel.currentStep.value} archive=${viewModel.archive.value != null}")
+        if (launchReady) {
             launchGame()
             return
         }
@@ -516,15 +583,19 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     }
 
     private fun launchGame() {
-        val executionLocation = viewModel.executionLocation.value ?: return
+        val executionLocation = viewModel.executionLocation.value ?: run {
+            android.util.Log.w(TAG, "launchGame: executionLocation null, dropping")
+            return
+        }
         // Route through the host. RootActivity.startGame performs the
         // in-process workload swap: tears down the loader and enqueues
         // start.rb on a fresh PsdkInterpreter against the same surface.
         val host = requireActivity() as? LoaderHost ?: run {
-            android.util.Log.e("CompileWizard", "host activity is not a LoaderHost; cannot launch game")
+            android.util.Log.e(TAG, "launchGame: host activity is not a LoaderHost")
             return
         }
-        host.startGame(executionLocation)
+        android.util.Log.i(TAG, "launchGame: calling host.startGame(execLoc=$executionLocation, mode=$selectedMode)")
+        host.startGame(executionLocation, selectedMode)
     }
 
     private fun showGameLogs(executionLocation: String, releaseLocation: String) {
@@ -597,6 +668,110 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         super.onDestroyView()
     }
 
+    // ── Mode toggle + launch-ready state plumbing ───────────────────────
+
+    /**
+     * Bind the [Release][Debug] toggle to [selectedMode]: paint the chips,
+     * wire selection → persist + refresh CTA. The toggle group is wrapped
+     * in MaterialButtonToggleGroup with singleSelection + selectionRequired,
+     * so exactly one chip is always lit.
+     */
+    private fun wireModeToggle() {
+        applyModeChips()
+        modeToggleGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (suppressToggleListener) return@addOnButtonCheckedListener
+            if (!isChecked) return@addOnButtonCheckedListener
+            val next = when (checkedId) {
+                R.id.modeReleaseChip -> GameMode.RELEASE
+                R.id.modeDebugChip   -> GameMode.DEBUG_UNCOMPILED
+                else                 -> return@addOnButtonCheckedListener
+            }
+            if (next == selectedMode) return@addOnButtonCheckedListener
+            // Block toggle while a compile is in flight — switching modes
+            // mid-build would orphan the running CompilationEngine.
+            if (viewModel.currentStep.value == 1) {
+                applyModeChips()  // revert visual state (suppress-listener-gated)
+                return@addOnButtonCheckedListener
+            }
+            selectedMode = next
+            val exec = viewModel.executionLocation.value
+            if (exec != null) storeMode(exec, next)
+            val hasRelease = exec?.let { File(it, "Release").exists() } ?: false
+            recomputeLaunchReady(hasRelease)
+            // Refresh the splash CTA in-place. <<RESET>> wipes the scene
+            // state (so a stale tap-animation doesn't get carried over)
+            // and the trailing payload becomes the new status text.
+            try {
+                LoaderPaths.statusFile(requireContext())
+                    .writeText(SCENE_RESET_SENTINEL + currentCta())
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "mode-switch CTA write failed", e)
+            }
+        }
+    }
+
+    private fun applyModeChips() {
+        val targetId = when (selectedMode) {
+            GameMode.RELEASE          -> R.id.modeReleaseChip
+            GameMode.DEBUG_UNCOMPILED -> R.id.modeDebugChip
+        }
+        if (modeToggleGroup.checkedButtonId != targetId) {
+            suppressToggleListener = true
+            try {
+                modeToggleGroup.check(targetId)
+            } finally {
+                suppressToggleListener = false
+            }
+        }
+    }
+
+    /**
+     * Update [launchReady] from current state. Called any time the wizard
+     * transitions between compile-pending and launch-ready — initial view
+     * creation, mode toggle, post-compile dismiss.
+     */
+    private fun recomputeLaunchReady(hasRelease: Boolean) {
+        launchReady = when (selectedMode) {
+            GameMode.RELEASE          -> hasRelease
+            GameMode.DEBUG_UNCOMPILED -> true
+        }
+    }
+
+    /** Title shown in the toolbar — communicates "we're about to launch". */
+    private fun applyToolbarTitle() {
+        toolbar.title = when {
+            classicBootstrap                                -> "Setup"
+            launchReady && selectedMode == GameMode.RELEASE -> "Play Release"
+            launchReady                                     -> "Play Debug"
+            else                                            -> "Compile"
+        }
+    }
+
+    /**
+     * CTA payload for the splash text. Shape varies by state:
+     *   launch-ready + RELEASE → "< Tap logo to play >"
+     *   launch-ready + DEBUG   → "< Tap logo to play (Debug) >"
+     *   compile-pending        → "< Tap logo to compile >"
+     */
+    private fun currentCta(): String = if (launchReady) currentPlayCta() else COMPILE_CTA
+
+    private fun currentPlayCta(): String = when (selectedMode) {
+        GameMode.RELEASE          -> PLAY_CTA
+        GameMode.DEBUG_UNCOMPILED -> PLAY_CTA_DEBUG
+    }
+
+    private fun loadStoredMode(executionLocation: String, defaultIfReleaseExists: Boolean): GameMode {
+        val prefs = requireContext().getSharedPreferences(PREFS_MODE, Context.MODE_PRIVATE)
+        val raw = prefs.getString(executionLocation, null)
+        if (raw != null) return GameMode.fromEnvValue(raw)
+        return if (defaultIfReleaseExists) GameMode.RELEASE else GameMode.DEBUG_UNCOMPILED
+    }
+
+    private fun storeMode(executionLocation: String, mode: GameMode) {
+        val prefs = requireContext().getSharedPreferences(PREFS_MODE, Context.MODE_PRIVATE)
+        prefs.edit().putString(executionLocation, mode.envValue()).apply()
+    }
+
     companion object {
         const val ARG_EXECUTION_LOCATION = "EXECUTION_LOCATION"
 
@@ -637,6 +812,15 @@ class CompileWizardFragment : Fragment(), LoaderListener {
          * in debug-play mode once the splash is ready.
          */
         private const val PLAY_CTA = "< Tap logo to play >"
+
+        /**
+         * CTA for [GameMode.DEBUG_UNCOMPILED]: tap launches Game.rb directly
+         * off the PhysFS-mounted .epsa, skipping the compile pipeline.
+         */
+        private const val PLAY_CTA_DEBUG = "< Tap logo to play (Debug) >"
+
+        /** SharedPreferences file holding per-project [GameMode] selections. */
+        private const val PREFS_MODE = "WIZARD_MODE_SELECTION"
 
         /**
          * Restores the loader's default CTA after a failed compile is

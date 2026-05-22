@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Background-tint state list for the wizard's [Release][Debug] toggle.
+
+  Checked  → solid splash accent (the chip reads as "I am the active one")
+  Idle     → transparent so the GL splash bleeds through, matching the
+             pending step indicator's stroke-only ring.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/colorSplashAccent" />
+    <item android:color="@android:color/transparent" />
+</selector>

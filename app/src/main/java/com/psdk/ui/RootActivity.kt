@@ -148,8 +148,10 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             val directExecLoc = directGamePendingExecLocation
             when {
                 directExecLoc != null -> {
+                    val mode = directGamePendingMode
                     directGamePendingExecLocation = null
-                    startGame(directExecLoc)
+                    directGamePendingMode = GameMode.RELEASE
+                    startGame(directExecLoc, mode)
                 }
                 workloadController.currentWorkload() == null -> {
                     // Only fall back to "start the default loader" if
@@ -181,6 +183,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             // installed above unconditionally starts the loader; suppress
             // that by setting a flag the callback consults.
             directGamePendingExecLocation = executionLocation
+            directGamePendingMode = GameMode.fromEnvValue(
+                intent.getStringExtra(EXTRA_GAME_MODE)
+            )
             return
         }
 
@@ -204,6 +209,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      * callback skips the loader and goes straight to startGame.
      */
     private var directGamePendingExecLocation: String? = null
+
+    /** Pairs with [directGamePendingExecLocation]; default RELEASE if no extra was set. */
+    private var directGamePendingMode: GameMode = GameMode.RELEASE
 
     /**
      * Dispatcher for log lines coming out of the workload's Ruby
@@ -238,6 +246,17 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     }
 
     private fun handleWorkloadLog(logMessage: LogMessage) {
+        // TEMP diagnostic: confirm the LogListener pipeline is actually
+        // delivering loader-side messages here. If the user's repeated
+        // taps fire ICON_TAPPED on the Ruby side but we never see this
+        // log line, that proves the native-side stdout-to-logcat path is
+        // independent of our LogListener, and the listener isn't wired
+        // to the persistent interpreter's output. Logged only for the
+        // tap sentinel to avoid logspam from the frame-per-second feed.
+        if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
+            android.util.Log.i(TAG, "handleWorkloadLog: ICON_TAPPED entry " +
+                "(currentWorkload=${workloadController.currentWorkload()?.name})")
+        }
         val workload = workloadController.currentWorkload() ?: return
         if (workload !is RubyWorkload.Loader) return
 
@@ -277,7 +296,16 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             }
         }
         if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
-            glSurface.post { loaderListener?.onIconTapped() }
+            // Diagnostic: surface whether the dispatch reaches a non-null
+            // listener. "tap log appears but nothing happens" reports
+            // routinely reduce to "listener was null at dispatch time"
+            // (fragment view destroyed in the gap between the loader's
+            // emit and glSurface.post running on the UI thread).
+            glSurface.post {
+                val listener = loaderListener
+                android.util.Log.i(TAG, "ICON_TAPPED dispatch: listener=${listener?.javaClass?.simpleName}")
+                listener?.onIconTapped()
+            }
         }
     }
 
@@ -371,7 +399,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         )
     }
 
-    override fun startGame(executionLocation: String) {
+    override fun startGame(executionLocation: String, mode: GameMode) {
         // In-process workload swap on the SAME persistent interpreter
         // and render thread the loader is running on. The controller
         // pushes Closed to signal the loader's script to unwind; the
@@ -379,7 +407,24 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // controller then enqueues start.rb on the same interpreter.
         // Same surface, same EGL context, same render thread — no
         // handoff, no race.
-        configureGameEnv(executionLocation)
+        //
+        // DEBUG_UNCOMPILED needs the archive keys bound for the start.rb
+        // prelude to mount PhysFS. Resolve them off the staged .epsa via
+        // the same path the wizard uses; if resolution fails, fall back
+        // to RELEASE so we don't end up running with no Game.rb visible.
+        val resolvedArchive = if (mode == GameMode.DEBUG_UNCOMPILED) {
+            val keys = com.psdk.compilation.ArchiveValidator.resolveKeys(
+                this,
+                com.psdk.compilation.ArchiveValidator.getStagingFile(executionLocation),
+            )
+            if (keys == null) {
+                android.util.Log.e(TAG, "DEBUG_UNCOMPILED requested but archive keys did not resolve; aborting")
+                return
+            }
+            keys
+        } else null
+
+        configureGameEnv(executionLocation, mode)
         systemUi.enterGameMode()
         glSurfaceOverlay.alpha = 0f
         inputForwarder.start()
@@ -387,7 +432,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         workloadController.start(
             RubyWorkload.Game(
                 executionLocation = executionLocation,
-                preludes = START_PRELUDES,
+                mode = mode,
+                archive = resolvedArchive,
+                preludes = if (mode == GameMode.DEBUG_UNCOMPILED) START_PRELUDES_DEBUG else START_PRELUDES,
             )
         )
     }
@@ -398,11 +445,19 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      * Called from [startGame] right before the controller enqueues
      * the game workload.
      */
-    private fun configureGameEnv(executionLocation: String) {
-        val releaseLocation = "$executionLocation/Release"
+    private fun configureGameEnv(executionLocation: String, mode: GameMode) {
+        // The error log lives next to whichever Game.rb actually ran:
+        //   RELEASE          → <exec>/Release/Error.log  (PSDK's traditional spot)
+        //   DEBUG_UNCOMPILED → <exec>/Error.log         (we chdir to <exec>)
+        val errorLogLocation = if (mode == GameMode.DEBUG_UNCOMPILED) {
+            executionLocation
+        } else {
+            "$executionLocation/Release"
+        }
         android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
         android.system.Os.setenv("RGSS_LOG_FILE", "$executionLocation/last_stdout.log", true)
-        android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$releaseLocation/Error.log", true)
+        android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$errorLogLocation/Error.log", true)
+        android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
 
         try {
             FileWriter("$executionLocation/last_stdout.log", false).flush()
@@ -482,6 +537,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     companion object {
         const val EXTRA_TARGET = "TARGET"
         const val EXTRA_EXECUTION_LOCATION = "EXECUTION_LOCATION"
+        /** Optional [GameMode] envValue ("release" | "debug_uncompiled"); only honored when [TARGET_DIRECT_GAME]. */
+        const val EXTRA_GAME_MODE = "GAME_MODE"
 
         const val TARGET_HUB = "HUB"
         const val TARGET_CLASSIC_WIZARD = "CLASSIC_WIZARD"
@@ -516,9 +573,27 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             "loader/splash.rb",
         )
 
-        /** Helper modules concatenated before start.rb. Same convention as LOADER_PRELUDES. */
+        /** Helper modules concatenated before start.rb in RELEASE mode. */
         private val START_PRELUDES = listOf(
             "psdk_vm_snapshot.rb",
+        )
+
+        /**
+         * Helper modules for DEBUG_UNCOMPILED mode. start.rb's debug branch
+         * needs EpsaFormat / EpsaStream / ArchiveMount in scope to mount the
+         * encrypted .epsa via PhysFS. All three are `unless defined?`-guarded
+         * so re-eval across runs on the persistent VM is safe; the
+         * PSDKVMSnapshot.restore! call in start.rb's ensure reaps them
+         * between launches.
+         *
+         * psdk_vm_snapshot.rb MUST stay first — its auto-capture freezes the
+         * baseline before any of the archive modules get added.
+         */
+        private val START_PRELUDES_DEBUG = listOf(
+            "psdk_vm_snapshot.rb",
+            "lib/epsa_format.rb",
+            "lib/epsa_stream.rb",
+            "lib/archive_mount.rb",
         )
 
         /** Matches Loader::Splash::READY_SENTINEL in loader/splash.rb verbatim. */
@@ -537,9 +612,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                 .putExtra(EXTRA_TARGET, TARGET_CLASSIC_WIZARD)
                 .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
 
-        fun directGameIntent(activity: android.app.Activity, executionLocation: String): Intent =
+        fun directGameIntent(
+            activity: android.app.Activity,
+            executionLocation: String,
+            mode: GameMode = GameMode.RELEASE,
+        ): Intent =
             Intent(activity, RootActivity::class.java)
                 .putExtra(EXTRA_TARGET, TARGET_DIRECT_GAME)
                 .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
+                .putExtra(EXTRA_GAME_MODE, mode.envValue())
     }
 }

@@ -79,8 +79,24 @@ SafeRunner.run(
   error_log_path: ENV['RGSS_ERROR_LOG_FILE']
 ) do
   execution_location = ENV['RGSS_EXECUTION_LOCATION']
+  game_mode          = ENV.fetch('RGSS_GAME_MODE', 'release')
 
-  if execution_location && !execution_location.empty?
+  # Mode dispatch:
+  #   release          → chdir into <exec>/Release; require './Game.rb' from
+  #                      the real FS. Same path as before this branch existed.
+  #   debug_uncompiled → chdir to <exec>; ArchiveMount.mount! the .epsa so
+  #                      PSDK's File/Dir reads route through the PhysFS shim,
+  #                      and `require './Game.rb'` resolves to the archive
+  #                      copy. PSDK is told to skip its in-game compilation
+  #                      pass (skip_lib, skip_binary): the .epsa already ships
+  #                      precompiled .dat files, so there's nothing to rebuild.
+  if game_mode == 'debug_uncompiled'
+    if execution_location.nil? || execution_location.empty?
+      raise "[start.rb] debug_uncompiled mode requires RGSS_EXECUTION_LOCATION"
+    end
+    VMLogger.info "[start.rb] Changing to debug uncompiled directory: #{execution_location}"
+    Dir.chdir(execution_location)
+  elsif execution_location && !execution_location.empty?
     release_dir = File.join(execution_location, 'Release')
     VMLogger.info "[start.rb] Changing to release directory: #{release_dir}"
     Dir.chdir(release_dir)
@@ -89,25 +105,58 @@ SafeRunner.run(
     Dir.chdir './Release'
   end
 
-  VMLogger.info "[start.rb] Current directory after chdir: #{Dir.pwd}"
+  VMLogger.info "[start.rb] Mode: #{game_mode}; cwd: #{Dir.pwd}"
 
   # DIAG: log whether PhysFS is still mounted from a prior workload.
-  # In the open-app → start-game path nothing should have mounted the
-  # archive, so this should print "PhysFS not mounted". If it prints
-  # mounted=true, some earlier workload (copy_saves.rb / extract_loader_assets.rb
-  # / compile.rb's check_engine.rb prelude) leaked a mount and File.read /
-  # Dir.glob during the game session are silently routing through the
-  # PhysFS shim, which could surface as shader files read from the
-  # decrypted-stream pipeline instead of disk.
+  # In the release path nothing on the persistent VM should have mounted
+  # the archive — if this prints mounted=true on release we leaked a mount
+  # somewhere. In debug_uncompiled the mount happens below, AFTER this
+  # diagnostic, so it will (correctly) still report unmounted here.
   if defined?(PhysFS) && defined?(ArchiveMount)
-    VMLogger.info "[start.rb][DIAG] PhysFS mounted? #{ArchiveMount.mounted? rescue 'probe failed'}"
+    VMLogger.info "[start.rb][DIAG] PhysFS mounted on entry? #{ArchiveMount.mounted? rescue 'probe failed'}"
   else
     VMLogger.info "[start.rb][DIAG] PhysFS / ArchiveMount module not loaded — definitely not mounted"
   end
 
-  ARGV << 'verbose'
-  ARGV << 'fullscreen'
-  ARGV << "--scale=4"
+  # Spike Stage 1: take a baseline of the VM state right before Game.rb
+  # runs. Idempotent across sessions — the first call wins, subsequent
+  # game launches diff against the same baseline. log_diff! in the
+  # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
+  # In practice the first call already happened at the top of the prelude
+  # (psdk_vm_snapshot.rb's auto-capture); this is a no-op + lifecycle doc.
+  PSDKVMSnapshot.capture!
+
+  if game_mode == 'debug_uncompiled'
+    # PSDK writes saves / project.studio / .gameopts through PhysFS.write_dir
+    # onto the real FS. Anchor that at <exec> so saves end up in
+    # <exec>/Saves/ (separate from <exec>/Release/Saves used by release mode
+    # — keeps a debug-run bug from corrupting a release save).
+    PhysFS.write_dir = Dir.pwd.end_with?('/') ? Dir.pwd : "#{Dir.pwd}/"
+    ArchiveMount.mount!
+    raise "[start.rb] debug_uncompiled: archive mount failed" unless ArchiveMount.mounted?
+
+    # Markers PSDK reads at boot. Same scaffolding compile.rb sets up — without
+    # them PSDK's data-text loader raises and KeyBinding.load_inputs tries to
+    # write into a missing dir.
+    studio_marker = File.join(PhysFS.write_dir, 'project.studio')
+    File.write(studio_marker, '') unless File.exist?(studio_marker)
+    saves_dir = File.join(PhysFS.write_dir, 'Saves')
+    Dir.mkdir(saves_dir) rescue Errno::EEXIST
+    input_path = File.join(saves_dir, 'input.json')
+    File.write(input_path, '{}') unless File.exist?(input_path)
+    # Stale --util payload from a prior compile run on this VM would silently
+    # redirect Game.rb. Clear it.
+    File.delete(File.join(PhysFS.write_dir, '.gameopts')) rescue nil
+
+    # Tell PSDK to boot straight into the game: skip the in-engine script /
+    # binary recompile pass. The archive already ships precompiled .dat files.
+    ARGV << 'skip_lib' unless ARGV.include?('skip_lib')
+    ARGV << 'skip_binary' unless ARGV.include?('skip_binary')
+  end
+
+  ARGV << 'verbose'    unless ARGV.include?('verbose')
+  ARGV << 'fullscreen' unless ARGV.include?('fullscreen')
+  ARGV << '--scale=4'  unless ARGV.include?('--scale=4')
 
   ENV['PSDK_SHADER_IMPL'] = ''
   ENV['PSDK_SHADER_VERSION'] = ''
@@ -121,12 +170,6 @@ SafeRunner.run(
   # contents if it appeared or was touched during this run.
   error_log = File.join(Dir.pwd, 'Error.log')
   error_log_mtime_before = File.exist?(error_log) ? File.mtime(error_log) : nil
-
-  # Spike Stage 1: take a baseline of the VM state right before Game.rb
-  # runs. Idempotent across sessions — the first call wins, subsequent
-  # game launches diff against the same baseline. log_diff! in the
-  # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
-  PSDKVMSnapshot.capture!
 
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
@@ -145,6 +188,13 @@ SafeRunner.run(
       VMLogger.error "[start.rb] --- Error.log contents (#{error_log}) ---"
       File.read(error_log).each_line { |line| VMLogger.error line.chomp }
       VMLogger.error "[start.rb] --- end of Error.log ---"
+    end
+    # Unmount BEFORE PSDKVMSnapshot.restore! — restore manipulates the
+    # filesystem-shim state (PhysFS modules, $LOADED_FEATURES entries) and we
+    # don't want it doing that while a mount is live. Symmetric with
+    # extract_loader_assets.rb. Idempotent: noop in release mode and on retry.
+    if defined?(ArchiveMount)
+      ArchiveMount.unmount! rescue nil
     end
     # Spike Stage 2: log what changed (diagnostic), then restore the VM
     # to the captured baseline so the next game launch on this same VM

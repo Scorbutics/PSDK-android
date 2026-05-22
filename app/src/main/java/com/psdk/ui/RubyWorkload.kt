@@ -63,13 +63,52 @@ sealed class RubyWorkload {
      * The game itself (start.rb → Game.yarb). When this workload is
      * active, the host hides shell UI and routes hardware input
      * through [GameInputForwarder] / [ImeBridge].
+     *
+     * Two launch modes:
+     *   - [GameMode.RELEASE]: start.rb chdir's into `<exec>/Release` and
+     *     `require './Game.rb'` against the real FS. No archive needed.
+     *   - [GameMode.DEBUG_UNCOMPILED]: start.rb mounts [archive] via PhysFS
+     *     and `require './Game.rb'` against the encrypted .epsa, skipping
+     *     PSDK's project_compilation pipeline. [archive] MUST be non-null
+     *     for this mode.
      */
     data class Game(
         override val executionLocation: String,
+        val mode: GameMode = GameMode.RELEASE,
+        override val archive: ArchiveKeys? = null,
         override val preludes: List<String> = emptyList(),
     ) : RubyWorkload() {
+        init {
+            if (mode == GameMode.DEBUG_UNCOMPILED) {
+                require(archive != null) {
+                    "GameMode.DEBUG_UNCOMPILED requires a non-null archive"
+                }
+            }
+        }
         override val scriptAsset: String = "start.rb"
-        override val archive: ArchiveKeys? = null
         override val name: String = "game"
+    }
+}
+
+/**
+ * Selects which on-disk layout `start.rb` runs against. See [RubyWorkload.Game].
+ */
+enum class GameMode {
+    /** Real FS, `<exec>/Release` (the artifact of compile.rb / project_compilation). */
+    RELEASE,
+    /** PhysFS-mounted .epsa, no precompile needed. PSDK boots with skip_lib / skip_binary. */
+    DEBUG_UNCOMPILED;
+
+    fun envValue(): String = when (this) {
+        RELEASE          -> "release"
+        DEBUG_UNCOMPILED -> "debug_uncompiled"
+    }
+
+    companion object {
+        /** Inverse of [envValue]. Unknown values fall back to [RELEASE]. */
+        fun fromEnvValue(value: String?): GameMode = when (value) {
+            "debug_uncompiled" -> DEBUG_UNCOMPILED
+            else               -> RELEASE
+        }
     }
 }

@@ -33,7 +33,11 @@ interface LoaderHost {
     fun setLoaderState(state: LoaderState)
 
     /**
-     * Request that the host start the game workload for [executionLocation].
+     * Request that the host start the game workload for [executionLocation]
+     * in the chosen [mode]. When [mode] is [GameMode.DEBUG_UNCOMPILED] the
+     * host MUST already have the project's archive keys resolved — the
+     * implementation surfaces them via env vars so start.rb's prelude can
+     * `ArchiveMount.mount!` from the encrypted .epsa.
      *
      * Implemented by [RootActivity] as an in-process script swap on
      * the persistent interpreter: the controller pushes Closed to
@@ -42,7 +46,7 @@ interface LoaderHost {
      * the loader was running on. No interpreter destroy, no thread
      * handoff, no surface destroy/create cycle.
      */
-    fun startGame(executionLocation: String)
+    fun startGame(executionLocation: String, mode: GameMode = GameMode.RELEASE)
 }
 
 interface LoaderListener {
