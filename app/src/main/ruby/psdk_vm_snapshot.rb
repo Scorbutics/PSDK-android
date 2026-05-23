@@ -656,11 +656,54 @@ module PSDKVMSnapshot
     # are skipped — they're either read-only or special-purpose.
     GLOBAL_NAME_RE = /\A\$[a-zA-Z_][a-zA-Z0-9_]*\z/
 
+    # Globals whose names match GLOBAL_NAME_RE but are actually aliases for
+    # Ruby's special globals ($/, $\, $stdin, …). Setting these to nil
+    # propagates through to the underlying special — and some have
+    # catastrophic side effects that aren't surfaced as exceptions:
+    #
+    #   $INPUT_RECORD_SEPARATOR / $RS  → $/  — IO#gets uses this to stop
+    #     reading. The persistent VM's fifo dispatcher in fifo_interpreter.rb
+    #     pumps scripts via `socket.gets`; with $/ = nil, `gets` reads until
+    #     EOF instead of stopping at \n, hangs forever, and every subsequent
+    #     enqueue is silently swallowed by the pipe. That was the silent-
+    #     loader bug.
+    #
+    #   $OUTPUT_RECORD_SEPARATOR / $ORS  → $\, $FIELD_SEPARATOR / $FS  → $;,
+    #   $OUTPUT_FIELD_SEPARATOR / $OFS  → $,, $LAST_READ_LINE → $_  —
+    #     same alias mechanism, lesser blast radius, still risky to clobber.
+    #
+    #   Ruby itself protects $stdin/$stdout/$stderr/$>/$<  (TypeError on
+    #   nil), and most $LAST_*/$ERROR_* aliases are read-only (NameError
+    #   on assignment) — so the loop's rescue catches and moves on. But $/
+    #   and friends accept nil silently, which is what made this bug subtle.
+    #
+    # The English library installs these aliases lazily (post-baseline) so
+    # they show up in our "added since baseline" set. We skip them here.
+    # PSDK app globals ($game_*, $data_*, $scene, $loader_screen, …) aren't
+    # in this list and stay nillable for GC.
+    RUBY_BUILTIN_GLOBAL_ALIASES = %i[
+      $stdin $stdout $stderr
+      $DEFAULT_INPUT $DEFAULT_OUTPUT $DEFERR $defout $deferr
+      $INPUT_RECORD_SEPARATOR $RS
+      $OUTPUT_RECORD_SEPARATOR $ORS
+      $FIELD_SEPARATOR $FS
+      $OUTPUT_FIELD_SEPARATOR $OFS
+      $LAST_READ_LINE $LAST_MATCH_INFO
+      $POSTMATCH $PREMATCH $MATCH $LAST_PAREN_MATCH
+      $ERROR_INFO $ERROR_POSITION
+      $PID $PROCESS_ID $CHILD_STATUS
+      $INPUT_LINE_NUMBER $NR
+      $ARGV $LOAD_PATH $LOADED_FEATURES
+      $IGNORECASE
+      $VERBOSE $DEBUG $PROGRAM_NAME
+    ].each_with_object({}) { |n, h| h[n] = true }.freeze
+
     def restore_globals(errors)
       current = capture_globals
 
       (current.keys - @snapshot[:global_vars].keys).each do |name|
         next unless GLOBAL_NAME_RE.match?(name.to_s)
+        next if RUBY_BUILTIN_GLOBAL_ALIASES.key?(name)
         begin
           eval("->(v) { #{name} = v }").call(nil)
         rescue StandardError => e
@@ -670,6 +713,7 @@ module PSDKVMSnapshot
 
       @snapshot[:global_vars].each do |name, value|
         next unless GLOBAL_NAME_RE.match?(name.to_s)
+        next if RUBY_BUILTIN_GLOBAL_ALIASES.key?(name)
         next unless current.key?(name)
         next if current[name].equal?(value)
         begin
