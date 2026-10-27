@@ -123,6 +123,9 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         // launchReady tells us whether the splash should say "play" or
         // "compile"; recomputed any time selectedMode changes or a compile
         // run finishes.
+        // A compilation killed mid-run leaves a partial Release next to the
+        // ReleaseBackup holding the last good build: restore it first.
+        CompilationEngine.recoverInterruptedCompilation(executionLocation)
         val releaseLocation = "$executionLocation/Release"
         val hasRelease = File(releaseLocation).exists()
         selectedMode = loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease)

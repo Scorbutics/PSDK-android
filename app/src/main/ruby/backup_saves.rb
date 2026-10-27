@@ -7,10 +7,14 @@ require 'fileutils'
 RELEASE_DIR = './Release'        unless defined?(RELEASE_DIR)
 BACKUP_DIR  = './ReleaseBackup'  unless defined?(BACKUP_DIR)
 
-# Clean any stale backup from a previous failed attempt
-FileUtils.rm_rf(BACKUP_DIR) if File.exist?(BACKUP_DIR)
-
-if File.exist?(RELEASE_DIR) && File.directory?(RELEASE_DIR)
+if File.directory?(BACKUP_DIR)
+  # A previous compilation was interrupted (process killed) after the backup step: the backup
+  # still holds the user saves, while Release is a partial build. Keep the backup, drop Release.
+  # CompilationEngine.recoverInterruptedCompilation normally restores it before we get here.
+  FileUtils.rm_rf(RELEASE_DIR)
+  STDERR.puts "Kept #{BACKUP_DIR} from an interrupted compilation, removed the partial #{RELEASE_DIR}"
+  puts "Previous Release backup kept (interrupted compilation)."
+elsif File.directory?(RELEASE_DIR)
   File.rename(RELEASE_DIR, BACKUP_DIR)
   STDERR.puts "Renamed #{RELEASE_DIR} to #{BACKUP_DIR}"
   puts "Release folder backed up successfully."

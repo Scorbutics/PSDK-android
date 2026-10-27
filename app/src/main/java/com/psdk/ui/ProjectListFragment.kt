@@ -32,6 +32,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
+import com.psdk.compilation.CompilationEngine
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
 import com.psdk.zip.EpsaArchive
@@ -188,6 +189,7 @@ class ProjectListFragment : Fragment() {
         val name = slot.findViewById<TextView>(R.id.satelliteName)
 
         val isReadable = File(project.directory).canRead()
+        if (isReadable) CompilationEngine.recoverInterruptedCompilation(project.directory)
         val hasRelease = File(project.directory, "Release").exists()
 
         name.text = project.name

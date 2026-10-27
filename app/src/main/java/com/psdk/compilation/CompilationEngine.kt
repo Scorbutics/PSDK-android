@@ -1,6 +1,7 @@
 package com.psdk.compilation
 
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import com.psdk.CompileStepData
 import com.psdk.CompileStepLogs
@@ -14,6 +15,7 @@ import com.scorbutics.rubyvm.LogLevel
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -85,6 +87,7 @@ class CompilationEngine(
     }
 
     fun start() {
+        activeEngines.add(this)
         val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder())
         val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up previous Release", CompileStepStatus.READY), StringBuilder())
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder())
@@ -236,6 +239,7 @@ class CompilationEngine(
     fun close() {
         if (closed) return
         closed = true
+        activeEngines.remove(this)
         callback = null
         interpreter?.close()
         interpreter = null
@@ -245,24 +249,7 @@ class CompilationEngine(
     }
 
     private fun restoreReleaseBackup(failedStepIndex: Int) {
-        val releaseDir = File(executionLocation, "Release")
-        val backupDir = File(executionLocation, "ReleaseBackup")
-        if (!backupDir.exists()) {
-            callback?.onLogMessage(failedStepIndex, "No Release backup to restore.")
-            return
-        }
-        try {
-            if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
-                callback?.onLogMessage(failedStepIndex, "Warning: failed to fully clean Release folder before restore.")
-            }
-            if (backupDir.renameTo(releaseDir)) {
-                callback?.onLogMessage(failedStepIndex, "Restored previous Release folder from backup.")
-            } else {
-                callback?.onLogMessage(failedStepIndex, "Error: failed to rename ReleaseBackup back to Release.")
-            }
-        } catch (ex: Exception) {
-            callback?.onLogMessage(failedStepIndex, "Error while restoring backup: ${ex.localizedMessage}")
-        }
+        restoreReleaseBackup(executionLocation) { callback?.onLogMessage(failedStepIndex, it) }
     }
 
     fun getAllLogs(): List<CompileStepLogs> = allStepLogs.toList()
@@ -308,6 +295,58 @@ class CompilationEngine(
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
         const val COMPILATION_LOG_FILE = "last_compilation.log"
         const val COMPILATION_ERROR_LOG_FILE = "last_compilation_errors.log"
+        private const val TAG = "CompilationEngine"
+
+        // Engines started in this process; an engine counts as running until
+        // it finishes or is closed. Lets [recoverInterruptedCompilation] tell
+        // a live ReleaseBackup (mid-compile) from an orphaned one.
+        private val activeEngines: MutableSet<CompilationEngine> = ConcurrentHashMap.newKeySet()
+
+        private fun isCompiling(executionLocation: String): Boolean {
+            activeEngines.removeIf { it.isFinished() }
+            val target = File(executionLocation).absoluteFile.normalize()
+            return activeEngines.any { File(it.executionLocation).absoluteFile.normalize() == target }
+        }
+
+        /**
+         * Restore the previous Release when a compilation was interrupted
+         * before it could clean up (process killed, engine closed mid-run).
+         * ReleaseBackup then still holds the last good build and the user
+         * saves, while Release is a partial build that must not be launched.
+         * No-op while a compilation is running on [executionLocation] in this
+         * process. Call it before reading the Release state of a project.
+         *
+         * @return true if a backup was restored.
+         */
+        fun recoverInterruptedCompilation(executionLocation: String): Boolean {
+            if (!File(executionLocation, "ReleaseBackup").isDirectory || isCompiling(executionLocation)) {
+                return false
+            }
+            Log.w(TAG, "Interrupted compilation detected in $executionLocation, restoring the previous Release")
+            return restoreReleaseBackup(executionLocation) { Log.w(TAG, it) }
+        }
+
+        private fun restoreReleaseBackup(executionLocation: String, log: (String) -> Unit): Boolean {
+            val releaseDir = File(executionLocation, "Release")
+            val backupDir = File(executionLocation, "ReleaseBackup")
+            if (!backupDir.exists()) {
+                log("No Release backup to restore.")
+                return false
+            }
+            try {
+                if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                    log("Warning: failed to fully clean Release folder before restore.")
+                }
+                if (backupDir.renameTo(releaseDir)) {
+                    log("Restored previous Release folder from backup.")
+                    return true
+                }
+                log("Error: failed to rename ReleaseBackup back to Release.")
+            } catch (ex: Exception) {
+                log("Error while restoring backup: ${ex.localizedMessage}")
+            }
+            return false
+        }
 
         // Ruby preludes prepended to scripts that mount the archive. They
         // define EpsaFormat, EpsaStream, and ArchiveMount so check_engine.rb
