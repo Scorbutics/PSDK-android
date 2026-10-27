@@ -119,6 +119,23 @@ class RubyWorkloadController(
     }
 
     /**
+     * Notify the controller that the GL surface was detached (activity
+     * hidden). A running workload keeps running — SFML handles the
+     * detach/attach cycle itself — but new launches are held until the
+     * next [onSurfaceReady]. A script that constructs its DisplayWindow
+     * while no surface is attached renders nothing (black screen), e.g.
+     * the loader restarted from the game's activity result, which
+     * arrives before the shell's surface comes back.
+     *
+     * Safe to call from any thread.
+     */
+    fun onSurfaceLost() {
+        synchronized(lock) {
+            surfaceReady = false
+        }
+    }
+
+    /**
      * Request [workload] become the active workload.
      *
      * Non-blocking. Behaviour by current state:

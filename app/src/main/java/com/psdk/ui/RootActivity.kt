@@ -41,12 +41,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
     /**
      * Fires when [GameActivity] finishes — whatever the exit path, and even
-     * if the `:game` process died — so the splash comes back. Unconditional:
-     * [startGame] stopped the loader, so it is either gone or still
-     * unwinding (fast game exit), and the controller queues the restart
-     * behind the unwind in that case. Delivered before the fragments'
+     * if the `:game` process died — so the splash comes back with a fresh
+     * scene. The loader kept running behind the game (see [startGame]), so
+     * this is a swap: Closed now, relaunch queued behind the unwind.
+     * Delivered before the fragments'
      * onResume, whose setLoaderState then sees the loader queued and
-     * no-ops.
+     * no-ops. Also delivered before the SurfaceView re-attaches, so the
+     * restart stays pending until onSurfaceReady (see
+     * [RubyWorkloadController.onSurfaceLost]).
      */
     private val gameLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -152,6 +154,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             if (workloadController.currentWorkload() == null) {
                 startLoaderForCurrentState()
             }
+        }
+        glSurface.onSurfaceLost = {
+            workloadController.onSurfaceLost()
         }
 
         val target = intent.getStringExtra(EXTRA_TARGET) ?: TARGET_HUB
@@ -350,11 +355,18 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     override fun startGame(executionLocation: String, mode: GameMode) {
         // The game runs in GameActivity's own `:game` process, so it always
         // starts on a fresh Ruby VM and its state is thrown away with the
-        // process on exit. Stop the loader first: the shell surface is
-        // about to be hidden, and there's no point keeping it rendering
-        // (and holding GPU memory) behind the game. [gameLauncher]'s result
-        // callback restarts it on return.
-        workloadController.stop()
+        // process on exit. [gameLauncher]'s result callback restarts the
+        // loader on return.
+        //
+        // The loader is deliberately NOT stopped here: it must keep pumping
+        // SFML events while the shell surface is detached, exactly like a
+        // home-button round trip. If nothing pumps between the detach
+        // (LostFocus) and the re-attach (GainedFocus), SFML cancels the
+        // pending EGL-surface destroy and EglContext::createSurface later
+        // unbinds the context with a raw eglMakeCurrent behind
+        // GlContext's back — the next loader then draws with no current
+        // context (black screen). While detached the loader doesn't draw
+        // (beginHostedDraw gate) and only ticks input.
         gameLauncher.launch(GameActivity.intent(this, executionLocation, mode, isClassicMode))
     }
 
