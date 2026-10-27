@@ -65,8 +65,5 @@ if !restored_from_backup
   end
 end
 
-# Clean up backup now that compilation succeeded
-if File.directory?(BACKUP_DIR)
-  FileUtils.rm_rf(BACKUP_DIR)
-  STDERR.puts "Release backup cleaned up."
-end
+# ReleaseBackup is cleaned up by CompilationEngine.commitRelease, which must
+# drop the compilation marker first (crash-safe ordering).

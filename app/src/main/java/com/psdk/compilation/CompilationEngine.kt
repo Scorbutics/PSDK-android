@@ -123,7 +123,7 @@ class CompilationEngine(
         val finishWithFailure: (Int) -> Unit = { failedStepIndex ->
             interpreter?.close()
             interpreter = null
-            restoreReleaseBackup(failedStepIndex)
+            rollbackRelease(failedStepIndex)
             val (logFile, errorLogFile) = saveLogsToFile()
             finishResult = FinishResult(false, logFile, errorLogFile)
             callback?.onCompilationFinished(false, logFile, errorLogFile)
@@ -135,6 +135,7 @@ class CompilationEngine(
                 callback?.onStepCompleted(3, false)
                 finishWithFailure(3)
             } else {
+                commitRelease()
                 allStepLogs[3].step.status = CompileStepStatus.SUCCESS
                 callback?.onStepCompleted(3, true)
                 interpreter?.close()
@@ -170,6 +171,13 @@ class CompilationEngine(
             } else {
                 allStepLogs[1].step.status = CompileStepStatus.SUCCESS
                 callback?.onStepCompleted(1, true)
+                // From here on Release is rebuilt from scratch: flag it, so a
+                // first compilation killed mid-run is not mistaken for a build.
+                try {
+                    File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).createNewFile()
+                } catch (ex: Exception) {
+                    callback?.onLogMessage(1, "Warning: failed to create the compilation marker: ${ex.localizedMessage}")
+                }
                 setActiveStep(2)
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
                 callback?.onStepStarted(2, allStepLogs[2].step.title)
@@ -248,8 +256,23 @@ class CompilationEngine(
         }
     }
 
-    private fun restoreReleaseBackup(failedStepIndex: Int) {
-        restoreReleaseBackup(executionLocation) { callback?.onLogMessage(failedStepIndex, it) }
+    private fun rollbackRelease(failedStepIndex: Int) {
+        rollbackRelease(executionLocation) { callback?.onLogMessage(failedStepIndex, it) }
+    }
+
+    /**
+     * Release is complete: drop the marker, then the backup. In that order, a
+     * kill in between leaves the backup alone, which recovery restores (the
+     * new Release only holds copies of the backed up saves).
+     */
+    private fun commitRelease() {
+        File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).delete()
+        val backupDir = File(executionLocation, "ReleaseBackup")
+        if (backupDir.exists() && !backupDir.deleteRecursively()) {
+            callback?.onLogMessage(3, "Warning: failed to clean up the Release backup.")
+        } else {
+            callback?.onLogMessage(3, "Release backup cleaned up.")
+        }
     }
 
     fun getAllLogs(): List<CompileStepLogs> = allStepLogs.toList()
@@ -297,6 +320,10 @@ class CompilationEngine(
         const val COMPILATION_ERROR_LOG_FILE = "last_compilation_errors.log"
         private const val TAG = "CompilationEngine"
 
+        // Present in the execution location from the end of the backup step
+        // until the compilation succeeds: Release cannot be trusted meanwhile.
+        private const val COMPILATION_IN_PROGRESS_MARKER = ".compilation_in_progress"
+
         // Engines started in this process; an engine counts as running until
         // it finishes or is closed. Lets [recoverInterruptedCompilation] tell
         // a live ReleaseBackup (mid-compile) from an orphaned one.
@@ -309,41 +336,67 @@ class CompilationEngine(
         }
 
         /**
-         * Restore the previous Release when a compilation was interrupted
-         * before it could clean up (process killed, engine closed mid-run).
-         * ReleaseBackup then still holds the last good build and the user
-         * saves, while Release is a partial build that must not be launched.
+         * Roll back a compilation that was interrupted before it could clean
+         * up (process killed, engine closed mid-run), leaving a partial
+         * Release that must not be launched. See [rollbackRelease].
          * No-op while a compilation is running on [executionLocation] in this
          * process. Call it before reading the Release state of a project.
          *
-         * @return true if a backup was restored.
+         * @return true if Release was restored or removed.
          */
         fun recoverInterruptedCompilation(executionLocation: String): Boolean {
-            if (!File(executionLocation, "ReleaseBackup").isDirectory || isCompiling(executionLocation)) {
+            val interrupted = File(executionLocation, "ReleaseBackup").isDirectory ||
+                File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).exists()
+            if (!interrupted || isCompiling(executionLocation)) {
                 return false
             }
-            Log.w(TAG, "Interrupted compilation detected in $executionLocation, restoring the previous Release")
-            return restoreReleaseBackup(executionLocation) { Log.w(TAG, it) }
+            Log.w(TAG, "Interrupted compilation detected in $executionLocation, rolling back Release")
+            return rollbackRelease(executionLocation) { Log.w(TAG, it) }
         }
 
-        private fun restoreReleaseBackup(executionLocation: String, log: (String) -> Unit): Boolean {
+        /**
+         * Bring Release back to its state before the compilation:
+         *  - ReleaseBackup exists → it is the previous build (with the user
+         *    saves): restore it over the partial Release.
+         *  - otherwise, marker exists → first compilation, there was no
+         *    Release before: remove the partial one.
+         *  - otherwise → Release was never touched (failure before or during
+         *    the backup step): leave it alone.
+         * Each branch is safe to resume if the process dies halfway through.
+         *
+         * @return true if Release was restored or removed.
+         */
+        private fun rollbackRelease(executionLocation: String, log: (String) -> Unit): Boolean {
             val releaseDir = File(executionLocation, "Release")
             val backupDir = File(executionLocation, "ReleaseBackup")
-            if (!backupDir.exists()) {
-                log("No Release backup to restore.")
-                return false
-            }
+            val marker = File(executionLocation, COMPILATION_IN_PROGRESS_MARKER)
             try {
-                if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
-                    log("Warning: failed to fully clean Release folder before restore.")
+                if (backupDir.exists()) {
+                    // The backup alone is enough to resume this rollback
+                    marker.delete()
+                    if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                        log("Warning: failed to fully clean Release folder before restore.")
+                    }
+                    if (backupDir.renameTo(releaseDir)) {
+                        log("Restored previous Release folder from backup.")
+                        return true
+                    }
+                    log("Error: failed to rename ReleaseBackup back to Release.")
+                    return false
                 }
-                if (backupDir.renameTo(releaseDir)) {
-                    log("Restored previous Release folder from backup.")
+                if (marker.exists()) {
+                    if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                        // Keep the marker: the next recovery retries
+                        log("Error: failed to remove the partial Release folder.")
+                        return false
+                    }
+                    marker.delete()
+                    log("Removed the partial Release folder (no previous build to restore).")
                     return true
                 }
-                log("Error: failed to rename ReleaseBackup back to Release.")
+                log("No Release backup to restore.")
             } catch (ex: Exception) {
-                log("Error while restoring backup: ${ex.localizedMessage}")
+                log("Error while rolling back Release: ${ex.localizedMessage}")
             }
             return false
         }
