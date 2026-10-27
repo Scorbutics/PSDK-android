@@ -102,28 +102,9 @@ begin
 
   loop { break unless $loader_screen.tick }
 ensure
-  # PSDKVMSnapshot.log_diff! / .restore! deliberately omitted from the
-  # loader's ensure block (start.rb still runs them for the game). Two
-  # reasons:
-  #   1. log_diff! enumerates every entry in $LOADED_FEATURES via a
-  #      per-feature STDERR.puts. compile.rb runs on a SEPARATE
-  #      PsdkInterpreter but shares g_global_vm with this persistent
-  #      one, so by the time the loader unwinds for a workload swap
-  #      (dismiss → debug-play, debug-play → launchGame, game-exit →
-  #      hub.onResume's setLoaderState(Default), etc.) every PSDK
-  #      script compile.rb loaded shows up as a "DROP" in the diff.
-  #      That's ~hundreds of log lines, each blocking the render
-  #      thread on a JNI hop through the LogListener pipeline — the
-  #      glSurfaceOverlay then stays opaque until the next
-  #      [loader-ready] comes through, which it can't until the dump
-  #      finishes. User-visible symptom: blank colorBackground for
-  #      ~seconds on every loader→loader and loader→game transition.
-  #   2. restore! is a Stage-1 stub today (see psdk_vm_snapshot.rb's
-  #      file header). The loader doesn't actually need it to clean
-  #      up: the persistent interpreter happily re-evals loader.rb
-  #      across swaps ($loader_screen is reassigned, Loader::* is
-  #      guarded by `unless defined?`), and PSDK state — if and when
-  #      it actually needs to be reaped — is start.rb's responsibility
-  #      (it does its own capture!/restore! around the game).
+  # No VM reset here: the shell process's persistent interpreter happily
+  # re-evals loader.rb across swaps ($loader_screen is reassigned,
+  # Loader::* is guarded by `unless defined?`). The game runs in its own
+  # `:game` process (GameActivity), so game state never lands on this VM.
   $loader_screen&.dispose rescue nil
 end

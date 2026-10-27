@@ -18,16 +18,12 @@ class EntryActivity : AppCompatActivity() {
         // Process-wide: every cgss::DisplayWindow constructed in this
         // process adopts the preserved (process-shared) sf::RenderWindow.
         // Set ONCE here (the very first activity to run) and never reset.
+        // GameActivity does the same for the `:game` process.
         //
-        // With the unified-Activity model (RootActivity hosts both the
-        // splash and the game in-process via RubyWorkloadController),
-        // this opt-in is less critical than it used to be — the splash
-        // and game now share the same WindowImplAndroid + EglContext
-        // by construction, since neither activity nor render thread
-        // changes between them. Kept on as a defensive default so any
-        // future code that destroys/recreates a DisplayWindow mid-
-        // session inherits the preserved shared window instead of
-        // accidentally falling into owned-mode teardown.
+        // Kept on as a defensive default so any code that destroys /
+        // recreates a DisplayWindow mid-session (loader restarts on the
+        // persistent interpreter) inherits the preserved shared window
+        // instead of accidentally falling into owned-mode teardown.
         NativeSurface.setReuseSharedWindow(true)
 
         val mode = AppModeDetector.detect(this)
@@ -41,8 +37,7 @@ class EntryActivity : AppCompatActivity() {
     }
 
     /**
-     * Pick which RootActivity intent a classic-mode user should be
-     * dispatched to. The state machine:
+     * Pick which activity a classic-mode user should be dispatched to. The state machine:
      *
      *   first launch / cleared data → STATE_NEEDS_SETUP → wizard (with
      *       classic-bootstrap so it auto-stages the bundled .epsa)
@@ -50,9 +45,10 @@ class EntryActivity : AppCompatActivity() {
      *       STATE_READY here, then go straight into the game
      *   subsequent launches      → STATE_READY → straight into the game
      *
-     * All three branches return a RootActivity intent; EntryActivity's
-     * caller does the startActivity + finish. The legacy direct-launch
-     * via GameActivity is gone (Phase D unification).
+     * The game branches go straight to [GameActivity] (its own `:game`
+     * process; no splash, no shell). When the game exits the task is
+     * empty and the app closes, which is what a classic single-game APK
+     * should do. EntryActivity's caller does the startActivity + finish.
      *
      * An APK upgrade (new versionCode) forces back to NEEDS_SETUP so the
      * fresh .epsa gets re-compiled.
@@ -76,10 +72,7 @@ class EntryActivity : AppCompatActivity() {
 
         return when (prefs.getString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_NEEDS_SETUP)) {
             ClassicModeState.STATE_READY -> {
-                // Unified-Activity model: RootActivity hosts the game
-                // in-process via TARGET_DIRECT_GAME (no splash, no
-                // intermediate fragment).
-                RootActivity.directGameIntent(this, applicationInfo.dataDir, defaultMode)
+                GameActivity.intent(this, applicationInfo.dataDir, defaultMode, classicMode = true)
             }
             ClassicModeState.STATE_SETUP_COMPLETE -> {
                 // First launch after a successful wizard run — flip to
@@ -87,7 +80,7 @@ class EntryActivity : AppCompatActivity() {
                 prefs.edit()
                     .putString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_READY)
                     .apply()
-                RootActivity.directGameIntent(this, applicationInfo.dataDir, defaultMode)
+                GameActivity.intent(this, applicationInfo.dataDir, defaultMode, classicMode = true)
             }
             else -> {
                 // Wizard path always uses RELEASE — debug-uncompiled mode is
@@ -95,7 +88,7 @@ class EntryActivity : AppCompatActivity() {
                 // only matters for the release path; debug-mode APKs skip
                 // the wizard's compile step at the next branch above (the
                 // wizard's compilationSuccess listener writes STATE_SETUP_COMPLETE
-                // which lands us on the directGameIntent branch with the
+                // which lands us on the GameActivity branch with the
                 // manifest-supplied mode).
                 RootActivity.classicWizardIntent(this, applicationInfo.dataDir)
             }

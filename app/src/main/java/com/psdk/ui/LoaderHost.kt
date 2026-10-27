@@ -39,12 +39,10 @@ interface LoaderHost {
      * implementation surfaces them via env vars so start.rb's prelude can
      * `ArchiveMount.mount!` from the encrypted .epsa.
      *
-     * Implemented by [RootActivity] as an in-process script swap on
-     * the persistent interpreter: the controller pushes Closed to
-     * signal the loader script to unwind, then enqueues start.rb on
-     * the SAME interpreter / SAME render thread / SAME EGL context
-     * the loader was running on. No interpreter destroy, no thread
-     * handoff, no surface destroy/create cycle.
+     * Implemented by [RootActivity] by stopping the loader and launching
+     * [GameActivity] in its own `:game` process, so the game always
+     * starts on a fresh Ruby VM. The splash is restarted when the game
+     * activity returns.
      */
     fun startGame(executionLocation: String, mode: GameMode = GameMode.RELEASE)
 }

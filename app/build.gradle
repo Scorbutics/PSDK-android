@@ -3,7 +3,7 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android'
     id 'org.jetbrains.kotlin.plugin.serialization'
-    id 'com.google.devtools.ksp' version '2.3.2'
+    id 'com.google.devtools.ksp' version '2.3.6'
 }
 
 // We iterate fast on rgss-runtime SNAPSHOTs (republishing the same

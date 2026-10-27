@@ -1,7 +1,7 @@
 [versions]
 bcprov-jdk15on = "1.70"
 appcompat = "1.5.1"
-gradle = "9.1.1"
+gradle = "9.4.1"
 kotlin-stdlib = "1.8.20"
 material = "1.7.0"
 constraintlayout = "2.1.4"

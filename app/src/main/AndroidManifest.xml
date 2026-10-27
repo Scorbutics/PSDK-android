@@ -42,9 +42,16 @@
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
 
-        <!-- The game runs in-process inside RootActivity now; no separate
-             activity is needed. The "rgss_runtime" .so is loaded lazily by
-             NativeSurface / PsdkInterpreter on first use. -->
+        <!-- The game, in its own process. CRuby can only be initialised once
+             per process and PSDK's monkey-patching can't be undone, so each
+             game session gets a fresh `:game` process, killed by
+             GameActivity.onDestroy when the session ends. Same configChanges
+             as RootActivity for the same reason: a recreation would land on
+             an already-dirty VM. -->
+        <activity android:name=".ui.GameActivity"
+            android:process=":game"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
 
 <provider
             android:name="androidx.core.content.FileProvider"

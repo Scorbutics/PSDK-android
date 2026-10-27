@@ -94,19 +94,19 @@ class PsdkInterpreter private constructor(
 
         val dbgRc = interp.enableRemoteDebug(
             host = RemoteListenerConfig.DEBUG_HOST,
-            port = RemoteListenerConfig.DEBUG_PORT,
+            port = RemoteListenerConfig.debugPort,
             token = RemoteListenerConfig.TOKEN,
             sessionName = "psdk-launcher-debug",
         )
-        Log.i(TAG, "enableRemoteDebug rc=$dbgRc on ${RemoteListenerConfig.DEBUG_HOST}:${RemoteListenerConfig.DEBUG_PORT}")
+        Log.i(TAG, "enableRemoteDebug rc=$dbgRc on ${RemoteListenerConfig.DEBUG_HOST}:${RemoteListenerConfig.debugPort}")
 
         val evalRc = interp.enableRemoteEval(
             host = RemoteListenerConfig.EVAL_HOST,
-            port = RemoteListenerConfig.EVAL_PORT,
+            port = RemoteListenerConfig.evalPort,
             token = RemoteListenerConfig.TOKEN,
             sessionName = "psdk-launcher-eval",
         )
-        Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.EVAL_PORT}")
+        Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.evalPort}")
     }
 
     fun close() {

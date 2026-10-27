@@ -60,9 +60,9 @@ sealed class RubyWorkload {
     }
 
     /**
-     * The game itself (start.rb → Game.yarb). When this workload is
-     * active, the host hides shell UI and routes hardware input
-     * through [GameInputForwarder] / [ImeBridge].
+     * The game itself (start.rb → Game.yarb). Only ever run by
+     * [GameActivity], in its own `:game` process, which routes hardware
+     * input through [GameInputForwarder] / [ImeBridge].
      *
      * Two launch modes:
      *   - [GameMode.RELEASE]: start.rb chdir's into `<exec>/Release` and

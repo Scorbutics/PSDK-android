@@ -11,8 +11,10 @@ import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 
 /**
- * Persistent-interpreter controller for the GL-rendering workload track
- * (loader + game). One PsdkInterpreter is created lazily on first
+ * Persistent-interpreter controller for the GL-rendering workload track.
+ * Used by both hosts: [RootActivity] runs loader workloads on it for the
+ * shell process's whole lifetime, [GameActivity] runs a single game
+ * workload on it in the `:game` process. One PsdkInterpreter is created lazily on first
  * launch, owns the cgss::DisplayWindow / EGL context, and survives all
  * subsequent workload swaps for the entire Activity lifetime. Scripts
  * are enqueued sequentially on its single render thread; a swap is
@@ -32,13 +34,10 @@ import com.scorbutics.rubyvm.LogMessage
  * embedded VM evals every script at TOPLEVEL_BINDING against a
  * process-singleton VM, so classes/constants/globals from script A
  * coexist with script B regardless of whether we destroy the
- * interpreter between them. The previous "destroy + recreate" model
- * gave the illusion of isolation but didn't actually provide any —
- * the loader's `Loader::*` constants and `$loader_screen` global lived
- * on across destroys, surfacing as "already initialized constant"
- * warnings on every re-eval. State reset is the job of a separate
- * mechanism (PSDKVMSnapshot.capture! / restore! in start.rb, and the
- * equivalent in loader.rb).
+ * interpreter between them. loader.rb copes by being re-eval-safe
+ * (`unless defined?` guards). The game can't — PSDK's alias_method
+ * chains compound on re-eval — so it never shares a VM: GameActivity
+ * runs it in a throwaway `:game` process.
  *
  * Ephemeral utility interpreters (compile.rb, extract_loader_assets,
  * epsa validation, etc.) are NOT this controller's concern. They

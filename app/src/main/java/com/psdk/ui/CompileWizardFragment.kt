@@ -406,14 +406,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         stepIndicatorBlock.visibility = View.GONE
 
         // Reset the splash's Ruby SceneState in-place via the status-file
-        // sentinel, then write the play CTA in the same payload. A full
-        // workload restart was tempting (clean slate), but in this app the
-        // loader's `ensure` block runs PSDKVMSnapshot.log_diff!/restore! —
-        // and because compile.rb loaded ~hundreds of PSDK scripts on the
-        // shared g_global_vm, log_diff! enumerates every entry as a "DROP"
-        // and STDERR.puts each one. The Ruby render thread is blocked for
-        // seconds, the glSurfaceOverlay stays opaque (no [loader-ready] to
-        // fade it out), and the user sees only the activity background.
+        // sentinel, then write the play CTA in the same payload. Cheaper
+        // than a full workload restart, which would re-eval loader.rb and
+        // replay the glSurfaceOverlay fade-in (activity background showing
+        // until the next [loader-ready]).
         // The sentinel keeps the same Loader::Splash alive — its next poll
         // wipes lifted_start / unlifted_start / rolling_start / shake_start /
         // pressed_finger and resets the icon angle to 0, then the trailing
@@ -590,9 +586,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             android.util.Log.w(TAG, "launchGame: executionLocation null, dropping")
             return
         }
-        // Route through the host. RootActivity.startGame performs the
-        // in-process workload swap: tears down the loader and enqueues
-        // start.rb on a fresh PsdkInterpreter against the same surface.
+        // Route through the host. RootActivity.startGame stops the loader
+        // and launches GameActivity in its own `:game` process.
         val host = requireActivity() as? LoaderHost ?: run {
             android.util.Log.e(TAG, "launchGame: host activity is not a LoaderHost")
             return

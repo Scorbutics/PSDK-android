@@ -1,8 +1,7 @@
 require 'safe_runner'
-# psdk_vm_snapshot.rb is concatenated as a prelude by RootActivity (see
-# START_PRELUDES) — same pattern as the loader's LOADER_PRELUDES.
-# The Android embedded VM `eval`s start.rb as a string with __FILE__ set
-# to "<socket-script-N>", so require_relative can't resolve it.
+# start.rb runs once per process: GameActivity lives in its own `:game`
+# Android process and kills it when the game exits, so every launch gets
+# a fresh Ruby VM. Nothing here has to be idempotent across launches.
 
 # PSDK's compiled-mode console (pokemonsdk/scripts/tools/GameLoader/
 # 32_console_compiled.rb) reopens Kernel and redefines log_error /
@@ -61,7 +60,7 @@ VMLogger.info "[start.rb] PsdkLogTee installed — PSDK log_error/info/debug rou
 # though Interpreter isn't yet defined when start.rb runs.
 #
 # Gated on RGSS_REMOTE_EVAL_TOKEN — that env var is only set in debug builds
-# (see RootActivity#configureGameEnv), so release builds skip this
+# (see GameActivity#configureGameEnv), so release builds skip this
 # entirely and never get an `S` constant they didn't ask for.
 if ENV['RGSS_REMOTE_EVAL_TOKEN'] && !ENV['RGSS_REMOTE_EVAL_TOKEN'].to_s.empty?
   unless defined?(S)
@@ -107,25 +106,6 @@ SafeRunner.run(
 
   VMLogger.info "[start.rb] Mode: #{game_mode}; cwd: #{Dir.pwd}"
 
-  # DIAG: log whether PhysFS is still mounted from a prior workload.
-  # In the release path nothing on the persistent VM should have mounted
-  # the archive — if this prints mounted=true on release we leaked a mount
-  # somewhere. In debug_uncompiled the mount happens below, AFTER this
-  # diagnostic, so it will (correctly) still report unmounted here.
-  if defined?(PhysFS) && defined?(ArchiveMount)
-    VMLogger.info "[start.rb][DIAG] PhysFS mounted on entry? #{ArchiveMount.mounted? rescue 'probe failed'}"
-  else
-    VMLogger.info "[start.rb][DIAG] PhysFS / ArchiveMount module not loaded — definitely not mounted"
-  end
-
-  # Spike Stage 1: take a baseline of the VM state right before Game.rb
-  # runs. Idempotent across sessions — the first call wins, subsequent
-  # game launches diff against the same baseline. log_diff! in the
-  # ensure block prints what PSDK mutated, to guide Stage 2 (restore!).
-  # In practice the first call already happened at the top of the prelude
-  # (psdk_vm_snapshot.rb's auto-capture); this is a no-op + lifecycle doc.
-  PSDKVMSnapshot.capture!
-
   if game_mode == 'debug_uncompiled'
     # PSDK writes saves / project.studio / .gameopts through PhysFS.write_dir
     # onto the real FS. Anchor that at <exec> so saves end up in
@@ -144,7 +124,7 @@ SafeRunner.run(
     Dir.mkdir(saves_dir) rescue Errno::EEXIST
     input_path = File.join(saves_dir, 'input.json')
     File.write(input_path, '{}') unless File.exist?(input_path)
-    # Stale --util payload from a prior compile run on this VM would silently
+    # Stale --util payload left on disk by a compile run would silently
     # redirect Game.rb. Clear it.
     File.delete(File.join(PhysFS.write_dir, '.gameopts')) rescue nil
 
@@ -177,8 +157,8 @@ SafeRunner.run(
   #
   # Implemented as a marker file written from inside a `.new` wrapper on
   # LiteRGSS::DisplayWindow. The file path is the env var
-  # RGSS_GAME_READY_FILE that RootActivity sets on workload launch;
-  # RootActivity polls for it via Handler and fades the overlay out as
+  # RGSS_GAME_READY_FILE that GameActivity sets on workload launch;
+  # GameActivity polls for it via Handler and fades the overlay out as
   # soon as it appears.
   #
   # Why a file and not a log sentinel: the VMLogger/STDOUT pipeline
@@ -193,10 +173,6 @@ SafeRunner.run(
   # point regardless of how the C side wires up internals, so it works
   # even if the litergss2 C code ever takes a `rb_class_new_instance`
   # shortcut around Ruby-level method lookup.
-  #
-  # The signaled flag lives in @@__game_display_signaled on
-  # DisplayWindow itself; PSDKVMSnapshot.restore! reaps class variables
-  # added since baseline, so the flag resets cleanly between sessions.
   ready_file_path = ENV['RGSS_GAME_READY_FILE']
   if ready_file_path.nil? || ready_file_path.empty?
     STDERR.puts '[start.rb] RGSS_GAME_READY_FILE not set; sentinel skipped'
@@ -208,29 +184,21 @@ SafeRunner.run(
     # installing the wrapper.
     File.delete(ready_file_path) rescue nil
 
-    if LiteRGSS::DisplayWindow.singleton_class.method_defined?(:__game_display_orig_new)
-      # Already installed in a prior session whose restore! didn't
-      # manage to strip the singleton alias (rare; native unprepend only
-      # touches IClass chains, not singleton-class method tables). Reset
-      # the flag and reuse the existing wrapper.
-      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
-    else
-      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
-      LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_ready_path, ready_file_path)
-      LiteRGSS::DisplayWindow.singleton_class.send(:alias_method, :__game_display_orig_new, :new)
-      LiteRGSS::DisplayWindow.singleton_class.send(:define_method, :new) do |*args, &block|
-        instance = __game_display_orig_new(*args, &block)
-        unless class_variable_get(:@@__game_display_signaled)
-          class_variable_set(:@@__game_display_signaled, true)
-          path = class_variable_get(:@@__game_display_ready_path)
-          begin
-            File.write(path, "ready\n")
-          rescue StandardError => e
-            STDERR.puts "[start.rb] failed to write ready file #{path}: #{e.class}: #{e.message}"
-          end
+    LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
+    LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_ready_path, ready_file_path)
+    LiteRGSS::DisplayWindow.singleton_class.send(:alias_method, :__game_display_orig_new, :new)
+    LiteRGSS::DisplayWindow.singleton_class.send(:define_method, :new) do |*args, &block|
+      instance = __game_display_orig_new(*args, &block)
+      unless class_variable_get(:@@__game_display_signaled)
+        class_variable_set(:@@__game_display_signaled, true)
+        path = class_variable_get(:@@__game_display_ready_path)
+        begin
+          File.write(path, "ready\n")
+        rescue StandardError => e
+          STDERR.puts "[start.rb] failed to write ready file #{path}: #{e.class}: #{e.message}"
         end
-        instance
       end
+      instance
     end
   end
 
@@ -252,19 +220,10 @@ SafeRunner.run(
       File.read(error_log).each_line { |line| VMLogger.error line.chomp }
       VMLogger.error "[start.rb] --- end of Error.log ---"
     end
-    # Unmount BEFORE PSDKVMSnapshot.restore! — restore manipulates the
-    # filesystem-shim state (PhysFS modules, $LOADED_FEATURES entries) and we
-    # don't want it doing that while a mount is live. Symmetric with
-    # extract_loader_assets.rb. Idempotent: noop in release mode and on retry.
+    # Symmetric with extract_loader_assets.rb so PhysFS closes the archive
+    # cleanly before the process is torn down. Noop in release mode.
     if defined?(ArchiveMount)
       ArchiveMount.unmount! rescue nil
     end
-    # Spike Stage 2: log what changed (diagnostic), then restore the VM
-    # to the captured baseline so the next game launch on this same VM
-    # starts from clean state. Without this, PSDK's alias_method chains
-    # would compound across launches and trigger SystemStackError on the
-    # second run (the original bug this spike exists to fix).
-    PSDKVMSnapshot.log_diff!
-    PSDKVMSnapshot.restore!
   end
 end

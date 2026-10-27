@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Game host, running in the `:game` process (see GameActivity).
+
+     Composition (back to front):
+       [glSurface]         LiteRgssSurfaceView, fills the window; backs the
+                           EGL context the game renders into.
+       [gameStartOverlay]  Spinning project icon shown from launch until
+                           Game.rb has constructed its DisplayWindow (start.rb
+                           writes RGSS_GAME_READY_FILE). Hides the blank
+                           surface during PSDK's require chain.
+       [imeSink]           1×1px transparent EditText used by ImeBridge to
+                           capture soft-keyboard input when Ruby code asks
+                           for the virtual keyboard. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/colorBackground">
+
+    <com.psdk.ui.LiteRgssSurfaceView
+        android:id="@+id/glSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <FrameLayout
+        android:id="@+id/gameStartOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/colorBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <ImageView
+                android:id="@+id/gameStartIcon"
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:src="@drawable/logo"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/gameStartCaption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="Starting…"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textSize="13sp"
+                android:letterSpacing="0.06" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <EditText
+        android:id="@+id/imeSink"
+        android:layout_width="1px"
+        android:layout_height="1px"
+        android:alpha="0"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:focusable="true"
+        android:focusableInTouchMode="true" />
+</FrameLayout>
