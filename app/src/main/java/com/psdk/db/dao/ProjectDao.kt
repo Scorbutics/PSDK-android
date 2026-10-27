@@ -15,6 +15,9 @@ interface ProjectDao {
     @Query("SELECT * FROM project WHERE id = :projectId")
     fun findById(projectId: UUID): Project
 
+    @Query("SELECT * FROM project WHERE directory = :directory LIMIT 1")
+    fun findByDirectory(directory: String): Project?
+
     @Insert
     fun insertAll(project: Project)
 

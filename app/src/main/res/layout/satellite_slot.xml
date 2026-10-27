@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One satellite in the constellation: haloed icon + tiny name caption.
+     The host fragment positions this via translationX/Y (initially 0/0
+     so a freshly-inflated slot is centred on the FAB until the arrange
+     pass runs — paired with alpha=0 in code to keep that frame invisible). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:clickable="true"
+    android:focusable="true"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:visibility="gone">
+
+    <FrameLayout
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:clipChildren="false">
+
+        <!-- Halo: background set programmatically per project status
+             (success/accent/error tint). Falls back to the bundled
+             accent-blue drawable if the status colour isn't applied
+             (e.g. preview rendering). -->
+        <View
+            android:id="@+id/satelliteHalo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_project_icon_halo" />
+
+        <ImageView
+            android:id="@+id/satelliteIcon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:scaleType="fitCenter"
+            android:contentDescription="@null" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/satelliteName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/spacing_xs"
+        android:maxWidth="96dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/colorOnSurface" />
+</LinearLayout>

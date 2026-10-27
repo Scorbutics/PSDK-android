@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Root is intentionally transparent so the activity-owned GL splash
+     (LiteRgssSurfaceView in activity_root.xml) shows behind. The toolbar
+     uses a top-opaque-to-bottom-transparent gradient so the splash
+     bleeds into its lower edge instead of being cut off by a hard
+     divider. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@android:color/transparent"
+        android:theme="@style/ThemeOverlay.Psdk.Toolbar"
+        app:titleTextColor="@color/colorOnSurface"
+        app:title="PSDK"
+        app:titleTextAppearance="@style/TextAppearance.Psdk.ToolbarTitle" />
+
+    <FrameLayout
+        android:id="@+id/hubContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

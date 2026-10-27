@@ -1,6 +1,7 @@
 package com.psdk.compilation
 
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import com.psdk.CompileStepData
 import com.psdk.CompileStepLogs
@@ -14,6 +15,7 @@ import com.scorbutics.rubyvm.LogLevel
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -21,7 +23,7 @@ class CompilationEngine(
     private val context: Context,
     private val executionLocation: String,
     private val archive: ArchiveKeys,
-    private val callback: CompilationCallback
+    initialCallback: CompilationCallback? = null
 ) {
     interface CompilationCallback {
         fun onStepStarted(stepIndex: Int, stepName: String)
@@ -30,9 +32,43 @@ class CompilationEngine(
         fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File)
     }
 
+    /**
+     * Snapshot of the engine's current state at the moment of a callback
+     * swap. `stepLogs` is a deep copy (StringBuilders) so the consumer can
+     * read it on any thread without racing further log appends.
+     */
+    data class Snapshot(
+        val stepLogs: List<CompileStepLogs>,
+        val activeStepIndex: Int,
+        val finishResult: FinishResult?
+    )
+
+    data class FinishResult(val success: Boolean, val logFile: File, val errorLogFile: File)
+
+    // Swappable so the engine can outlive its current consumer (e.g.
+    // a fragment surviving a config change re-attaches via setCallback).
+    // @Volatile because it's read from the Ruby-VM dispatcher thread
+    // (step events) and the logExecutor thread (log events).
+    @Volatile
+    private var callback: CompilationCallback? = initialCallback
+
     private val allStepLogs = mutableListOf<CompileStepLogs>()
     private var currentLogIndex = 0
     private var interpreter: PsdkInterpreter? = null
+    // Written from the Ruby dispatcher thread on completion, read from the UI
+    // thread via [isFinished] when the wizard decides whether to reuse this
+    // engine for a retry — needs visibility across threads.
+    @Volatile
+    private var finishResult: FinishResult? = null
+    private var closed = false
+
+    /**
+     * True once the engine has dispatched its terminal
+     * `onCompilationFinished` callback (success or failure). A finished
+     * engine cannot be restarted; callers must discard it and build a new
+     * one to retry compilation.
+     */
+    fun isFinished(): Boolean = finishResult != null
 
     // Log writes and step switches are serialized through this single-threaded executor.
     // Without it, logs from script N can be tagged with step N+1 because the JNI listener
@@ -51,6 +87,7 @@ class CompilationEngine(
     }
 
     fun start() {
+        activeEngines.add(this)
         val checkEngineLogs = CompileStepLogs(CompileStepData("Check engine", CompileStepStatus.IN_PROGRESS), StringBuilder())
         val backupSavesLogs = CompileStepLogs(CompileStepData("Backing up previous Release", CompileStepStatus.READY), StringBuilder())
         val compilationLogs = CompileStepLogs(CompileStepData("Compilation", CompileStepStatus.READY), StringBuilder())
@@ -58,7 +95,7 @@ class CompilationEngine(
         allStepLogs.addAll(listOf(checkEngineLogs, backupSavesLogs, compilationLogs, copySavesLogs))
 
         currentLogIndex = 0
-        callback.onStepStarted(0, checkEngineLogs.step.title)
+        callback?.onStepStarted(0, checkEngineLogs.step.title)
 
         interpreter = PsdkInterpreter.create(
             context = context,
@@ -72,12 +109,12 @@ class CompilationEngine(
                         if (isError) {
                             allStepLogs[idx].errorLogs.appendLine(msg)
                         }
-                        callback.onLogMessage(idx, msg)
+                        callback?.onLogMessage(idx, msg)
                     }
                 }
             },
             onError = { e ->
-                callback.onLogMessage(currentLogIndex, "Error: ${e.localizedMessage}")
+                callback?.onLogMessage(currentLogIndex, "Error: ${e.localizedMessage}")
             }
         )
 
@@ -86,23 +123,26 @@ class CompilationEngine(
         val finishWithFailure: (Int) -> Unit = { failedStepIndex ->
             interpreter?.close()
             interpreter = null
-            restoreReleaseBackup(failedStepIndex)
+            rollbackRelease(failedStepIndex)
             val (logFile, errorLogFile) = saveLogsToFile()
-            callback.onCompilationFinished(false, logFile, errorLogFile)
+            finishResult = FinishResult(false, logFile, errorLogFile)
+            callback?.onCompilationFinished(false, logFile, errorLogFile)
         }
 
         val onCompleteCopySaves: CompletionTask = { returnCode: Int ->
             if (returnCode != 0) {
                 allStepLogs[3].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(3, false)
+                callback?.onStepCompleted(3, false)
                 finishWithFailure(3)
             } else {
+                commitRelease()
                 allStepLogs[3].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(3, true)
+                callback?.onStepCompleted(3, true)
                 interpreter?.close()
                 interpreter = null
                 val (logFile, errorLogFile) = saveLogsToFile()
-                callback.onCompilationFinished(true, logFile, errorLogFile)
+                finishResult = FinishResult(true, logFile, errorLogFile)
+                callback?.onCompilationFinished(true, logFile, errorLogFile)
             }
         }
 
@@ -110,14 +150,14 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[2].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(2, false)
+                callback?.onStepCompleted(2, false)
                 finishWithFailure(2)
             } else {
                 allStepLogs[2].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(2, true)
+                callback?.onStepCompleted(2, true)
                 setActiveStep(3)
                 allStepLogs[3].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(3, allStepLogs[3].step.title)
+                callback?.onStepStarted(3, allStepLogs[3].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, COPY_SAVES_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCopySaves)
             }
         }
@@ -126,14 +166,21 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[1].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(1, false)
+                callback?.onStepCompleted(1, false)
                 finishWithFailure(1)
             } else {
                 allStepLogs[1].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(1, true)
+                callback?.onStepCompleted(1, true)
+                // From here on Release is rebuilt from scratch: flag it, so a
+                // first compilation killed mid-run is not mistaken for a build.
+                try {
+                    File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).createNewFile()
+                } catch (ex: Exception) {
+                    callback?.onLogMessage(1, "Warning: failed to create the compilation marker: ${ex.localizedMessage}")
+                }
                 setActiveStep(2)
                 allStepLogs[2].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(2, allStepLogs[2].step.title)
+                callback?.onStepStarted(2, allStepLogs[2].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, RUBY_COMPILE_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCompilation)
             }
         }
@@ -142,48 +189,89 @@ class CompilationEngine(
             Thread.sleep(1000)
             if (returnCode != 0) {
                 allStepLogs[0].step.status = CompileStepStatus.ERROR
-                callback.onStepCompleted(0, false)
+                callback?.onStepCompleted(0, false)
                 interpreter?.close()
                 interpreter = null
                 val (logFile, errorLogFile) = saveLogsToFile()
-                callback.onCompilationFinished(false, logFile, errorLogFile)
+                finishResult = FinishResult(false, logFile, errorLogFile)
+                callback?.onCompilationFinished(false, logFile, errorLogFile)
             } else {
                 allStepLogs[0].step.status = CompileStepStatus.SUCCESS
-                callback.onStepCompleted(0, true)
+                callback?.onStepCompleted(0, true)
                 setActiveStep(1)
                 allStepLogs[1].step.status = CompileStepStatus.IN_PROGRESS
-                callback.onStepStarted(1, allStepLogs[1].step.title)
+                callback?.onStepStarted(1, allStepLogs[1].step.title)
                 interpreter!!.enqueue(RubyScript(context.assets, BACKUP_SAVES_SCRIPT), location, onCompleteBackup)
             }
         }
 
         try {
-            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT), location, onCompleteCheck)
+            interpreter!!.enqueue(RubyScript(context.assets, CHECK_ENGINE_SCRIPT, ARCHIVE_PRELUDES), location, onCompleteCheck)
         } catch (ex: Exception) {
-            callback.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
+            callback?.onLogMessage(0, "Fatal error: ${ex.localizedMessage}")
             val (logFile, errorLogFile) = saveLogsToFile()
-            callback.onCompilationFinished(false, logFile, errorLogFile)
+            finishResult = FinishResult(false, logFile, errorLogFile)
+            callback?.onCompilationFinished(false, logFile, errorLogFile)
         }
     }
 
-    private fun restoreReleaseBackup(failedStepIndex: Int) {
-        val releaseDir = File(executionLocation, "Release")
-        val backupDir = File(executionLocation, "ReleaseBackup")
-        if (!backupDir.exists()) {
-            callback.onLogMessage(failedStepIndex, "No Release backup to restore.")
-            return
+    /**
+     * Atomically swap the callback target and snapshot the engine's
+     * current step state. The snapshot reflects everything dispatched up
+     * to this call; future events go through `newCallback`. The swap is
+     * serialized through the same executor that dispatches log events, so
+     * no log event can fall between the snapshot and `newCallback`'s
+     * first invocation. Caller MUST replay the snapshot to its UI before
+     * returning to the message loop — otherwise out-of-order log events
+     * could overtake the replay.
+     */
+    fun setCallback(newCallback: CompilationCallback?): Snapshot {
+        val swap = java.util.concurrent.Callable<Snapshot> {
+            callback = newCallback
+            // Deep-copy log buffers — caller reads on the UI thread while
+            // we keep appending here. Status is an enum (atomic ref write),
+            // safe to read concurrently.
+            val copies = allStepLogs.map { sl ->
+                CompileStepLogs(
+                    step = sl.step.copy(),
+                    logs = StringBuilder(sl.logs),
+                    errorLogs = StringBuilder(sl.errorLogs)
+                )
+            }
+            Snapshot(copies, currentLogIndex, finishResult)
         }
-        try {
-            if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
-                callback.onLogMessage(failedStepIndex, "Warning: failed to fully clean Release folder before restore.")
-            }
-            if (backupDir.renameTo(releaseDir)) {
-                callback.onLogMessage(failedStepIndex, "Restored previous Release folder from backup.")
-            } else {
-                callback.onLogMessage(failedStepIndex, "Error: failed to rename ReleaseBackup back to Release.")
-            }
-        } catch (ex: Exception) {
-            callback.onLogMessage(failedStepIndex, "Error while restoring backup: ${ex.localizedMessage}")
+        return if (logExecutor.isShutdown) swap.call() else logExecutor.submit(swap).get()
+    }
+
+    /** Tear down the engine. Safe to call from `ViewModel.onCleared()`. */
+    fun close() {
+        if (closed) return
+        closed = true
+        activeEngines.remove(this)
+        callback = null
+        interpreter?.close()
+        interpreter = null
+        if (!logExecutor.isShutdown) {
+            logExecutor.shutdown()
+        }
+    }
+
+    private fun rollbackRelease(failedStepIndex: Int) {
+        rollbackRelease(executionLocation) { callback?.onLogMessage(failedStepIndex, it) }
+    }
+
+    /**
+     * Release is complete: drop the marker, then the backup. In that order, a
+     * kill in between leaves the backup alone, which recovery restores (the
+     * new Release only holds copies of the backed up saves).
+     */
+    private fun commitRelease() {
+        File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).delete()
+        val backupDir = File(executionLocation, "ReleaseBackup")
+        if (backupDir.exists() && !backupDir.deleteRecursively()) {
+            callback?.onLogMessage(3, "Warning: failed to clean up the Release backup.")
+        } else {
+            callback?.onLogMessage(3, "Release backup cleaned up.")
         }
     }
 
@@ -230,13 +318,98 @@ class CompilationEngine(
         private const val CHECK_ENGINE_SCRIPT = "check_engine.rb"
         const val COMPILATION_LOG_FILE = "last_compilation.log"
         const val COMPILATION_ERROR_LOG_FILE = "last_compilation_errors.log"
+        private const val TAG = "CompilationEngine"
+
+        // Present in the execution location from the end of the backup step
+        // until the compilation succeeds: Release cannot be trusted meanwhile.
+        private const val COMPILATION_IN_PROGRESS_MARKER = ".compilation_in_progress"
+
+        // Engines started in this process; an engine counts as running until
+        // it finishes or is closed. Lets [recoverInterruptedCompilation] tell
+        // a live ReleaseBackup (mid-compile) from an orphaned one.
+        private val activeEngines: MutableSet<CompilationEngine> = ConcurrentHashMap.newKeySet()
+
+        private fun isCompiling(executionLocation: String): Boolean {
+            activeEngines.removeIf { it.isFinished() }
+            val target = File(executionLocation).absoluteFile.normalize()
+            return activeEngines.any { File(it.executionLocation).absoluteFile.normalize() == target }
+        }
+
+        /**
+         * Roll back a compilation that was interrupted before it could clean
+         * up (process killed, engine closed mid-run), leaving a partial
+         * Release that must not be launched. See [rollbackRelease].
+         * No-op while a compilation is running on [executionLocation] in this
+         * process. Call it before reading the Release state of a project.
+         *
+         * @return true if Release was restored or removed.
+         */
+        fun recoverInterruptedCompilation(executionLocation: String): Boolean {
+            val interrupted = File(executionLocation, "ReleaseBackup").isDirectory ||
+                File(executionLocation, COMPILATION_IN_PROGRESS_MARKER).exists()
+            if (!interrupted || isCompiling(executionLocation)) {
+                return false
+            }
+            Log.w(TAG, "Interrupted compilation detected in $executionLocation, rolling back Release")
+            return rollbackRelease(executionLocation) { Log.w(TAG, it) }
+        }
+
+        /**
+         * Bring Release back to its state before the compilation:
+         *  - ReleaseBackup exists → it is the previous build (with the user
+         *    saves): restore it over the partial Release.
+         *  - otherwise, marker exists → first compilation, there was no
+         *    Release before: remove the partial one.
+         *  - otherwise → Release was never touched (failure before or during
+         *    the backup step): leave it alone.
+         * Each branch is safe to resume if the process dies halfway through.
+         *
+         * @return true if Release was restored or removed.
+         */
+        private fun rollbackRelease(executionLocation: String, log: (String) -> Unit): Boolean {
+            val releaseDir = File(executionLocation, "Release")
+            val backupDir = File(executionLocation, "ReleaseBackup")
+            val marker = File(executionLocation, COMPILATION_IN_PROGRESS_MARKER)
+            try {
+                if (backupDir.exists()) {
+                    // The backup alone is enough to resume this rollback
+                    marker.delete()
+                    if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                        log("Warning: failed to fully clean Release folder before restore.")
+                    }
+                    if (backupDir.renameTo(releaseDir)) {
+                        log("Restored previous Release folder from backup.")
+                        return true
+                    }
+                    log("Error: failed to rename ReleaseBackup back to Release.")
+                    return false
+                }
+                if (marker.exists()) {
+                    if (releaseDir.exists() && !releaseDir.deleteRecursively()) {
+                        // Keep the marker: the next recovery retries
+                        log("Error: failed to remove the partial Release folder.")
+                        return false
+                    }
+                    marker.delete()
+                    log("Removed the partial Release folder (no previous build to restore).")
+                    return true
+                }
+                log("No Release backup to restore.")
+            } catch (ex: Exception) {
+                log("Error while rolling back Release: ${ex.localizedMessage}")
+            }
+            return false
+        }
 
         // Ruby preludes prepended to scripts that mount the archive. They
-        // define EpsaFormat, EpsaStream, and ArchiveMount so compile.rb /
-        // copy_saves.rb can call ArchiveMount.mount! without a load path.
-        // Order matters: epsa_stream depends on epsa_format, and
-        // archive_mount depends on epsa_stream.
-        private val ARCHIVE_PRELUDES = listOf(
+        // define EpsaFormat, EpsaStream, and ArchiveMount so check_engine.rb
+        // / compile.rb / copy_saves.rb / extract_loader_assets.rb can call
+        // ArchiveMount.mount! without a load path. Order matters:
+        // epsa_stream depends on epsa_format, archive_mount on epsa_stream.
+        //
+        // Made `internal` (was `private`) so ArchiveValidator can reuse
+        // the same bundle for its one-shot extract_loader_assets.rb pass.
+        internal val ARCHIVE_PRELUDES = listOf(
             "lib/epsa_format.rb",
             "lib/epsa_stream.rb",
             "lib/archive_mount.rb"

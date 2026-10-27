@@ -11,6 +11,13 @@
 # exist in process memory for the duration of the compile run), the bytes
 # are useless.
 
+# Guard the whole module body — same rationale as epsa_format.rb / epsa_stream.rb.
+# ARCHIVE_PRELUDES prepends this file to every compile-VM script, so on the
+# reused VM it gets evaluated 3+ times per compile flow. Probe ENV_PATH (the
+# first internal const) instead of the module name, which gets autodefined on
+# first reopen.
+unless defined?(ArchiveMount::ENV_PATH)
+
 module ArchiveMount
   module_function
 
@@ -18,7 +25,17 @@ module ArchiveMount
   ENV_ENC_KEY = 'PSDK_EPSA_KEY_HEX'.freeze
   ENV_MAC_KEY = 'PSDK_EPSA_MAC_KEY_HEX'.freeze
 
+  # Cheap "is the archive already mounted at /" probe. PSDK ships its build
+  # marker at this path, so existence implies a live mount with our content.
+  MOUNT_PROBE = 'Data/Studio/psdk.dat'.freeze
+
+  def mounted?
+    PhysFS.exist?(MOUNT_PROBE)
+  end
+
   def mount!
+    return if mounted?
+
     epsa_path = ENV[ENV_PATH]   or raise "Missing #{ENV_PATH} env var"
     enc_hex   = ENV[ENV_ENC_KEY] or raise "Missing #{ENV_ENC_KEY} env var"
     mac_hex   = ENV[ENV_MAC_KEY] or raise "Missing #{ENV_MAC_KEY} env var"
@@ -29,4 +46,11 @@ module ArchiveMount
     io = EpsaStream.new(epsa_path, enc_key: enc_key, mac_key: mac_key)
     PhysFS.mount_io(io, 'archive.zip', '/', false)
   end
+
+  def unmount!
+    return unless mounted?
+    PhysFS.unmount('archive.zip')
+  end
 end
+
+end # unless defined?(ArchiveMount::ENV_PATH)

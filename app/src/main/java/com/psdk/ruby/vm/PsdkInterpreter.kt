@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import android.system.Os
 import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import com.scorbutics.rubyvm.BuildInfo
 import com.scorbutics.rubyvm.ExecutionResult
 import com.scorbutics.rubyvm.LibraryConfig
@@ -76,25 +77,36 @@ class PsdkInterpreter private constructor(
      * coexistence (debug listener bound first, eval injected via the FIFO
      * interpreter post-boot). Logs the result but does not fail the
      * interpreter setup — a missing port is dev-friction, not a crash.
+     *
+     * Latched at process scope: the underlying VM is a singleton
+     * (g_global_vm) and DEBUGGER__ is a Ruby singleton, so the listeners
+     * are global. Re-arming on every interpreter wastes work AND trips a
+     * bug in debug gem 1.4.0 — `DEBUGGER__.open` calls reset_ui with a
+     * fresh UI_TcpServer it never activates, then a third call tries to
+     * deactivate that never-activated UI and dies on a nil @reader_thread.
      */
     private fun armRemoteListeners(interp: KmpInterpreter) {
         if (!RemoteListenerConfig.enabled) return
+        if (!remoteListenersArmed.compareAndSet(false, true)) {
+            Log.i(TAG, "remote listeners already armed for this process; skipping")
+            return
+        }
 
         val dbgRc = interp.enableRemoteDebug(
             host = RemoteListenerConfig.DEBUG_HOST,
-            port = RemoteListenerConfig.DEBUG_PORT,
+            port = RemoteListenerConfig.debugPort,
             token = RemoteListenerConfig.TOKEN,
             sessionName = "psdk-launcher-debug",
         )
-        Log.i(TAG, "enableRemoteDebug rc=$dbgRc on ${RemoteListenerConfig.DEBUG_HOST}:${RemoteListenerConfig.DEBUG_PORT}")
+        Log.i(TAG, "enableRemoteDebug rc=$dbgRc on ${RemoteListenerConfig.DEBUG_HOST}:${RemoteListenerConfig.debugPort}")
 
         val evalRc = interp.enableRemoteEval(
             host = RemoteListenerConfig.EVAL_HOST,
-            port = RemoteListenerConfig.EVAL_PORT,
+            port = RemoteListenerConfig.evalPort,
             token = RemoteListenerConfig.TOKEN,
             sessionName = "psdk-launcher-eval",
         )
-        Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.EVAL_PORT}")
+        Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.evalPort}")
     }
 
     fun close() {
@@ -104,6 +116,8 @@ class PsdkInterpreter private constructor(
 
     companion object {
         const val TAG = "PsdkInterpreter"
+
+        private val remoteListenersArmed = AtomicBoolean(false)
 
         /** rgss-runtime identity for the AAR currently linked into the app. */
         val rgssRuntimeVersion: String get() = BuildInfo.VERSION

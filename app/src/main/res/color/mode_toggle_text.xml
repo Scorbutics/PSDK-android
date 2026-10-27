@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Text-color state list for the wizard's [Release][Debug] toggle.
+
+  Checked  → white reads cleanly on the splash-accent fill (same pairing
+             the active step indicator uses for its "1 / 2 / 3" digit).
+  Idle     → splash accent on transparent — the text doubles as the chip's
+             visual weight when the fill is invisible.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/white" />
+    <item android:color="@color/colorSplashAccent" />
+</selector>

@@ -37,9 +37,13 @@ end
 
 STDERR.puts "Archive location: " + ENV.fetch('PSDK_EPSA_PATH', '<unset>')
 
-BACKUP_DIR = './ReleaseBackup'
-BACKUP_SAVES = File.join(BACKUP_DIR, 'Saves')
-DEST_SAVES = File.join('Release', 'Saves')
+# Self-guard: backup_saves.rb already assigned BACKUP_DIR earlier on this same
+# reused compile VM. Same value, so the second assignment is a no-op — but
+# Ruby still warns about it. BACKUP_SAVES/DEST_SAVES are unique to this script
+# but also constants, so they get the same treatment on re-run.
+BACKUP_DIR   = './ReleaseBackup'              unless defined?(BACKUP_DIR)
+BACKUP_SAVES = File.join(BACKUP_DIR, 'Saves') unless defined?(BACKUP_SAVES)
+DEST_SAVES   = File.join('Release', 'Saves')  unless defined?(DEST_SAVES)
 
 # User saves from previous installation take priority over bundled archive saves
 restored_from_backup = false
@@ -61,8 +65,5 @@ if !restored_from_backup
   end
 end
 
-# Clean up backup now that compilation succeeded
-if File.directory?(BACKUP_DIR)
-  FileUtils.rm_rf(BACKUP_DIR)
-  STDERR.puts "Release backup cleaned up."
-end
+# ReleaseBackup is cleaned up by CompilationEngine.commitRelease, which must
+# drop the compilation marker first (crash-safe ordering).

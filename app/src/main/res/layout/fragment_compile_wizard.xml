@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- Wizard chrome: toolbar + step indicator. Wrapped in a single
+         container so classic-bootstrap mode can hide all of it with one
+         visibility toggle, leaving the GL surface alone on screen. -->
+    <LinearLayout
+        android:id="@+id/wizardChrome"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@android:color/transparent"
+        android:theme="@style/ThemeOverlay.Psdk.Toolbar"
+        app:titleTextColor="@color/colorOnSurface"
+        app:titleTextAppearance="@style/TextAppearance.Psdk.ToolbarTitle"
+        app:navigationIconTint="@color/colorSplashAccent"
+        app:navigationIcon="@drawable/ic_arrow_back"
+        app:title="Compile">
+
+        <!-- Mode toggle for super-user debug-play. Hidden by default; shown
+             by [CompileWizardFragment] only when a project's archive has
+             been validated (so DEBUG is meaningful) and the wizard is not
+             in classic-bootstrap. Selection drives [host.startGame]'s mode
+             argument and the splash CTA text.
+
+             Visual is intentionally minimal: glass-stroke chips that match
+             the pending step indicator + FAB halo palette, so the toggle
+             reads as part of the splash chrome rather than a Material
+             widget on top. See [Widget.Psdk.ModeToggleButton] for the
+             state-list rationale. -->
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/modeToggleGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="@dimen/spacing_md"
+            android:visibility="gone"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/modeReleaseChip"
+                style="@style/Widget.Psdk.ModeToggleButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="Release" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/modeDebugChip"
+                style="@style/Widget.Psdk.ModeToggleButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="Debug" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+    </com.google.android.material.appbar.MaterialToolbar>
+
+    <!-- Step-indicator block (indicator + its bottom divider). Hidden
+         initially and slid down into place when the user taps the logo
+         to begin compiling — see [slideInStepIndicator]. -->
+    <LinearLayout
+        android:id="@+id/stepIndicatorBlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+    <!-- Step indicator — transparent so the GL splash continues
+         uninterrupted through the chrome. Step circles & connectors
+         carry their own splash-accent colours. -->
+    <LinearLayout
+        android:id="@+id/stepIndicator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="@dimen/spacing_md"
+        android:background="@android:color/transparent">
+
+        <!-- Step 1: Import -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator1"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_active"
+                android:gravity="center"
+                android:text="1"
+                android:textColor="@color/colorOnPrimary"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Import"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+
+        <!-- Connector 1-2 -->
+        <View
+            android:id="@+id/connector12"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/step_connector_height"
+            android:layout_weight="1"
+            android:layout_gravity="top"
+            android:layout_marginTop="15dp"
+            android:background="@drawable/bg_step_connector" />
+
+        <!-- Step 2: Compile -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator2"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_pending"
+                android:gravity="center"
+                android:text="2"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Compile"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+
+        <!-- Connector 2-3 -->
+        <View
+            android:id="@+id/connector23"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/step_connector_height"
+            android:layout_weight="1"
+            android:layout_gravity="top"
+            android:layout_marginTop="15dp"
+            android:background="@drawable/bg_step_connector" />
+
+        <!-- Step 3: Done -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/stepIndicator3"
+                android:layout_width="@dimen/step_indicator_size"
+                android:layout_height="@dimen/step_indicator_size"
+                android:background="@drawable/bg_step_pending"
+                android:gravity="center"
+                android:text="3"
+                android:textColor="@color/colorOnSurfaceVariant"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/stepLabel3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="Done"
+                android:textAppearance="@style/TextAppearance.Psdk.Caption" />
+        </LinearLayout>
+    </LinearLayout>
+    </LinearLayout>
+    </LinearLayout>
+
+    <!-- Wizard body. The GL surface lives in [RootActivity]'s root layout
+         behind this fragment; the wizard's sub-fragments mounted into
+         [wizardContainer] use transparent backgrounds so the surface
+         shows through. Step 0 mounts no fragment — the game.png logo
+         rendered into the GL surface IS the "start compilation" tap
+         target (see loader.rb's ICON_TAPPED_SENTINEL). -->
+    <FrameLayout
+        android:id="@+id/wizardContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

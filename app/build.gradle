@@ -3,7 +3,7 @@ plugins {
     id 'com.android.application'
     id 'kotlin-android'
     id 'org.jetbrains.kotlin.plugin.serialization'
-    id 'com.google.devtools.ksp' version '2.3.2'
+    id 'com.google.devtools.ksp' version '2.3.6'
 }
 
 // We iterate fast on rgss-runtime SNAPSHOTs (republishing the same
@@ -89,11 +89,7 @@ dependencies {
     ksp "androidx.room:room-compiler:$room_version"
 
     implementation fileTree(dir: 'libs', include: '*.jar')
-    implementation(libs.apkzlib)
-    implementation(libs.apksig)
-    implementation(libs.zipalign)
-    implementation(libs.arsc)
-    implementation(libs.bcpkix.jdk15on)
+    implementation(libs.bcprov.jdk15on)
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.constraintlayout)

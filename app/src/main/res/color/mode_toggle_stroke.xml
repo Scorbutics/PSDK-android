@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stroke-color state list for the wizard's [Release][Debug] toggle.
+  Both states share the splash-accent hue; the checked chip's stroke
+  matches its solid fill (visually "no stroke"), the idle chip gets the
+  faded glass-stroke alpha used elsewhere in the wizard chrome.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/colorSplashAccent" />
+    <item android:color="@color/colorRowGlassStroke" />
+</selector>

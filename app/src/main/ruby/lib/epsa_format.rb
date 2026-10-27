@@ -3,6 +3,15 @@
 # the v4 spec is documented there. Any change to magic / header layout / KDF
 # tag strings has to land in both repos in lockstep.
 
+# Guard the whole module body: this file is concatenated as an ARCHIVE_PRELUDE
+# in front of check_engine.rb / compile.rb / copy_saves.rb, which run back-to-
+# back on the SAME reused compile VM. Without the guard, each script after the
+# first re-evaluates these constant assignments and Ruby warns "already
+# initialized constant" for every one. Probe a constant defined in this file
+# (not the module name itself — `module EpsaFormat` reopens are fine, but a
+# second run of these literal assignments inside is what warns).
+unless defined?(EpsaFormat::MAGIC)
+
 module EpsaFormat
   MAGIC                    = 'PSAE'
   VERSION                  = 4
@@ -37,3 +46,5 @@ module EpsaFormat
     advance_be128(nonce_bytes, chunk_index * (chunk_size / AES_BLOCK_SIZE))
   end
 end
+
+end # unless defined?(EpsaFormat::MAGIC)

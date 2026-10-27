@@ -26,6 +26,16 @@
     <color name="colorInProgress">#FF42A5F5</color>
     <color name="colorPending">#FF8B8B9E</color>
 
+    <!-- Splash accent: matches loader_assets_default/icon_color.json so the
+         project list reads as a continuation of the GL splash, not a
+         separate Material screen. -->
+    <color name="colorSplashAccent">#FF0F70B0</color>
+    <!-- Glass-row fill: a thin black wash over the GL background. The
+         starfield bleeds through, the row reads as a floating panel. -->
+    <color name="colorRowGlassFill">#33000000</color>
+    <!-- Stroke at idle (~30% alpha accent). Adapter bumps to 60% on press. -->
+    <color name="colorRowGlassStroke">#4D0F70B0</color>
+
     <!-- Legacy (kept for drawables referencing them) -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>

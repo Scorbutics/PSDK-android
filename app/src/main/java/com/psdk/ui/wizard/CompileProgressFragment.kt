@@ -4,25 +4,36 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
-import android.widget.TextView
-import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.activityViewModels
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.progressindicator.LinearProgressIndicator
-import com.psdk.CompileStepStatus
+import androidx.fragment.app.viewModels
 import com.psdk.R
 import com.psdk.compilation.CompilationEngine
+import com.psdk.compilation.CompileSubStepMapper
 import com.psdk.ui.CompileWizardViewModel
+import com.psdk.ui.LoaderPaths
 import java.io.File
 
+/**
+ * Headless harness for step 1 of the wizard.
+ *
+ * The visible UI during compile is the GL surface running loader.rb —
+ * its `status_text` shows the current sub-step. We get text into Ruby
+ * via a polled file ([LoaderPaths.statusFile]) instead of bringing up an
+ * Android overlay, because we already pay for the splash and a second
+ * UI layer just competes for the user's eye.
+ *
+ * The fragment owns nothing visual on purpose: the wizard's toolbar
+ * and step indicator are the only Kotlin-side chrome, and the full
+ * per-step log lives on disk for CompileDoneFragment's "View Logs".
+ */
 class CompileProgressFragment : Fragment() {
 
-    private val viewModel: CompileWizardViewModel by activityViewModels()
-    private lateinit var adapter: CompileStepAdapter
-    private var engine: CompilationEngine? = null
+    // Scoped to the parent (CompileWizardFragment) so all wizard steps
+    // share the same VM instance — was activityViewModels() when the
+    // wizard was its own Activity.
+    private val viewModel: CompileWizardViewModel by viewModels({ requireParentFragment() })
+
+    private var lastStatusWritten: String? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_compile_progress, container, false)
@@ -31,156 +42,123 @@ class CompileProgressFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val recyclerView = view.findViewById<RecyclerView>(R.id.stepsRecyclerView)
-        val progressBar = view.findViewById<LinearProgressIndicator>(R.id.progressBar)
+        // Engine is owned by the ViewModel so a fragment re-creation
+        // (e.g. orientation change) doesn't restart compilation. The
+        // first call to ensureCompilationStarted starts the engine; later
+        // calls return the same instance. setCallback then atomically
+        // swaps in our fragment-scoped callback and returns a snapshot.
+        val engine = viewModel.ensureCompilationStarted(requireContext()) ?: return
 
-        adapter = CompileStepAdapter()
-        recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        recyclerView.adapter = adapter
-
-        val executionLocation = viewModel.executionLocation.value ?: return
-        val archive = viewModel.archive.value ?: return
-
-        engine = CompilationEngine(
-            context = requireContext(),
-            executionLocation = executionLocation,
-            archive = archive,
-            callback = object : CompilationEngine.CompilationCallback {
-                override fun onStepStarted(stepIndex: Int, stepName: String) {
-                    activity?.runOnUiThread {
-                        adapter.updateStepStatus(stepIndex, CompileStepStatus.IN_PROGRESS)
-                        adapter.expandStep(stepIndex)
-                    }
-                }
-
-                override fun onStepCompleted(stepIndex: Int, success: Boolean) {
-                    activity?.runOnUiThread {
-                        adapter.updateStepStatus(
-                            stepIndex,
-                            if (success) CompileStepStatus.SUCCESS else CompileStepStatus.ERROR
-                        )
-                    }
-                }
-
-                override fun onLogMessage(stepIndex: Int, message: String) {
-                    activity?.runOnUiThread {
-                        adapter.appendLog(stepIndex, message)
-                    }
-                }
-
-                override fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File) {
-                    activity?.runOnUiThread {
-                        progressBar.hide()
-                        viewModel.compilationSuccess.value = success
-                        viewModel.currentStep.value = 2
-                    }
-                }
-            }
-        )
-
-        adapter.setSteps(listOf("Check engine", "Backing up previous Release", "Compilation", "Copying saves"))
-        engine?.start()
-    }
-}
-
-// Inner adapter for compilation steps
-class CompileStepAdapter : RecyclerView.Adapter<CompileStepAdapter.StepViewHolder>() {
-
-    data class StepState(
-        val title: String,
-        var status: CompileStepStatus = CompileStepStatus.READY,
-        val logs: StringBuilder = StringBuilder(),
-        var expanded: Boolean = false
-    )
-
-    private val steps = mutableListOf<StepState>()
-
-    fun setSteps(titles: List<String>) {
-        steps.clear()
-        steps.addAll(titles.map { StepState(it) })
-        notifyDataSetChanged()
-    }
-
-    fun updateStepStatus(index: Int, status: CompileStepStatus) {
-        if (index < steps.size) {
-            steps[index].status = status
-            notifyItemChanged(index)
-        }
-    }
-
-    fun appendLog(index: Int, message: String) {
-        if (index < steps.size) {
-            steps[index].logs.appendLine(message)
-            notifyItemChanged(index)
-        }
-    }
-
-    fun expandStep(index: Int) {
-        steps.forEachIndexed { i, step ->
-            step.expanded = (i == index)
-        }
-        notifyDataSetChanged()
-    }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StepViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_compile_step, parent, false)
-        return StepViewHolder(view)
-    }
-
-    override fun onBindViewHolder(holder: StepViewHolder, position: Int) {
-        holder.bind(steps[position])
-    }
-
-    override fun getItemCount() = steps.size
-
-    inner class StepViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val statusIcon: ImageView = itemView.findViewById(R.id.stepStatusIcon)
-        private val title: TextView = itemView.findViewById(R.id.stepTitle)
-        private val expandIcon: ImageView = itemView.findViewById(R.id.expandIcon)
-        private val logContainer: NestedScrollView = itemView.findViewById(R.id.logContainer)
-        private val logText: TextView = itemView.findViewById(R.id.logText)
-        private val header: View = itemView.findViewById(R.id.stepHeader)
-
-        fun bind(step: StepState) {
-            title.text = step.title
-
-            // Status icon
-            val context = itemView.context
-            when (step.status) {
-                CompileStepStatus.READY -> {
-                    statusIcon.setImageResource(R.drawable.bg_step_pending)
-                    title.setTextColor(context.getColor(R.color.colorOnSurfaceVariant))
-                }
-                CompileStepStatus.IN_PROGRESS -> {
-                    statusIcon.setImageResource(R.drawable.bg_step_active)
-                    title.setTextColor(context.getColor(R.color.colorPrimary))
-                }
-                CompileStepStatus.SUCCESS -> {
-                    statusIcon.setImageDrawable(null)
-                    statusIcon.setBackgroundResource(R.drawable.bg_step_completed)
-                    statusIcon.setImageResource(R.drawable.ic_check)
-                    statusIcon.setColorFilter(context.getColor(R.color.white))
-                    title.setTextColor(context.getColor(R.color.colorSuccess))
-                }
-                CompileStepStatus.ERROR -> {
-                    statusIcon.setImageResource(R.drawable.ic_error)
-                    statusIcon.setColorFilter(context.getColor(R.color.colorError))
-                    title.setTextColor(context.getColor(R.color.colorError))
-                }
+        val callback = object : CompilationEngine.CompilationCallback {
+            override fun onStepStarted(stepIndex: Int, stepName: String) {
+                // Step 3 ("Copying saves") is the engine's housekeeping
+                // tail. By the time it fires we've already shown
+                // "Finalizing…" via CompileSubStepMapper, and a fresh
+                // "Copying saves…" label right before the lift reads as
+                // an out-of-context interruption — the user is done,
+                // the compile result card is what matters next.
+                if (stepIndex >= 3) return
+                pushStatus("$stepName...")
             }
 
-            // Logs
-            val hasLogs = step.logs.isNotEmpty()
-            expandIcon.visibility = if (hasLogs) View.VISIBLE else View.GONE
-            logContainer.visibility = if (step.expanded && hasLogs) View.VISIBLE else View.GONE
-            logText.text = step.logs.toString()
+            override fun onStepCompleted(stepIndex: Int, success: Boolean) {
+                // Sub-step labels carry the within-step granularity; the
+                // step-completed transition is implicit in the next
+                // step's onStepStarted, so no extra status push here.
+            }
 
-            header.setOnClickListener {
-                if (hasLogs) {
-                    step.expanded = !step.expanded
-                    notifyItemChanged(adapterPosition)
+            override fun onLogMessage(stepIndex: Int, message: String) {
+                val sub = CompileSubStepMapper.fromLog(message) ?: return
+                pushStatus(sub.label)
+            }
+
+            override fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File) {
+                // Trigger the splash lift BEFORE the wizard advances —
+                // the loader picks up <<LIFT>> on its next file poll
+                // (≤133ms) and the icon + title + version + status
+                // animate upward to make room for CompileDoneFragment's
+                // bottom card sliding up. The card's slide animation
+                // and the splash lift play in parallel; minor de-sync
+                // is fine because the card and lifted content land in
+                // separate regions of the screen.
+                //
+                // The tail after the sentinel becomes the new status
+                // text (loader/status_file.rb strips the sentinel then
+                // falls through to update_status), so the splash flips
+                // from the last sub-step ("Finalizing…") to the final
+                // outcome as it lifts.
+                val finalStatus = if (success) "Compilation done" else "Compilation failed"
+                pushStatus("$LIFT_SENTINEL$finalStatus")
+                activity?.runOnUiThread {
+                    viewModel.compilationSuccess.value = success
+                    viewModel.currentStep.value = 2
                 }
             }
         }
+
+        val snapshot = engine.setCallback(callback)
+
+        // If the engine ran ahead of us while we were detached, fast-
+        // forward straight to the done step. compilationSuccess uses
+        // setValue (UI thread) because we're on it.
+        snapshot.finishResult?.let { fr ->
+            viewModel.compilationSuccess.value = fr.success
+            viewModel.currentStep.value = 2
+        }
+    }
+
+    override fun onDestroyView() {
+        // Detach so the engine doesn't dispatch into a dead view. The
+        // engine itself keeps running and accumulating state for whoever
+        // attaches next (or for ViewModel.onCleared to drain).
+        viewModel.getEngine()?.setCallback(null)
+        super.onDestroyView()
+    }
+
+    /**
+     * Write a one-line status into [LoaderPaths.statusFile], the file the
+     * splash's loader.rb polls each frame. We debounce identical writes
+     * so the loader's mtime-based poll doesn't re-read the same string
+     * repeatedly.
+     *
+     * The status file lives next to the loader's assets dir (app data
+     * dir), not next to the wizard's per-project executionLocation — the
+     * loader is activity-scoped since Cut 2 and chdir's to one stable
+     * location regardless of which project is compiling.
+     *
+     * Best-effort: a failed write (disk full, permission flake) just
+     * means the splash keeps the previous label until the next update
+     * lands. That's a strictly worse UX than the happy path, never a
+     * broken one.
+     */
+    private fun pushStatus(text: String) {
+        if (text == lastStatusWritten) return
+        try {
+            LoaderPaths.statusFile(requireContext()).writeText(text)
+            lastStatusWritten = text
+        } catch (e: Exception) {
+            // Swallow — see kdoc above.
+        }
+    }
+
+    companion object {
+        /**
+         * Matches Loader::StatusFile::LIFT_SENTINEL in
+         * loader/status_file.rb verbatim. Writing this string to
+         * [LoaderPaths.statusFile] asks the splash to lift its
+         * centerpiece upward — see StatusFile#poll and the staggered
+         * SceneState::LIFT_DELAY_* offsets in the Icon / Text layers.
+         */
+        const val LIFT_SENTINEL = "<<LIFT>>"
+
+        /**
+         * Matches Loader::StatusFile::TAP_SENTINEL in
+         * loader/status_file.rb verbatim. Writing this string asks the
+         * splash to play the release-on-icon combo (bang + shake +
+         * spin) without waiting for a real finger. Currently only the
+         * classic-setup bootstrap path uses it — see
+         * CompileWizardFragment.performClassicAutoTap.
+         */
+        const val TAP_SENTINEL = "<<TAP>>"
     }
 }
