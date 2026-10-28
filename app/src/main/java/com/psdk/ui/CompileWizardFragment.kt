@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -257,8 +258,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             viewModel.compilationSuccess.observe(viewLifecycleOwner) { success ->
                 if (success == true) {
                     val prefs = requireContext().getSharedPreferences(ClassicModeState.PREFS, Context.MODE_PRIVATE)
-                    val versionCode = requireContext().packageManager
-                        .getPackageInfo(requireContext().packageName, 0).longVersionCode
+                    val versionCode = PackageInfoCompat.getLongVersionCode(
+                        requireContext().packageManager.getPackageInfo(requireContext().packageName, 0))
                     prefs.edit()
                         .putString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_SETUP_COMPLETE)
                         .putLong(ClassicModeState.VERSION_CODE_KEY, versionCode)
@@ -302,7 +303,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             // fires the observer above which restarts the loader with
             // archive+prelude bound; loader.rb's own thread then runs
             // extract_loader_assets.rb before its first frame.
-            if (savedInstanceState == null && viewModel.archive.value == null) {
+            //
+            // Gated on the ViewModel, not on savedInstanceState: after the
+            // process was killed (backgrounded during the copy or compile)
+            // the activity is restored with a saved state but a fresh
+            // ViewModel, and the bootstrap must run again or the splash
+            // waits forever for an archive that never comes.
+            if (viewModel.archive.value == null && !viewModel.bootstrapStarted) {
+                viewModel.bootstrapStarted = true
                 val ctx = requireContext().applicationContext
                 Thread {
                     val keys = runCatching {
@@ -330,8 +338,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                         viewModel.currentStep.value = 0
                     }
                 }.start()
-            } else if (savedInstanceState == null) {
-                viewModel.currentStep.value = 0
             }
         } else {
             // Super-user (non-debug-play): the archive is already staged on
@@ -341,7 +347,9 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             // unobstructed while the worker runs; on success the
             // [viewModel.archive] observer points the loader at the
             // extracted assets, and the user taps the logo to compile.
-            if (savedInstanceState == null && viewModel.archive.value == null) {
+            // Same ViewModel-based gate as the classic branch above.
+            if (viewModel.archive.value == null && !viewModel.bootstrapStarted) {
+                viewModel.bootstrapStarted = true
                 val ctx = requireContext().applicationContext
                 val staged = ArchiveValidator.getStagingFile(executionLocation)
                 Thread {
@@ -514,12 +522,21 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             ?: error("classic bootstrap: no .epsa found in APK assets")
         android.util.Log.i(TAG, "classic bootstrap: copying assets/$asset → ${staging.absolutePath}")
         // Copy next to the target then rename, so a copy killed midway never
-        // leaves a truncated archive.staging behind.
+        // leaves a truncated archive.staging behind. Serialized process-wide:
+        // backing out of the wizard mid-copy and relaunching starts a second
+        // bootstrap while the first thread is still writing the same files.
         val partial = File(staging.parentFile, "${staging.name}.partial")
-        context.assets.open(asset).use { input ->
-            partial.outputStream().use { out -> input.copyTo(out) }
+        synchronized(ARCHIVE_COPY_LOCK) {
+            try {
+                context.assets.open(asset).use { input ->
+                    partial.outputStream().use { out -> input.copyTo(out) }
+                }
+                if (!partial.renameTo(staging)) error("classic bootstrap: cannot move ${partial.name} to ${staging.name}")
+            } finally {
+                // Hundreds of MB: never leave it behind on failure (e.g. disk full).
+                partial.delete()
+            }
         }
-        if (!partial.renameTo(staging)) error("classic bootstrap: cannot move ${partial.name} to ${staging.name}")
     }
 
     /**
@@ -783,6 +800,9 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     companion object {
         const val ARG_EXECUTION_LOCATION = "EXECUTION_LOCATION"
+
+        /** Serializes [extractBundledArchive] across wizard instances. */
+        private val ARCHIVE_COPY_LOCK = Any()
 
         /**
          * When true, the wizard treats itself as the first-launch setup

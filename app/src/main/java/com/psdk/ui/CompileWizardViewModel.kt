@@ -14,6 +14,13 @@ class CompileWizardViewModel : ViewModel() {
     val currentStep = MutableLiveData(0)
     val compilationSuccess = MutableLiveData<Boolean?>()
 
+    // Set once the archive bootstrap (classic copy + key derivation, or the
+    // super-user validation) has been started for this ViewModel. Survives
+    // rotation like the rest of the ViewModel, so a recreated fragment does
+    // not start a second bootstrap; a process restored after being killed
+    // gets a fresh ViewModel and runs it again. UI thread only.
+    var bootstrapStarted = false
+
     // Compilation engine outlives the fragment so an orientation change
     // (or any other view-recreation) doesn't restart compilation. Started
     // once when the user enters the progress step; closed when the

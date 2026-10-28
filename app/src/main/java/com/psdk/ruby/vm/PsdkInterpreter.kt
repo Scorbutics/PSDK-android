@@ -5,13 +5,13 @@ import android.content.res.AssetManager
 import android.system.Os
 import android.util.Log
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import com.scorbutics.rubyvm.BuildInfo
-import com.scorbutics.rubyvm.ExecutionResult
+import com.scorbutics.rubyvm.execute
 import com.scorbutics.rubyvm.LibraryConfig
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.RubyVMPaths
-import com.scorbutics.rubyvm.executeWithResult
 import com.scorbutics.rubyvm.RubyInterpreter as KmpInterpreter
 
 typealias CompletionTask = (Int) -> Unit
@@ -41,15 +41,14 @@ class PsdkInterpreter private constructor(
                     script.getContent()
                 }
 
-                val result = interpreter!!.executeWithResult(
-                    scriptContent = wrappedContent,
-                    timeoutSeconds = 600
-                )
-                val exitCode = when (result) {
-                    is ExecutionResult.Success -> result.exitCode
-                    is ExecutionResult.Failure -> 1
-                    is ExecutionResult.Timeout -> 1
-                }
+                // No timeout: workloads (a game session, the splash loader,
+                // a compile) legitimately run for hours. A timeout used to
+                // report the still-running script as completed after 600 s,
+                // which made GameActivity finish() the game mid-session.
+                val latch = CountDownLatch(1)
+                var exitCode = 1
+                interpreter!!.execute(wrappedContent, latch) { exitCode = it }
+                latch.await()
                 onComplete.invoke(exitCode)
             } catch (e: Exception) {
                 onError?.invoke(e)

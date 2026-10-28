@@ -10,6 +10,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.psdk.R
+import com.psdk.ruby.vm.PsdkInterpreter
 import com.scorbutics.litergss.NativeSurface
 import com.scorbutics.rubyvm.LogMessage
 
@@ -55,6 +56,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     ) { result ->
         val exitCode = result.data?.getIntExtra(GameActivity.RESULT_EXIT_CODE, -1)
         android.util.Log.i(TAG, "game activity returned (result=${result.resultCode}, exit=$exitCode)")
+        gameLaunchInFlight = false
         startLoaderForCurrentState()
     }
 
@@ -93,6 +95,14 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // it across attach/detach surface cycles, so this single call is
         // enough for the Activity's whole lifetime.
         NativeSurface.setHostActivity(this)
+
+        // Same process-wide setup as EntryActivity. When Android restores a
+        // process it killed in the background, it recreates this activity
+        // directly and EntryActivity never runs: without these the runtime
+        // library name is unset and the loader falls back to owned windows.
+        // Both calls are idempotent.
+        PsdkInterpreter.initialize()
+        NativeSurface.setReuseSharedWindow(true)
 
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -352,7 +362,21 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         )
     }
 
+    /**
+     * True from [startGame] until [gameLauncher] reports the game finished.
+     * The splash emits one icon-tap sentinel per release, and taps already
+     * queued ahead of the loader's Closed event still reach us after the
+     * first launch: without this guard a double tap started two
+     * GameActivity instances in the same `:game` process. UI thread only.
+     */
+    private var gameLaunchInFlight = false
+
     override fun startGame(executionLocation: String, mode: GameMode) {
+        if (gameLaunchInFlight) {
+            android.util.Log.i(TAG, "startGame: a game launch is already in flight, ignoring")
+            return
+        }
+        gameLaunchInFlight = true
         // The game runs in GameActivity's own `:game` process, so it always
         // starts on a fresh Ruby VM and its state is thrown away with the
         // process on exit. Stop the loader first: the shell surface is

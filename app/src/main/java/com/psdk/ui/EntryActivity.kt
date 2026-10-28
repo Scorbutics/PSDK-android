@@ -3,6 +3,7 @@ package com.psdk.ui
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.pm.PackageInfoCompat
 import com.psdk.AppModeDetector
 import com.psdk.ClassicModeState
 import com.psdk.ruby.vm.PsdkInterpreter
@@ -60,7 +61,8 @@ class EntryActivity : AppCompatActivity() {
      */
     private fun classicTarget(): Intent? {
         val prefs = getSharedPreferences(ClassicModeState.PREFS, MODE_PRIVATE)
-        val currentVersionCode = packageManager.getPackageInfo(packageName, 0).longVersionCode
+        // PackageInfo.longVersionCode is API 28; minSdk is 26.
+        val currentVersionCode = PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
         val storedVersionCode = prefs.getLong(ClassicModeState.VERSION_CODE_KEY, -1L)
         if (storedVersionCode != currentVersionCode) {
             prefs.edit()
