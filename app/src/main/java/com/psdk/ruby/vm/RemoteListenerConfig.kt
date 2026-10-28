@@ -27,6 +27,11 @@ import com.psdk.BuildConfig
  * The shell process (loader, compile) has its own VM and listens on
  * 7787 / 7788 instead — both processes are alive while a game runs, so
  * they can't share a port.
+ *
+ * Ports are device-global, and every APK built from this template (the
+ * PSDK hub, each exported game) asks for the same ones. The pair actually
+ * used is the first free one among the defaults, +100, +200, ... — check
+ * logcat (tag PsdkInterpreter / GameActivity) for the ports to forward.
  */
 object RemoteListenerConfig {
     const val DEBUG_HOST  = "127.0.0.1"
@@ -41,8 +46,38 @@ object RemoteListenerConfig {
     val enabled: Boolean get() = BuildConfig.DEBUG
 
     /** Ports for the VM living in the current process. */
-    val debugPort: Int get() = if (isGameProcess) DEBUG_PORT else SHELL_DEBUG_PORT
-    val evalPort: Int get() = if (isGameProcess) EVAL_PORT else SHELL_EVAL_PORT
+    val debugPort: Int get() = ports.first
+    val evalPort: Int get() = ports.second
+
+    private const val PORT_PAIR_STEP     = 100
+    private const val PORT_PAIR_ATTEMPTS = 10
+
+    /**
+     * Resolved once per process: the first (debug, eval) pair both free on
+     * the loopback, starting at this process's defaults. Falls back to the
+     * defaults when none is free; the VM then logs the bind failure and
+     * runs without the listener (the probe is non-fatal on its side).
+     */
+    private val ports: Pair<Int, Int> by lazy {
+        val defaultDebug = if (isGameProcess) DEBUG_PORT else SHELL_DEBUG_PORT
+        val defaultEval  = if (isGameProcess) EVAL_PORT else SHELL_EVAL_PORT
+        val pair = (0 until PORT_PAIR_ATTEMPTS)
+            .map { defaultDebug + it * PORT_PAIR_STEP to defaultEval + it * PORT_PAIR_STEP }
+            .firstOrNull { (dbg, eval) -> isBindable(DEBUG_HOST, dbg) && isBindable(EVAL_HOST, eval) }
+            ?: (defaultDebug to defaultEval)
+        if (pair.first != defaultDebug) {
+            android.util.Log.w("RemoteListenerConfig",
+                "ports $defaultDebug/$defaultEval busy (another PSDK app?), using ${pair.first}/${pair.second}")
+        }
+        pair
+    }
+
+    private fun isBindable(host: String, port: Int): Boolean = runCatching {
+        java.net.ServerSocket().use { socket ->
+            socket.reuseAddress = true
+            socket.bind(java.net.InetSocketAddress(host, port))
+        }
+    }.isSuccess
 
     /**
      * True in the `:game` process. Read from /proc rather than
