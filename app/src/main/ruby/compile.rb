@@ -69,8 +69,19 @@ ARGV << util_flag unless ARGV.include?(util_flag)
 # clean-VM sandbox. Native extensions (LiteRGSS, physfs) live outside this
 # prefix and aren't touched — they're statically linked and re-init is
 # neither possible nor needed.
+#
+# The embedded Ruby stdlib is installed under the app data dir as well
+# (<data>/files/ruby-vm/ruby/3.1.0/...), which IS the cwd in classic mode.
+# Keep those entries: re-executing openssl.rb & co. on top of their already
+# initialized C extensions raises (PSDK's `require 'openssl'` failed with
+# "superclass mismatch for class Cipher" once epsa_stream.rb had loaded it).
+# rbconfig.rb sits in <stdlib>/<arch>/, so its grandparent is the stdlib root.
 pwd_prefix = "#{Dir.pwd}/"
-purged = $LOADED_FEATURES.reject! { |f| f.start_with?(pwd_prefix) }
+rbconfig_feature = $LOADED_FEATURES.find { |f| f.end_with?('/rbconfig.rb') }
+stdlib_prefix = rbconfig_feature && "#{File.dirname(rbconfig_feature, 2)}/"
+purged = $LOADED_FEATURES.reject! do |f|
+  f.start_with?(pwd_prefix) && !(stdlib_prefix && f.start_with?(stdlib_prefix))
+end
 STDERR.puts "[compile] purged $LOADED_FEATURES entries under #{pwd_prefix} (#{(purged ? $LOADED_FEATURES.size : 'none')} remaining)"
 
 # Re-executing PSDK class definitions emits "already initialized constant"
