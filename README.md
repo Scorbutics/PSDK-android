@@ -141,6 +141,17 @@ android {
 
 ## 🎮 Usage
 
+### Importing a Game
+
+The app imports one archive per game, detected by its content (the file extension does not matter):
+
+| Archive | Made with | Notes |
+|---|---|---|
+| `.epsa` | `export_android.rb` | Encrypted for one APK signing certificate |
+| `.psa` / `.zip` | `export_android.rb --plain`, or any ZIP of a game folder | Not encrypted |
+
+Either one may hold the **project sources** (compiled on the device on first launch) or a **compiled release** (`Game.yarb`, `Data/Scripts.dat`: what Pokémon Studio exports, or `export_android.rb --compiled`), which is installed as-is. A compiled release only runs on the APK variant of the Ruby that compiled it (see [Ruby Variants](#ruby-variants)); the import says which one to install otherwise.
+
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.

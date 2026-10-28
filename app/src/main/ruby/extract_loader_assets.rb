@@ -1,5 +1,5 @@
 # Extracts the splash's assets — project metadata, game icon, and a font —
-# from the encrypted .epsa archive into <pwd>/loader_assets/. Runs as part
+# from the game archive into <pwd>/loader_assets/. Runs as part
 # of archive validation so loader.rb can later read these files directly
 # off the filesystem, with no PhysFS mount in the splash interpreter.
 #
@@ -7,6 +7,12 @@
 # if it isn't in the archive, any *.ttf inside Fonts/ is used as a fallback.
 # An archive with no font in Fonts/ is rejected — loader.rb's Text layer
 # raises without a registered font, and we treat that as "archive invalid".
+#
+# A compiled release (GameContent.compiled_release?) has no
+# infos_config.json nor game.png: its configs and graphics are packed, so
+# the metadata is read from Data/0.dat and the icon from its icon Yuki::VD.
+# Its Game.yarb must also load on this app's Ruby: a game compiled by
+# another Ruby is refused here, at import, instead of at its first launch.
 
 require 'fileutils'
 require 'json'
@@ -73,13 +79,25 @@ def detect_icon_color(png_data)
 end
 
 font_src = pick_font_source
-raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
-icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
-raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
+if GameContent.compiled_release?(PhysFS)
+  GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME))
+  infos = GameContent.compiled_infos(PhysFS)
+  raise "#{GameContent::COMPILED_INFOS} missing from #{GameContent::COMPILED_CONFIGS}" unless infos
+  infos_json = JSON.generate(infos)
+  icon_src = 'studio_icon.png' if PhysFS.exist?('studio_icon.png')
+  icon_bytes = icon_src ? PhysFS.read(icon_src) : GameContent.compiled_icon(PhysFS)
+  raise "#{GameContent::COMPILED_ICON} icon missing from #{GameContent::COMPILED_ICONS.join(', ')}" unless icon_bytes
+  icon_src ||= GameContent::COMPILED_ICONS.join('|')
+else
+  raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
+  icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
+  raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
+  infos_json = PhysFS.read(INFOS_CONFIG_SRC)
+  icon_bytes = PhysFS.read(icon_src)
+end
 
 FileUtils.mkdir_p(TARGET_DIR)
-icon_bytes = PhysFS.read(icon_src)
-File.binwrite(TARGET_INFOS, PhysFS.read(INFOS_CONFIG_SRC))
+File.binwrite(TARGET_INFOS, infos_json)
 File.binwrite(TARGET_ICON,  icon_bytes)
 File.binwrite(TARGET_FONT,  PhysFS.read(font_src))
 
@@ -91,13 +109,11 @@ if icon_color
   File.write(TARGET_COLOR, JSON.generate(r: icon_color[0], g: icon_color[1], b: icon_color[2]))
 end
 
+puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
+     " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
+
 # Unmount so this validation-time mount does not leak into the compile
 # interpreter, which mounts again from check_engine.rb. The PhysFS state
 # is process-wide (statically linked Init_physfs), not per-interpreter,
 # so without this the compile-side mount would stack a second copy.
-PhysFS.unmount('archive.zip') rescue nil
-
-puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
-     " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
-
-ArchiveMount.unmount! # cleanup
+ArchiveMount.unmount!

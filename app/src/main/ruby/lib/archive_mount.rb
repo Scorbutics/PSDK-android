@@ -1,10 +1,13 @@
-# Mounts the encrypted .epsa archive at the PhysFS root via a streaming
-# decrypter so the plaintext ZIP never lands on the filesystem.
+# Mounts the game archive at the PhysFS root: an encrypted .epsa via a
+# streaming decrypter so the plaintext ZIP never lands on the filesystem,
+# or a plain ZIP (.psa / .zip) directly.
 #
 # Inputs (set by PsdkInterpreter on the JVM side):
-#   PSDK_EPSA_PATH        — absolute path to the .epsa file
-#   PSDK_EPSA_KEY_HEX     — hex-encoded K_enc (32 bytes → 64 chars)
-#   PSDK_EPSA_MAC_KEY_HEX — hex-encoded K_mac (32 bytes → 64 chars)
+#   PSDK_EPSA_PATH        — absolute path to the archive
+#   PSDK_EPSA_KEY_HEX     — hex-encoded K_enc (32 bytes → 64 chars), empty
+#                           for a plain ZIP
+#   PSDK_EPSA_MAC_KEY_HEX — hex-encoded K_mac (32 bytes → 64 chars), empty
+#                           for a plain ZIP
 #
 # The file path remains visible to anyone with adb access to /data/data, but
 # it now points at the *encrypted* bundle. Without K_enc / K_mac (which only
@@ -25,31 +28,47 @@ module ArchiveMount
   ENV_ENC_KEY = 'PSDK_EPSA_KEY_HEX'.freeze
   ENV_MAC_KEY = 'PSDK_EPSA_MAC_KEY_HEX'.freeze
 
-  # Cheap "is the archive already mounted at /" probe. PSDK ships its build
-  # marker at this path, so existence implies a live mount with our content.
-  MOUNT_PROBE = 'Data/Studio/psdk.dat'.freeze
+  # Cheap "is the archive already mounted at mount_point" probe. Project
+  # sources ship PSDK's build marker at the first path, a compiled release
+  # (which packs it into Data/3.dat) its bytecode at the second.
+  MOUNT_PROBES = ['Data/Studio/psdk.dat', 'Game.yarb'].freeze
 
-  def mounted?
-    PhysFS.exist?(MOUNT_PROBE)
+  # Name PhysFS knows an .epsa mount by (mount_io has no real path).
+  EPSA_MOUNT_NAME = 'archive.zip'.freeze
+
+  def mounted?(mount_point = '/')
+    MOUNT_PROBES.any? { |probe| PhysFS.exist?(File.join(mount_point, probe)) }
   end
 
-  def mount!
-    return if mounted?
+  def plain?
+    ENV[ENV_ENC_KEY].to_s.empty?
+  end
 
-    epsa_path = ENV[ENV_PATH]   or raise "Missing #{ENV_PATH} env var"
-    enc_hex   = ENV[ENV_ENC_KEY] or raise "Missing #{ENV_ENC_KEY} env var"
-    mac_hex   = ENV[ENV_MAC_KEY] or raise "Missing #{ENV_MAC_KEY} env var"
+  def mount!(mount_point = '/')
+    return if mounted?(mount_point)
+
+    path = ENV[ENV_PATH] or raise "Missing #{ENV_PATH} env var"
+    return PhysFS.mount(path, mount_point, false) if plain?
+
+    enc_hex = ENV[ENV_ENC_KEY]
+    mac_hex = ENV[ENV_MAC_KEY].to_s
+    raise "Missing #{ENV_MAC_KEY} env var" if mac_hex.empty?
 
     enc_key = [enc_hex].pack('H*')
     mac_key = [mac_hex].pack('H*')
 
-    io = EpsaStream.new(epsa_path, enc_key: enc_key, mac_key: mac_key)
-    PhysFS.mount_io(io, 'archive.zip', '/', false)
+    io = EpsaStream.new(path, enc_key: enc_key, mac_key: mac_key)
+    PhysFS.mount_io(io, EPSA_MOUNT_NAME, mount_point, false)
   end
 
+  # Unmounts wherever the archive is mounted (PhysFS knows a mount by its
+  # source, not by its mount point).
   def unmount!
-    return unless mounted?
-    PhysFS.unmount('archive.zip')
+    return if ENV[ENV_PATH].to_s.empty?
+
+    PhysFS.unmount(plain? ? ENV[ENV_PATH] : EPSA_MOUNT_NAME)
+  rescue PhysFS::Error
+    nil
   end
 end
 

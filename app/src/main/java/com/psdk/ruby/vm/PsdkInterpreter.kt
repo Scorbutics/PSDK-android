@@ -33,7 +33,7 @@ class PsdkInterpreter private constructor(
                 ensureInterpreter()
                 location.executionLocation?.let { Os.setenv("PSDK_EXECUTION_LOCATION", it, true) }
                 location.archive?.let { archive ->
-                    Os.setenv("PSDK_EPSA_PATH",        archive.epsaPath,   true)
+                    Os.setenv("PSDK_EPSA_PATH",        archive.path,       true)
                     Os.setenv("PSDK_EPSA_KEY_HEX",     archive.encKeyHex,  true)
                     Os.setenv("PSDK_EPSA_MAC_KEY_HEX", archive.macKeyHex,  true)
                 }
@@ -163,14 +163,16 @@ class PsdkInterpreter private constructor(
 }
 
 /**
- * Bundle of (path, K_enc, K_mac) needed to mount the encrypted .epsa via
- * the streaming decrypter. Keys are passed as hex strings because they
- * travel through the process environment via Os.setenv → Ruby ENV.
+ * Bundle of (path, K_enc, K_mac) needed to mount the game archive: an
+ * encrypted .epsa via the streaming decrypter, or a plain ZIP (.psa / .zip)
+ * when both keys are empty. Keys are passed as hex strings because they
+ * travel through the process environment via Os.setenv → Ruby ENV (empty
+ * ones too, overwriting the keys of a previous archive).
  */
 data class ArchiveKeys(
-    val epsaPath: String,
-    val encKeyHex: String,
-    val macKeyHex: String
+    val path: String,
+    val encKeyHex: String = "",
+    val macKeyHex: String = ""
 )
 
 data class ScriptLocation(

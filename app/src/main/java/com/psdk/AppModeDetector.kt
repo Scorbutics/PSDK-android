@@ -9,13 +9,15 @@ object AppModeDetector {
     }
 
     /**
-     * Filename `export_android.rb` writes into `assets/` when bundling a
-     * project into a classic-mode APK (see plugins/export_android.rb:431).
+     * Filenames `export_android.rb` writes into `assets/` when bundling a
+     * project into a classic-mode APK: game.epsa, or game.psa with --plain.
      * The probe-by-name fallback in [findEpsaInAssets] depends on this
      * being a stable convention; rename here AND in the export plugin if
      * you ever change it.
      */
     const val EXPORT_ANDROID_EPSA_NAME = "game.epsa"
+    const val EXPORT_ANDROID_PSA_NAME = "game.psa"
+    private val ARCHIVE_EXTENSIONS = listOf(".epsa", ".psa")
 
     fun detect(context: Context): AppMode {
         val epsaFile = findEpsaInAssets(context)
@@ -23,8 +25,9 @@ object AppModeDetector {
     }
 
     /**
-     * Look for a bundled `.epsa` in APK assets. Returns the asset-relative
-     * filename (e.g. "game.epsa") or null if none is bundled.
+     * Look for a bundled game archive (`.epsa` or `.psa`) in APK assets.
+     * Returns the asset-relative filename (e.g. "game.epsa") or null if
+     * none is bundled.
      *
      * Two-step on purpose:
      *
@@ -32,7 +35,8 @@ object AppModeDetector {
      *    AAPT asset index correctly indexes every entry. Cheap, returns
      *    arbitrary filenames so a manually-renamed archive still flies.
      *
-     * 2. Probe [EXPORT_ANDROID_EPSA_NAME] directly via `open()`. Needed
+     * 2. Probe [EXPORT_ANDROID_EPSA_NAME] and [EXPORT_ANDROID_PSA_NAME]
+     *    directly via `open()`. Needed
      *    because apktool-rebuilt APKs with very large injected assets
      *    (export_android.rb writes a half-gigabyte .epsa straight into
      *    assets/) can drop the entry from the AAPT index even though
@@ -41,12 +45,11 @@ object AppModeDetector {
      */
     fun findEpsaInAssets(context: Context): String? {
         runCatching {
-            context.assets.list("")?.firstOrNull { it.endsWith(".epsa") }
+            context.assets.list("")?.firstOrNull { name -> ARCHIVE_EXTENSIONS.any { name.endsWith(it) } }
         }.getOrNull()?.let { return it }
 
-        return runCatching {
-            context.assets.open(EXPORT_ANDROID_EPSA_NAME).close()
-            EXPORT_ANDROID_EPSA_NAME
-        }.getOrNull()
+        return listOf(EXPORT_ANDROID_EPSA_NAME, EXPORT_ANDROID_PSA_NAME).firstOrNull { name ->
+            runCatching { context.assets.open(name).close() }.isSuccess
+        }
     }
 }

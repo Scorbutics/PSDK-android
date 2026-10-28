@@ -520,7 +520,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     }
 
     /**
-     * Classic-bootstrap helper: copy the bundled `.epsa` from APK assets
+     * Classic-bootstrap helper: copy the bundled `.epsa` / `.psa` from APK assets
      * into the wizard's staging file. Runs off the UI thread because the
      * payload can be tens of MB. Always re-copies: an existing staging file
      * may come from the previous APK version (installed over), and the
@@ -529,7 +529,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     private fun extractBundledArchive(context: Context, executionLocation: String) {
         val staging = ArchiveValidator.getStagingFile(executionLocation)
         val asset = AppModeDetector.findEpsaInAssets(context)
-            ?: error("classic bootstrap: no .epsa found in APK assets")
+            ?: error("classic bootstrap: no .epsa or .psa found in APK assets")
         android.util.Log.i(TAG, "classic bootstrap: copying assets/$asset → ${staging.absolutePath}")
         // Copy next to the target then rename, so a copy killed midway never
         // leaves a truncated archive.staging behind. Serialized process-wide:

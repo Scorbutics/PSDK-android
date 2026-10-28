@@ -13,12 +13,16 @@ import com.scorbutics.rubyvm.LogMessage
 import java.io.File
 
 /**
- * Validates a candidate .epsa archive and resolves its decryption keys.
+ * Validates a candidate game archive and resolves how to mount it: an
+ * encrypted .epsa (decryption keys) or a plain ZIP (.psa / .zip, no keys).
+ * Either may hold project sources or a compiled release (GameContent in
+ * lib/game_content.rb).
  *
  * v4-streaming flow: no on-disk decryption of the bulk archive. Validation
  * is now two stages:
- *   1. JVM-side header parse + first-chunk HMAC verification — proves the
- *      cert/KDF/build line up and the bundle isn't tampered.
+ *   1. .epsa: JVM-side header parse + first-chunk HMAC verification —
+ *      proves the cert/KDF/build line up and the bundle isn't tampered.
+ *      Plain ZIP: magic check only.
  *   2. A short Ruby pass (extract_loader_assets.rb) that mounts the archive
  *      via EpsaStream, copies splash-time assets (game info / icon / a font)
  *      into <executionLocation>/loader_assets/, and unmounts. This is both
@@ -33,6 +37,7 @@ object ArchiveValidator {
     private const val TAG = "ArchiveValidator"
     private const val EXTRACT_SCRIPT = "extract_loader_assets.rb"
     private const val EXTRACT_TIMEOUT_MS = 120_000L
+    const val NOT_AN_ARCHIVE = "Not a game archive: expected an .epsa, .psa or .zip file."
 
     data class ValidationResult(
         val isValid: Boolean,
@@ -45,17 +50,9 @@ object ArchiveValidator {
             return ValidationResult(false, "File does not exist or is not readable", null)
         }
 
-        if (!EpsaArchive.isEpsaFile(stagingFile)) {
-            return ValidationResult(false, "Only encrypted .epsa archives are supported.", null)
-        }
-
-        val keys = when (val r = EpsaArchive.resolve(context, stagingFile)) {
-            is EpsaArchive.Result.Failure -> return ValidationResult(false, r.message, null)
-            is EpsaArchive.Result.Ok      -> ArchiveKeys(
-                epsaPath  = r.keys.epsaPath,
-                encKeyHex = r.keys.encKey.toHex(),
-                macKeyHex = r.keys.macKey.toHex()
-            )
+        val keys = when (val r = resolveArchive(context, stagingFile)) {
+            is Resolution.Failure -> return ValidationResult(false, r.message, null)
+            is Resolution.Ok      -> r.keys
         }
 
         val extraction = runLoaderAssetExtraction(context, executionLocation, keys)
@@ -85,20 +82,9 @@ object ArchiveValidator {
         if (!loaderAssetsFresh(executionLocation, stagingFile)) {
             return validate(context, stagingFile, executionLocation)
         }
-        if (!EpsaArchive.isEpsaFile(stagingFile)) {
-            return ValidationResult(false, "Only encrypted .epsa archives are supported.", null)
-        }
-        return when (val r = EpsaArchive.resolve(context, stagingFile)) {
-            is EpsaArchive.Result.Failure -> ValidationResult(false, r.message, null)
-            is EpsaArchive.Result.Ok      -> ValidationResult(
-                true,
-                null,
-                ArchiveKeys(
-                    epsaPath  = r.keys.epsaPath,
-                    encKeyHex = r.keys.encKey.toHex(),
-                    macKeyHex = r.keys.macKey.toHex()
-                )
-            )
+        return when (val r = resolveArchive(context, stagingFile)) {
+            is Resolution.Failure -> ValidationResult(false, r.message, null)
+            is Resolution.Ok      -> ValidationResult(true, null, r.keys)
         }
     }
 
@@ -109,17 +95,36 @@ object ArchiveValidator {
      * classic-bootstrap path where loader.rb handles extract_loader_assets.rb
      * itself in-process — the activity just needs the keys to bind via
      * env vars before launching the loader interpreter. Returns null if
-     * the file isn't a valid .epsa or the KDF refuses (e.g. cert mismatch).
+     * the file isn't a game archive or the KDF refuses (e.g. cert mismatch).
      */
     fun resolveKeys(context: Context, stagingFile: File): ArchiveKeys? {
         if (!stagingFile.exists() || !stagingFile.canRead()) return null
-        if (!EpsaArchive.isEpsaFile(stagingFile)) return null
-        return when (val r = EpsaArchive.resolve(context, stagingFile)) {
-            is EpsaArchive.Result.Failure -> null
-            is EpsaArchive.Result.Ok      -> ArchiveKeys(
-                epsaPath  = r.keys.epsaPath,
-                encKeyHex = r.keys.encKey.toHex(),
-                macKeyHex = r.keys.macKey.toHex()
+        return (resolveArchive(context, stagingFile) as? Resolution.Ok)?.keys
+    }
+
+    /** True if the file is an archive the app can mount (.epsa or plain ZIP). */
+    fun isGameArchive(file: File): Boolean = EpsaArchive.isEpsaFile(file) || EpsaArchive.isZipFile(file)
+
+    private sealed class Resolution {
+        data class Ok(val keys: ArchiveKeys) : Resolution()
+        data class Failure(val message: String) : Resolution()
+    }
+
+    private fun resolveArchive(context: Context, file: File): Resolution {
+        if (EpsaArchive.isZipFile(file)) {
+            return Resolution.Ok(ArchiveKeys(path = file.absolutePath))
+        }
+        if (!EpsaArchive.isEpsaFile(file)) {
+            return Resolution.Failure(NOT_AN_ARCHIVE)
+        }
+        return when (val r = EpsaArchive.resolve(context, file)) {
+            is EpsaArchive.Result.Failure -> Resolution.Failure(r.message)
+            is EpsaArchive.Result.Ok      -> Resolution.Ok(
+                ArchiveKeys(
+                    path      = r.keys.epsaPath,
+                    encKeyHex = r.keys.encKey.toHex(),
+                    macKeyHex = r.keys.macKey.toHex()
+                )
             )
         }
     }

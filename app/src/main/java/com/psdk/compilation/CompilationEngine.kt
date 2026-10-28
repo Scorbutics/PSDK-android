@@ -404,7 +404,8 @@ class CompilationEngine(
         // Ruby preludes prepended to scripts that mount the archive. They
         // define EpsaFormat, EpsaStream, and ArchiveMount so check_engine.rb
         // / compile.rb / copy_saves.rb / extract_loader_assets.rb can call
-        // ArchiveMount.mount! without a load path. Order matters:
+        // ArchiveMount.mount! without a load path, and GameContent to tell a
+        // compiled release from project sources. Order matters:
         // epsa_stream depends on epsa_format, archive_mount on epsa_stream.
         //
         // Made `internal` (was `private`) so ArchiveValidator can reuse
@@ -412,7 +413,8 @@ class CompilationEngine(
         internal val ARCHIVE_PRELUDES = listOf(
             "lib/epsa_format.rb",
             "lib/epsa_stream.rb",
-            "lib/archive_mount.rb"
+            "lib/archive_mount.rb",
+            "lib/game_content.rb"
         )
     }
 }

@@ -35,7 +35,6 @@ import com.psdk.compilation.ArchiveValidator
 import com.psdk.compilation.CompilationEngine
 import com.psdk.db.AppDatabase
 import com.psdk.db.entities.Project
-import com.psdk.zip.EpsaArchive
 import java.io.File
 import java.util.UUID
 import kotlin.math.cos
@@ -536,8 +535,8 @@ class ProjectListFragment : Fragment() {
                     staging.outputStream().use { out -> input.copyTo(out) }
                 }
 
-                if (!EpsaArchive.isEpsaFile(staging)) {
-                    throw IllegalArgumentException("Selected file is not an .epsa archive")
+                if (!ArchiveValidator.isGameArchive(staging)) {
+                    throw IllegalArgumentException(ArchiveValidator.NOT_AN_ARCHIVE)
                 }
 
                 val project = Project(projectName, candidate.path, rootPath, UUID.randomUUID())

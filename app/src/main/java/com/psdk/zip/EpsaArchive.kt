@@ -31,6 +31,7 @@ object EpsaArchive {
     private const val TAG = "EpsaArchive"
 
     private const val MAGIC = "PSAE"
+    private const val ZIP_MAGIC = "PK\u0003\u0004"
     private const val MAGIC_VERSION_SIZE = 8
     const val VERSION = 4
     const val HEADER_SIZE = 48
@@ -53,11 +54,23 @@ object EpsaArchive {
     /** True if the file's magic bytes match a .epsa archive (any version). */
     fun isEpsaFile(file: File): Boolean {
         if (!file.exists() || file.length() < MAGIC_VERSION_SIZE) return false
-        return file.inputStream().use { input ->
-            val magic = ByteArray(4)
-            input.read(magic) == 4 && String(magic, Charsets.US_ASCII) == MAGIC
-        }
+        return hasMagic(file, MAGIC)
     }
+
+    /**
+     * True if the file starts like a plain ZIP archive (.psa, or any .zip):
+     * a local file header, as every non-empty ZIP begins with.
+     */
+    fun isZipFile(file: File): Boolean {
+        if (!file.exists() || file.length() < ZIP_MAGIC.length) return false
+        return hasMagic(file, ZIP_MAGIC)
+    }
+
+    private fun hasMagic(file: File, magic: String): Boolean =
+        file.inputStream().use { input ->
+            val bytes = ByteArray(magic.length)
+            input.read(bytes) == bytes.size && String(bytes, Charsets.ISO_8859_1) == magic
+        }
 
     /**
      * Parse the v4 header, derive K_enc/K_mac, and verify the first chunk's
