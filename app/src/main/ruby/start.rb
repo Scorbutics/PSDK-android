@@ -202,6 +202,31 @@ SafeRunner.run(
     end
   end
 
+  # exit! must end the game. SafeRunner turns exit/exit! into a SystemExit so
+  # a script can't kill the host process, but that makes exit! rescuable,
+  # and PSDK's `rescue Exception` handlers caught it and kept the game
+  # running. On the game thread, exit! now throws to the catch around
+  # Game.rb below: a throw unwinds (running ensure blocks) but no rescue can
+  # stop it, so Game.rb returns and GameActivity closes like a normal end.
+  # Other threads keep SafeRunner's behaviour. This file only runs in the
+  # `:game` process, never on the shell's loader/compile VM.
+  game_thread = Thread.current
+  Kernel.module_eval do
+    alias_method :__start_rb_safe_exit!, :exit! unless method_defined?(:__start_rb_safe_exit!, false) || private_method_defined?(:__start_rb_safe_exit!, false)
+    define_method(:exit!) do |status = nil|
+      return __start_rb_safe_exit!(status.nil? ? false : status) unless Thread.current == game_thread
+
+      # A bare exit! (Ruby's default status is false, i.e. 1) is how games
+      # quit: report it as a normal end, not as an error. Only an explicit
+      # failure status is passed on as the exit code.
+      code = status.is_a?(Integer) ? status : (status == false ? 1 : 0)
+      VMLogger.info "[start.rb] exit!(#{code}) called: ending the game"
+      $__safe_runner_exit_code = code unless code.zero?
+      throw :__psdk_game_exit
+    end
+    private :exit!
+  end
+
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
   # event constants on every run; Ruby would otherwise spam "already
@@ -211,7 +236,7 @@ SafeRunner.run(
   old_verbose = $VERBOSE
   $VERBOSE = nil
   begin
-    require './Game.rb'
+    catch(:__psdk_game_exit) { require './Game.rb' }
     VMLogger.info "[start.rb] Game.rb finished normally"
   ensure
     $VERBOSE = old_verbose

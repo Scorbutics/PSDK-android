@@ -65,5 +65,30 @@ if !restored_from_backup
   end
 end
 
+# On Android, PSDK's save root is Release/ itself (save_root_path is "."),
+# not only Release/Saves: .gameopts (persistent options such as --lang and
+# --scale), GlobalPokedex.dat, GlobalHallOfFame.dat, deleted_saves/... live
+# next to Saves and were lost on every APK update. Bring back every
+# top-level entry of the previous Release that the new build doesn't have.
+# Build outputs exist in both, so they are never overwritten.
+NOT_RESTORED = %w[. .. Saves Error.log].freeze unless defined?(NOT_RESTORED)
+if File.directory?(BACKUP_DIR)
+  (Dir.entries(BACKUP_DIR) - NOT_RESTORED).each do |entry|
+    src  = File.join(BACKUP_DIR, entry)
+    dest = File.join('Release', entry)
+    next if File.exist?(dest)
+
+    if File.directory?(src)
+      copy_directory_recursive(src, dest)
+    elsif entry == '.gameopts'
+      # Never carry a --util= launch payload: it would boot the game as a tool.
+      File.write(dest, File.readlines(src, chomp: true).reject { |l| l.start_with?('--util=') }.join("\n"))
+    else
+      IO.copy_stream(src, dest)
+    end
+    STDERR.puts "Restored #{entry} from previous Release"
+  end
+end
+
 # ReleaseBackup is cleaned up by CompilationEngine.commitRelease, which must
 # drop the compilation marker first (crash-safe ordering).
