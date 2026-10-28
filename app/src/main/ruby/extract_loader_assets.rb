@@ -14,7 +14,10 @@ require 'physfs'
 require 'LiteRGSS'
 
 INFOS_CONFIG_SRC = 'Data/configs/infos_config.json'.freeze
-ICON_SRC         = 'graphics/icons/game.png'.freeze
+# First one present wins. studio_icon.png is the project icon from
+# project.studio (export_android.rb packs it; e.g. 154x154): much sharper
+# than PSDK's 32x32 game icon, which older archives fall back to.
+ICON_SOURCES     = %w[studio_icon.png graphics/icons/game.png].freeze
 PREFERRED_FONT   = 'Fonts/PokemonDS.ttf'.freeze
 FONTS_DIR        = 'Fonts'.freeze
 TARGET_DIR       = 'loader_assets'.freeze
@@ -71,10 +74,11 @@ end
 
 font_src = pick_font_source
 raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
-raise "#{ICON_SRC} missing from archive"         unless PhysFS.exist?(ICON_SRC)
+icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
+raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
 
 FileUtils.mkdir_p(TARGET_DIR)
-icon_bytes = PhysFS.read(ICON_SRC)
+icon_bytes = PhysFS.read(icon_src)
 File.binwrite(TARGET_INFOS, PhysFS.read(INFOS_CONFIG_SRC))
 File.binwrite(TARGET_ICON,  icon_bytes)
 File.binwrite(TARGET_FONT,  PhysFS.read(font_src))
@@ -94,6 +98,6 @@ end
 PhysFS.unmount('archive.zip') rescue nil
 
 puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
-     " (font_src=#{font_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
+     " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
 
 ArchiveMount.unmount! # cleanup

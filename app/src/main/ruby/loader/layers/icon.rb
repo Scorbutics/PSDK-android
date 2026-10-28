@@ -35,6 +35,11 @@ module Loader
       # much wider.
       HIT_PADDING = 24
 
+      # Logical size of the icon's longest side. The source can be PSDK's
+      # 32x32 game icon or the larger project.studio icon (154x154 for
+      # some projects); both are shown at the same size.
+      DISPLAY_SIZE = 32
+
       # Press feedback: icon zoom is offset by PRESS_DEPRESSION when
       # fully pressed, eased toward target with PRESS_SPRING per frame
       # (critically damped feel — no overshoot). Breathing is
@@ -83,15 +88,18 @@ module Loader
 
         return unless @icon_bitmap
 
-        @icon_w = @icon_bitmap.width
-        @icon_h = @icon_bitmap.height
+        bitmap_w = @icon_bitmap.width
+        bitmap_h = @icon_bitmap.height
+        @icon_scale = DISPLAY_SIZE.to_f / [bitmap_w, bitmap_h, 1].max
+        @icon_w = (bitmap_w * @icon_scale).round
+        @icon_h = (bitmap_h * @icon_scale).round
 
         @icon = LiteRGSS::Sprite.new(viewport)
         @icon.bitmap = @icon_bitmap
-        @icon.set_origin(@icon_w / 2, @icon_h / 2)
+        @icon.set_origin(bitmap_w / 2, bitmap_h / 2)
         @icon.set_position(@center_x, @center_y)
         @icon.opacity = 0
-        @icon.zoom = 0.4
+        @icon.zoom = 0.4 * @icon_scale
         @icon.z = 10
 
         # Hit rect anchored at the icon's steady-state size (zoom=1.0)
@@ -225,7 +233,7 @@ module Loader
         end
 
         if @icon && !@icon.disposed?
-          @icon.zoom = base_zoom + breath + press_z
+          @icon.zoom = (base_zoom + breath + press_z) * @icon_scale
           @icon.opacity = (255 * intro * m).to_i
           @icon.set_position(icon_x, icon_y)
           @icon.angle = @icon_angle if state.rolling_start
