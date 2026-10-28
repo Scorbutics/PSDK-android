@@ -128,8 +128,17 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         CompilationEngine.recoverInterruptedCompilation(executionLocation)
         val releaseLocation = "$executionLocation/Release"
         val hasRelease = File(releaseLocation).exists()
-        selectedMode = loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease)
-        recomputeLaunchReady(hasRelease)
+        if (classicBootstrap) {
+            // The classic wizard only runs when EntryActivity decided a
+            // (re)compile is needed (first install or APK upgrade). A
+            // Release/ left by the previous APK version is stale: ignore it
+            // and always go through the RELEASE compile + auto-tap path.
+            selectedMode = GameMode.RELEASE
+            launchReady = false
+        } else {
+            selectedMode = loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease)
+            recomputeLaunchReady(hasRelease)
+        }
 
         toolbar = view.findViewById(R.id.toolbar)
         stepIndicatorBlock = view.findViewById(R.id.stepIndicatorBlock)
@@ -495,20 +504,22 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     /**
      * Classic-bootstrap helper: copy the bundled `.epsa` from APK assets
      * into the wizard's staging file. Runs off the UI thread because the
-     * payload can be tens of MB. No-op if the staging file already exists.
+     * payload can be tens of MB. Always re-copies: an existing staging file
+     * may come from the previous APK version (installed over), and the
+     * wizard only runs when setup is needed, so the cost is paid rarely.
      */
     private fun extractBundledArchive(context: Context, executionLocation: String) {
         val staging = ArchiveValidator.getStagingFile(executionLocation)
-        if (staging.exists() && staging.length() > 0) {
-            android.util.Log.i(TAG, "classic bootstrap: staging already present, skipping copy")
-            return
-        }
         val asset = AppModeDetector.findEpsaInAssets(context)
             ?: error("classic bootstrap: no .epsa found in APK assets")
         android.util.Log.i(TAG, "classic bootstrap: copying assets/$asset → ${staging.absolutePath}")
+        // Copy next to the target then rename, so a copy killed midway never
+        // leaves a truncated archive.staging behind.
+        val partial = File(staging.parentFile, "${staging.name}.partial")
         context.assets.open(asset).use { input ->
-            staging.outputStream().use { out -> input.copyTo(out) }
+            partial.outputStream().use { out -> input.copyTo(out) }
         }
+        if (!partial.renameTo(staging)) error("classic bootstrap: cannot move ${partial.name} to ${staging.name}")
     }
 
     /**
