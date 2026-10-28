@@ -62,9 +62,10 @@ module Loader
 
       attr_reader :center_x, :center_y, :icon_w, :icon_h
 
-      def initialize(icon_color, icon_bitmap)
+      def initialize(icon_color, icon_bitmap, halo: true)
         @icon_color   = icon_color
         @icon_bitmap  = icon_bitmap
+        @halo_enabled = halo
         @press_factor = 0.0
         # Authoritative angle (in degrees) written back to the sprite
         # each frame. Tracked here rather than read from the sprite so
@@ -78,33 +79,7 @@ module Loader
         @center_x = window_width / 2
         @center_y = window_height / 2
 
-        # Soft additive-looking radial halo. Tinted with @icon_color so
-        # it shares a hue family with the gradient. Rendered
-        # unconditionally — in default/hub state (no icon bitmap) it
-        # sits behind the Kotlin "+" FAB the hub centres over the GL
-        # surface.
-        gc = halo_color
-        g = LiteRGSS::Image.new(GLOW_SIZE, GLOW_SIZE)
-        r_outer = GLOW_SIZE / 2.0
-        half = GLOW_SIZE / 2
-        GLOW_SIZE.times do |y|
-          dy = y - half
-          GLOW_SIZE.times do |x|
-            dx = x - half
-            d = Math.sqrt(dx * dx + dy * dy) / r_outer
-            next if d >= 1.0
-            a = ((1.0 - d) ** 3 * 150).to_i
-            g.set_pixel(x, y, LiteRGSS::Color.new(gc[0], gc[1], gc[2], a))
-          end
-        end
-        @glow = LiteRGSS::Sprite.new(viewport)
-        @glow.bitmap = LiteRGSS::Bitmap.new(GLOW_SIZE, GLOW_SIZE)
-        g.copy_to_bitmap(@glow.bitmap)
-        g.dispose
-        @glow.set_origin(GLOW_SIZE / 2, GLOW_SIZE / 2)
-        @glow.set_position(@center_x, @center_y)
-        @glow.opacity = 0
-        @glow.z = 5
+        build_halo(viewport) if @halo_enabled
 
         return unless @icon_bitmap
 
@@ -129,6 +104,36 @@ module Loader
           @icon_w + 2 * HIT_PADDING,
           @icon_h + 2 * HIT_PADDING,
         ]
+      end
+
+      # Soft additive-looking radial halo. Tinted with @icon_color so
+      # it shares a hue family with the gradient. In default/hub state
+      # (no icon bitmap) it sits behind the Kotlin "+" FAB the hub
+      # centres over the GL surface; skipped while preparing (nothing
+      # sits at the centre then).
+      def build_halo(viewport)
+        gc = halo_color
+        g = LiteRGSS::Image.new(GLOW_SIZE, GLOW_SIZE)
+        r_outer = GLOW_SIZE / 2.0
+        half = GLOW_SIZE / 2
+        GLOW_SIZE.times do |y|
+          dy = y - half
+          GLOW_SIZE.times do |x|
+            dx = x - half
+            d = Math.sqrt(dx * dx + dy * dy) / r_outer
+            next if d >= 1.0
+            a = ((1.0 - d) ** 3 * 150).to_i
+            g.set_pixel(x, y, LiteRGSS::Color.new(gc[0], gc[1], gc[2], a))
+          end
+        end
+        @glow = LiteRGSS::Sprite.new(viewport)
+        @glow.bitmap = LiteRGSS::Bitmap.new(GLOW_SIZE, GLOW_SIZE)
+        g.copy_to_bitmap(@glow.bitmap)
+        g.dispose
+        @glow.set_origin(GLOW_SIZE / 2, GLOW_SIZE / 2)
+        @glow.set_position(@center_x, @center_y)
+        @glow.opacity = 0
+        @glow.z = 5
       end
 
       def animate(clock, state, m)

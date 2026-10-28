@@ -36,7 +36,17 @@ class LiteRgssSurfaceView @JvmOverloads constructor(
     /** Fired before NativeSurface.detach is called. */
     var onSurfaceLost: (() -> Unit)? = null
 
+    /**
+     * Fired when the surface comes back with a different size than the last
+     * one seen: an in-place resize (multi-window, fold), or a re-attach after
+     * the activity was in the background (rotation meanwhile). Native code
+     * has already been told; this is for layout owned by the host.
+     */
+    var onSurfaceResized: ((width: Int, height: Int) -> Unit)? = null
+
     private var attached = false
+    private var lastWidth = 0
+    private var lastHeight = 0
 
     init {
         holder.addCallback(this)
@@ -54,6 +64,10 @@ class LiteRgssSurfaceView @JvmOverloads constructor(
         } else {
             NativeSurface.resized(width, height)
         }
+        val sizeChanged = lastWidth != 0 && (width != lastWidth || height != lastHeight)
+        lastWidth = width
+        lastHeight = height
+        if (sizeChanged) onSurfaceResized?.invoke(width, height)
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {

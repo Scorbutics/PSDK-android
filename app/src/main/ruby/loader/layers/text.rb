@@ -28,9 +28,10 @@ module Loader
       # state — the hint IS the centerpiece copy in hub mode.
       HINT_FONT_SIZE    = 16
 
-      def initialize(project_info, font_loaded:)
-        @project_info = project_info
-        @font_loaded  = font_loaded
+      def initialize(project_info, font_loaded:, preparing_message: nil)
+        @project_info      = project_info
+        @font_loaded       = font_loaded
+        @preparing_message = preparing_message
       end
 
       def build(viewport, window_width, window_height, icon)
@@ -71,9 +72,13 @@ module Loader
           # We render a "Add project" hint just below the canvas centre
           # — directly under where the FAB sits — so the bare splash
           # doesn't leave the user guessing what the button does.
-          hint_y = window_height / 2 + 52
+          #
+          # While preparing (LoaderState.Preparing: no "+" FAB, nothing to
+          # add) the same line carries the host's message instead, centred
+          # where the icon would be.
+          hint_y = @preparing_message ? window_height / 2 - 12 : window_height / 2 + 52
           @hint = LiteRGSS::Text.new(0, viewport, 0, hint_y, full_w, 24,
-                                     'Add project', 1)
+                                     @preparing_message || 'Add project', 1)
           @hint.size              = HINT_FONT_SIZE
           @hint.fill_color        = LiteRGSS::Color.new(245, 245, 250, 255)
           @hint_outline_final     = [0, 0, 0, 220]

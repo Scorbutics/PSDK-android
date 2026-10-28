@@ -18,6 +18,10 @@ module Loader
     ICON_PATH         = "#{LOADER_BASE_DIR}/loader_assets/game.png".freeze
     INFOS_CONFIG_PATH = "#{LOADER_BASE_DIR}/loader_assets/infos_config.json".freeze
     ICON_COLOR_PATH   = "#{LOADER_BASE_DIR}/loader_assets/icon_color.json".freeze
+    # Written by the host (LoaderState.Preparing) while it prepares a
+    # project the splash can't show yet, e.g. the classic wizard copying
+    # the bundled archive. Holds the one-line message to display.
+    PREPARING_PATH    = "#{LOADER_BASE_DIR}/loader_assets/preparing.txt".freeze
 
     # Fallback gradient hue when extract_loader_assets.rb didn't write
     # icon_color.json (e.g. all-transparent icon, decode failure).
@@ -62,6 +66,17 @@ module Loader
     rescue StandardError => e
       loader_say "icon_color: #{e.class}: #{e.message}"
       DEFAULT_ICON_COLOR.dup
+    end
+
+    # The "preparing" message, or nil when the splash is in its normal
+    # hub/project state.
+    def load_preparing_message
+      return nil unless File.exist?(PREPARING_PATH)
+      text = File.read(PREPARING_PATH).strip
+      text.empty? ? nil : text
+    rescue StandardError => e
+      loader_say "preparing message: #{e.class}: #{e.message}"
+      nil
     end
 
     def load_icon_bitmap

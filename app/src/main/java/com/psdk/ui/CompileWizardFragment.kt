@@ -212,6 +212,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             updateStepIndicators(step)
             navigateToStep(step)
             val locked = step == 1
+            // No splash restart (e.g. re-layout after a rotation) mid-compile.
+            (requireActivity() as LoaderHost).setLoaderRestartsDeferred(locked)
             toolbar.navigationIcon = if (locked) null
                 else androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_arrow_back)
             callback.isEnabled = locked
@@ -311,6 +313,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             // waits forever for an archive that never comes.
             if (viewModel.archive.value == null && !viewModel.bootstrapStarted) {
                 viewModel.bootstrapStarted = true
+                // The copy takes a while (hundreds of MB): say so, rather than
+                // showing the hub's empty-centre look ("+" halo, "Add project")
+                // with no "+" button in classic mode.
+                (requireActivity() as LoaderHost).setLoaderState(LoaderState.Preparing(COPYING_ARCHIVE_MESSAGE))
                 val ctx = requireContext().applicationContext
                 Thread {
                     val keys = runCatching {
@@ -691,6 +697,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         classicAutoTapHandler.removeCallbacks(classicAutoTapRunnable)
         classicAutoTapHandler.removeCallbacks(classicAutoTapAdvanceRunnable)
         (requireActivity() as LoaderHost).setLoaderListener(null)
+        (requireActivity() as LoaderHost).setLoaderRestartsDeferred(false)
         super.onDestroyView()
     }
 
@@ -800,6 +807,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     companion object {
         const val ARG_EXECUTION_LOCATION = "EXECUTION_LOCATION"
+
+        private const val COPYING_ARCHIVE_MESSAGE = "Copying archive"
 
         /** Serializes [extractBundledArchive] across wizard instances. */
         private val ARCHIVE_COPY_LOCK = Any()

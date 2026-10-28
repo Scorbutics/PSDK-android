@@ -40,14 +40,17 @@ module Loader
       @project_info = Assets.load_project_info
       icon_color    = Assets.load_icon_color
       icon_bitmap   = Assets.load_icon_bitmap
+      preparing     = Assets.load_preparing_message
 
       @window.open(@project_info[:title])
 
       @bg      = Layers::Background.new(icon_color)
       @ambient = Layers::AmbientParticles.new
       @dust    = Layers::Dust.new
-      @icon    = Layers::Icon.new(icon_color, icon_bitmap)
-      @text    = Layers::Text.new(@project_info, font_loaded: font_loaded)
+      # While preparing there is no project to show and no "+" button over
+      # the centre: no halo, and the message replaces the hub's hint.
+      @icon    = Layers::Icon.new(icon_color, icon_bitmap, halo: preparing.nil?)
+      @text    = Layers::Text.new(@project_info, font_loaded: font_loaded, preparing_message: preparing)
 
       @bg.build(@window.viewport)
       @ambient.build(@window.viewport)

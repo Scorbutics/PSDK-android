@@ -45,6 +45,15 @@ interface LoaderHost {
      * activity returns.
      */
     fun startGame(executionLocation: String, mode: GameMode = GameMode.RELEASE)
+
+    /**
+     * While true, the host does not restart the splash on its own (it does
+     * after a surface resize, to re-lay it out); a pending restart runs once
+     * this goes back to false. Set during a compile: the compile shares the
+     * Ruby VM, and so the process working directory, that every splash
+     * restart re-chdirs, which broke the compile's relative paths.
+     */
+    fun setLoaderRestartsDeferred(deferred: Boolean)
 }
 
 interface LoaderListener {
@@ -88,4 +97,12 @@ sealed class LoaderState {
      * Kotlin-side validation pass.
      */
     data class FromArchive(val archive: ArchiveKeys, val prelude: List<String>) : LoaderState()
+
+    /**
+     * Bundled PSDK background, no icon and no hub affordances (halo, "Add
+     * project"): just [message] centred. Used while the host prepares a
+     * project the splash can't show yet, e.g. the classic wizard copying
+     * the bundled archive out of the APK.
+     */
+    data class Preparing(val message: String) : LoaderState()
 }

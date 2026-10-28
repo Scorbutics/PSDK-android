@@ -96,5 +96,25 @@ object LoaderPaths {
         }
     }
 
+    /** Read by the loader (Loader::Assets::PREPARING_PATH). */
+    private const val PREPARING_FILE_NAME = "preparing.txt"
+
+    /** Show [message] instead of the hub/project splash (see LoaderState.Preparing). */
+    fun writePreparingMessage(context: Context, message: String) {
+        try {
+            File(assetsDir(context), PREPARING_FILE_NAME).writeText(message)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not write preparing message", e)
+        }
+    }
+
+    /**
+     * Back to the normal splash. Needed for every other state: replacing
+     * assets and the archive prelude keep files they don't know about.
+     */
+    fun clearPreparingMessage(context: Context) {
+        File(assetsDir(context), PREPARING_FILE_NAME).delete()
+    }
+
     private const val TAG = "LoaderPaths"
 }

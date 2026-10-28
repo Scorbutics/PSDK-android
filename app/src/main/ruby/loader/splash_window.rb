@@ -25,13 +25,14 @@ module Loader
       @closed = false
       @has_focus = true
       # Touch events arrive in surface-pixel coordinates; the icon is
-      # laid out in logical canvas units. Compute the per-axis scale
-      # once and cache it, since the surface size doesn't change while
-      # the loader runs (orientation change tears the activity down).
-      dw = (LiteRGSS::DisplayWindow.desktop_width  rescue 0).to_i
-      dh = (LiteRGSS::DisplayWindow.desktop_height rescue 0).to_i
-      @touch_scale_x = dw > 0 ? @width.to_f  / dw : 1.0
-      @touch_scale_y = dh > 0 ? @height.to_f / dh : 1.0
+      # laid out in logical canvas units. The surface can change size
+      # while the loader runs (RootActivity keeps itself alive across
+      # rotation, fold and multi-window resizes), so the scale is
+      # refreshed from every Resized event too (see #open).
+      update_touch_scale(
+        (LiteRGSS::DisplayWindow.desktop_width  rescue 0).to_i,
+        (LiteRGSS::DisplayWindow.desktop_height rescue 0).to_i
+      )
     end
 
     def open(title)
@@ -59,6 +60,11 @@ module Loader
       @window.on_gained_focus = proc do
         @has_focus = true
         @window.polling = true if @window
+      end
+      # Keeps taps on the icon after the surface is resized; the canvas
+      # itself is rebuilt by RootActivity restarting the loader.
+      @window.on_resized = proc do |surface_w, surface_h|
+        update_touch_scale(surface_w.to_i, surface_h.to_i)
       end
       @window.on_touch_began = proc do |finger, tx, ty|
         @on_touch_began&.call(finger, tx * @touch_scale_x, ty * @touch_scale_y)
@@ -108,6 +114,12 @@ module Loader
     end
 
     private
+
+    # Surface pixels -> logical canvas units, per axis.
+    def update_touch_scale(surface_w, surface_h)
+      @touch_scale_x = surface_w > 0 ? @width.to_f  / surface_w : 1.0
+      @touch_scale_y = surface_h > 0 ? @height.to_f / surface_h : 1.0
+    end
 
     # Pin the short edge to LOGICAL_SHORT_EDGE and scale the long edge
     # by the surface aspect ratio. Querying DisplayWindow.desktop_*

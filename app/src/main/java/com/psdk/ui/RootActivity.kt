@@ -168,6 +168,15 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         glSurface.onSurfaceLost = {
             workloadController.onSurfaceLost()
         }
+        // The splash lays its canvas out once, from the surface size at
+        // start: after a rotation, fold or multi-window resize it would stay
+        // stretched. Restart it so it rebuilds for the new shape. Debounced:
+        // dragging a split-screen divider fires many resizes in a row.
+        glSurface.onSurfaceResized = { w, h ->
+            android.util.Log.i(TAG, "surface resized (${w}x${h})")
+            glSurface.removeCallbacks(restartLoaderAfterResize)
+            glSurface.postDelayed(restartLoaderAfterResize, LOADER_RESIZE_RESTART_DELAY_MS)
+        }
 
         val target = intent.getStringExtra(EXTRA_TARGET) ?: TARGET_HUB
         // Cache once: the intent doesn't change on rotation, but
@@ -310,12 +319,17 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     private fun prepareAssetsFor(state: LoaderState) {
         when (state) {
             LoaderState.Default -> LoaderPaths.resetToDefaults(this)
+            is LoaderState.Preparing -> {
+                LoaderPaths.resetToDefaults(this)
+                LoaderPaths.writePreparingMessage(this, state.message)
+            }
             is LoaderState.FromExtracted -> LoaderPaths.replaceAssetsWith(this, state.sourceDir)
             is LoaderState.FromArchive -> {
                 // No prep: the loader's own Ruby thread will run [state.prelude]
                 // (typically extract_loader_assets.rb) before loader.rb proper.
             }
         }
+        if (state !is LoaderState.Preparing) LoaderPaths.clearPreparingMessage(this)
         // Clear stale status so a new loader run doesn't immediately fire
         // a sentinel left by the previous one.
         try {
@@ -371,6 +385,28 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      */
     private var gameLaunchInFlight = false
 
+    /** See [setLoaderRestartsDeferred]. UI thread only. */
+    private var loaderRestartsDeferred = false
+    private var resizeRestartPending = false
+
+    /** See glSurface.onSurfaceResized. Only the splash is restarted, never a game. */
+    private val restartLoaderAfterResize = Runnable {
+        if (loaderRestartsDeferred) {
+            resizeRestartPending = true
+        } else if (workloadController.currentWorkload() is RubyWorkload.Loader) {
+            startLoaderForCurrentState()
+        }
+    }
+
+    override fun setLoaderRestartsDeferred(deferred: Boolean) {
+        if (loaderRestartsDeferred == deferred) return
+        loaderRestartsDeferred = deferred
+        if (!deferred && resizeRestartPending) {
+            resizeRestartPending = false
+            glSurface.post(restartLoaderAfterResize)
+        }
+    }
+
     override fun startGame(executionLocation: String, mode: GameMode) {
         if (gameLaunchInFlight) {
             android.util.Log.i(TAG, "startGame: a game launch is already in flight, ignoring")
@@ -409,6 +445,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     // the same rule.
 
     override fun onDestroy() {
+        if (::glSurface.isInitialized) glSurface.removeCallbacks(restartLoaderAfterResize)
         // Terminal teardown: shutdown() destroys the persistent
         // interpreter (blocks briefly waiting for the render thread
         // to exit). The persistent interpreter survived every loader
@@ -468,6 +505,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
 
         private const val LOADER_FADE_IN_MS = 80L
+
+        private const val LOADER_RESIZE_RESTART_DELAY_MS = 300L
 
         fun hubIntent(activity: AppCompatActivity): Intent =
             Intent(activity, RootActivity::class.java).putExtra(EXTRA_TARGET, TARGET_HUB)
