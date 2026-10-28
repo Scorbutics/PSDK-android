@@ -40,8 +40,10 @@ import javax.crypto.SecretKey
  *      and require:
  *        - attestationSecurityLevel >= TrustedEnvironment
  *        - verifiedBootState != Failed
- *   4. Cache pass/fail for 30 days, signed by a separate HMAC key kept in
- *      AndroidKeyStore so an attacker can't poison the cache file.
+ *   4. Cache the verdict for 30 days, signed by a separate HMAC key kept in
+ *      AndroidKeyStore so an attacker can't poison the cache file. Only
+ *      passes and definitive device verdicts are cached (see
+ *      [CACHEABLE_FAILURES]); the cache is tied to the app version.
  *
  * Cost: free, offline after first run, no Google Play Console required.
  *
@@ -58,7 +60,17 @@ object KeyAttestationGate {
 
     private const val CACHE_FILE = "attestation_verdict.bin"
     private const val CACHE_VALIDITY_MS = 30L * 24 * 60 * 60 * 1000  // 30 days
-    private const val CACHE_VERSION: Byte = 1
+    private const val CACHE_VERSION: Byte = 2
+
+    /**
+     * Failures that describe the device itself and can't change on a retry.
+     * Anything else (keystore/StrongBox exceptions, which some vendor builds
+     * throw transiently, chain or parsing problems, an attestation root
+     * newer than the bundled ones) is reported for this attempt only:
+     * caching it locked the device out of the game for 30 days, across app
+     * updates.
+     */
+    private val CACHEABLE_FAILURES = setOf("software_only_security_level", "verified_boot_failed")
 
     // OID for Android Key Attestation extension (KeyDescription).
     private const val KEY_DESCRIPTION_OID = "1.3.6.1.4.1.11129.2.1.17"
@@ -106,7 +118,11 @@ object KeyAttestationGate {
             Result.Fail("attestation_exception:${e.javaClass.simpleName}")
         }
 
-        writeCachedVerdict(context, verdict)
+        if (verdict is Result.Pass || (verdict is Result.Fail && verdict.reason in CACHEABLE_FAILURES)) {
+            writeCachedVerdict(context, verdict)
+        } else {
+            Log.w(TAG, "not caching transient attestation failure: $verdict")
+        }
         return verdict
     }
 
@@ -261,12 +277,26 @@ object KeyAttestationGate {
 
     private fun cacheFile(context: Context) = File(context.filesDir, CACHE_FILE)
 
-    private fun readCachedVerdict(context: Context): Result? {
+    private fun appVersionCode(context: Context): Long =
+        androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(
+            context.packageManager.getPackageInfo(context.packageName, 0))
+
+    // The cache is an optimization: any failure to read or write it (the
+    // HMAC key lives in the keystore, which can throw) means "attest again",
+    // never an exception out of check().
+    private fun readCachedVerdict(context: Context): Result? = try {
+        readCachedVerdictOrThrow(context)
+    } catch (e: Exception) {
+        Log.w(TAG, "attestation cache unreadable — attesting again", e)
+        null
+    }
+
+    private fun readCachedVerdictOrThrow(context: Context): Result? {
         val file = cacheFile(context)
         if (!file.exists()) return null
 
         val data = try { file.readBytes() } catch (e: Exception) { return null }
-        if (data.size < 32 + 1 + 8 + 4) return null // minimum: hmac + version + ts + reasonLen
+        if (data.size < 32 + 1 + 1 + 8 + 8 + 4) return null // minimum: hmac + version + pass + ts + versionCode + reasonLen
 
         val hmac = data.copyOfRange(0, 32)
         val payload = data.copyOfRange(32, data.size)
@@ -280,6 +310,9 @@ object KeyAttestationGate {
         if (version != CACHE_VERSION) return null
         val pass = buf.get() != 0.toByte()
         val timestampMs = buf.long
+        // A verdict cached by another app version doesn't apply: the update
+        // may change the criteria or bundle newer attestation roots.
+        if (buf.long != appVersionCode(context)) return null
         val reasonLen = buf.int
         if (reasonLen < 0 || reasonLen > 4096 || buf.remaining() < reasonLen) return null
         val reasonBytes = ByteArray(reasonLen)
@@ -291,24 +324,29 @@ object KeyAttestationGate {
     }
 
     private fun writeCachedVerdict(context: Context, verdict: Result) {
+        try {
+            writeCachedVerdictOrThrow(context, verdict)
+        } catch (e: Exception) {
+            Log.w(TAG, "failed to write attestation cache", e)
+        }
+    }
+
+    private fun writeCachedVerdictOrThrow(context: Context, verdict: Result) {
         val pass = verdict is Result.Pass
         val reason = if (verdict is Result.Fail) verdict.reason else ""
         val reasonBytes = reason.toByteArray(Charsets.UTF_8)
 
-        val payload = ByteBuffer.allocate(1 + 1 + 8 + 4 + reasonBytes.size).apply {
+        val payload = ByteBuffer.allocate(1 + 1 + 8 + 8 + 4 + reasonBytes.size).apply {
             put(CACHE_VERSION)
             put(if (pass) 1.toByte() else 0.toByte())
             putLong(System.currentTimeMillis())
+            putLong(appVersionCode(context))
             putInt(reasonBytes.size)
             put(reasonBytes)
         }.array()
 
         val hmac = computeCacheHmac(payload)
-        try {
-            cacheFile(context).writeBytes(hmac + payload)
-        } catch (e: Exception) {
-            Log.w(TAG, "failed to write attestation cache", e)
-        }
+        cacheFile(context).writeBytes(hmac + payload)
     }
 
     private fun cacheHmacKey(): SecretKey {
