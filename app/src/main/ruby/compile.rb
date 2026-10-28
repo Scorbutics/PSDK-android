@@ -26,6 +26,15 @@ PhysFS.write_dir = Dir.pwd.end_with?('/') ? Dir.pwd : "#{Dir.pwd}/"
 FileUtils.rm_rf('./Release')
 raise "Unable to remove existing compiled data" if File.exist?('Release')
 
+# ./Data on the native FS is compile scratch only: project data is read
+# from the mounted archive. Wipe it like Release/, because whatever a
+# failed or interrupted compile left there shadows the archive on the
+# next one. One such run wrote default configs serialized as
+# "#<Configs::Project::Infos...>" to Data/configs/; every later compile
+# packed them into Release/ (nil game title: the game crashed on start)
+# and the splash showed "PSDK Game".
+FileUtils.rm_rf('./Data')
+
 # PSDK's data-build expects Data/Events/Battle/ to be present on the
 # native FS even though every file inside is empty/optional. Without
 # this directory the data-build step raises.

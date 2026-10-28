@@ -57,6 +57,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         val exitCode = result.data?.getIntExtra(GameActivity.RESULT_EXIT_CODE, -1)
         android.util.Log.i(TAG, "game activity returned (result=${result.resultCode}, exit=$exitCode)")
         gameLaunchInFlight = false
+        reportAbnormalGameExit(result.resultCode, exitCode)
         startLoaderForCurrentState()
     }
 
@@ -385,6 +386,73 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      */
     private var gameLaunchInFlight = false
 
+    /** Set by [startGame]; used to find the error report of that session. */
+    private var gameStartedAtMs = 0L
+    private var gameExecutionLocation: String? = null
+
+    /**
+     * The game ending by itself returns RESULT_OK with exit code 0. A Ruby
+     * error that unwound returns a non-zero code; a crash kills the `:game`
+     * process before it can set a result. Either way, tell the user why
+     * instead of silently landing back on the splash: PSDK writes the
+     * reason to Error.log in the game's working directory (Release/ for
+     * release builds, the execution location for debug).
+     */
+    private fun reportAbnormalGameExit(resultCode: Int, exitCode: Int?) {
+        val crashed = resultCode != RESULT_OK
+        if (!crashed && (exitCode == null || exitCode == 0)) return
+        val location = gameExecutionLocation ?: return
+
+        val errorLog = listOf(java.io.File(location, "Release/Error.log"), java.io.File(location, "Error.log"))
+            // 2 s slack: file mtimes can be coarser than the clock.
+            .filter { it.isFile && it.lastModified() >= gameStartedAtMs - 2_000 }
+            .maxByOrNull { it.lastModified() }
+        val details = errorLog?.let { runCatching { it.readText() }.getOrNull() }?.takeIf { it.isNotBlank() }
+        val summary = details?.let(::summarizeErrorLog)
+            ?: if (crashed) "The game closed unexpectedly and did not write an error report."
+               else "The game stopped with an error (exit code $exitCode)."
+
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Psdk_Dialog)
+            .setTitle("The game stopped")
+            .setMessage(summary)
+            .setPositiveButton(android.R.string.ok, null)
+        if (details != null) {
+            dialog.setNeutralButton("Details") { _, _ ->
+                LogBottomSheetFragment.newInstanceWithContent(details, title = "Game error")
+                    .show(supportFragmentManager, "game_error")
+            }
+        }
+        dialog.show()
+    }
+
+    /**
+     * "Type: message" from a PSDK Error.log. Handles both layouts PSDK
+     * writes: "Error type : X" / "Error message : Y" on one line each, and
+     * the in-game report with "Message :" followed by the text on the next
+     * line. Falls back to the first meaningful lines.
+     */
+    private fun summarizeErrorLog(log: String): String {
+        val lines = log.lines()
+        var type: String? = null
+        var message: String? = null
+        val field = Regex("""^\s*(?:Error\s+)?(type|message)\s*:\s*(.*)$""", RegexOption.IGNORE_CASE)
+        lines.forEachIndexed { i, line ->
+            val m = field.find(line) ?: return@forEachIndexed
+            val value = m.groupValues[2].trim().ifEmpty {
+                lines.drop(i + 1).firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+            }
+            if (m.groupValues[1].equals("type", ignoreCase = true)) {
+                if (type == null) type = value
+            } else if (message == null) {
+                message = value
+            }
+        }
+        val summary = listOfNotNull(type, message).filter { it.isNotEmpty() }.joinToString(": ")
+        return summary.ifEmpty {
+            lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("=") }.take(4).joinToString("\n")
+        }.take(400)
+    }
+
     /** See [setLoaderRestartsDeferred]. UI thread only. */
     private var loaderRestartsDeferred = false
     private var resizeRestartPending = false
@@ -413,6 +481,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             return
         }
         gameLaunchInFlight = true
+        gameStartedAtMs = System.currentTimeMillis()
+        gameExecutionLocation = executionLocation
         // The game runs in GameActivity's own `:game` process, so it always
         // starts on a fresh Ruby VM and its state is thrown away with the
         // process on exit. Stop the loader first: the shell surface is
