@@ -110,8 +110,20 @@ class ProjectListFragment : Fragment() {
         viewModel.rootDirectory.observe(viewLifecycleOwner) { refreshProjects() }
     }
 
+    /**
+     * Wizard launch requested while the fragment manager had already saved
+     * its state (see [launchCompileWizard]); replayed on the next resume.
+     */
+    private var pendingWizardProject: Project? = null
+
     override fun onResume() {
         super.onResume()
+        pendingWizardProject?.let { project ->
+            android.util.Log.i("ProjectListFragment", "resuming deferred wizard launch for ${project.name}")
+            pendingWizardProject = null
+            launchCompileWizard(project)
+            return
+        }
         refreshProjects()
         // Returning from the wizard — restore everything the fly-to-centre
         // transition disturbed.
@@ -455,6 +467,15 @@ class ProjectListFragment : Fragment() {
     }
 
     private fun launchCompileWizard(project: Project) {
+        // Called when an import's background copy (hundreds of MB, many
+        // seconds) or the fly-to-centre animation completes. If the user
+        // left the app meanwhile, the activity has saved its state and
+        // commit() throws IllegalStateException: defer to onResume.
+        if (requireActivity().supportFragmentManager.isStateSaved) {
+            android.util.Log.i("ProjectListFragment", "state saved, deferring wizard launch for ${project.name}")
+            pendingWizardProject = project
+            return
+        }
         val fragment = CompileWizardFragment.newInstance(
             executionLocation = project.directory,
             classicBootstrap = false,

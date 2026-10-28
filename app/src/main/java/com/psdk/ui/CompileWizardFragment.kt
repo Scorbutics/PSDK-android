@@ -403,7 +403,11 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     private fun clearFragmentContainer() {
         val current = childFragmentManager.findFragmentById(R.id.wizardContainer) ?: return
-        childFragmentManager.beginTransaction().remove(current).commit()
+        // Reached from the result card's slide-out end action, which can
+        // fire after the activity saved its state (home pressed mid-
+        // animation). Losing the removal of a transient card is harmless;
+        // throwing is not.
+        childFragmentManager.beginTransaction().remove(current).commitAllowingStateLoss()
     }
 
     /**
