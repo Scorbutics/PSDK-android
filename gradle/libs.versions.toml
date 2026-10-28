@@ -8,7 +8,7 @@ constraintlayout = "2.1.4"
 legacy = "1.0.0"
 zip4j = "2.11.5"
 kotlinx-serialization = "1.7.0"
-rgss-runtime-android = "1.1.0-SNAPSHOT"
+rgss-runtime-android = "1.1.1"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
