@@ -87,7 +87,7 @@ ARGV << util_flag unless ARGV.include?(util_flag)
 # rbconfig.rb sits in <stdlib>/<arch>/, so its grandparent is the stdlib root.
 pwd_prefix = "#{Dir.pwd}/"
 rbconfig_feature = $LOADED_FEATURES.find { |f| f.end_with?('/rbconfig.rb') }
-stdlib_prefix = rbconfig_feature && "#{File.dirname(rbconfig_feature, 2)}/"
+stdlib_prefix = rbconfig_feature && "#{File.dirname(File.dirname(rbconfig_feature))}/"
 purged = $LOADED_FEATURES.reject! do |f|
   f.start_with?(pwd_prefix) && !(stdlib_prefix && f.start_with?(stdlib_prefix))
 end
