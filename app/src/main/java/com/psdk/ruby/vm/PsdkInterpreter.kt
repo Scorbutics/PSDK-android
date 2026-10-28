@@ -22,7 +22,10 @@ class PsdkInterpreter private constructor(
     private val listener: LogListener,
     private val onError: ((Exception) -> Unit)? = null
 ) {
-    private var interpreter: KmpInterpreter? = null
+    // Written from enqueue's worker threads and read/cleared by close()
+    // from the caller's thread.
+    @Volatile private var interpreter: KmpInterpreter? = null
+    @Volatile private var closed = false
 
     fun enqueue(script: RubyScript, location: ScriptLocation, onComplete: CompletionTask) {
         Thread {
@@ -57,7 +60,10 @@ class PsdkInterpreter private constructor(
         }.start()
     }
 
+    @Synchronized
     private fun ensureInterpreter() {
+        // Never resurrect after close(): the interpreter would be leaked.
+        check(!closed) { "PsdkInterpreter used after close()" }
         if (interpreter == null) {
             interpreter = KmpInterpreter.create(
                 appPath = ".",
@@ -108,9 +114,25 @@ class PsdkInterpreter private constructor(
         Log.i(TAG, "enableRemoteEval rc=$evalRc on ${RemoteListenerConfig.EVAL_HOST}:${RemoteListenerConfig.evalPort}")
     }
 
+    /**
+     * Destroying the KMP interpreter waits for its running script to return,
+     * with no timeout. Callers are typically on the main thread (onDestroy,
+     * ViewModel.onCleared mid-compile): blocking there froze the UI ("app
+     * not responding") whenever the script was slow to notice its close
+     * request. The destroy runs on its own thread instead.
+     */
     fun close() {
-        interpreter?.close()
-        interpreter = null
+        val interp = synchronized(this) {
+            closed = true
+            interpreter.also { interpreter = null }
+        } ?: return
+        Thread({
+            try {
+                interp.close()
+            } catch (e: Exception) {
+                Log.w(TAG, "interpreter close failed", e)
+            }
+        }, "psdk-interpreter-close").start()
     }
 
     companion object {

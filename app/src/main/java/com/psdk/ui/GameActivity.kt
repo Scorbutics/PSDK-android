@@ -136,8 +136,6 @@ class GameActivity : AppCompatActivity() {
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION)
             ?: return finish()
         val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
-        gameWorkload = buildWorkload(executionLocation, mode) ?: return finish()
-
         configureGameEnv(executionLocation, mode)
         showGameStartOverlay(executionLocation)
         inputForwarder.start()
@@ -147,7 +145,22 @@ class GameActivity : AppCompatActivity() {
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
             workloadController.onSurfaceReady()
         }
-        workloadController.start(gameWorkload!!)
+        // Debug mode resolves the archive keys first: KDF, plus a fresh key
+        // attestation when the cached verdict expired. Not on the main
+        // thread (that froze the launch). The controller queues the start
+        // until the surface is ready anyway.
+        Thread({
+            val workload = buildWorkload(executionLocation, mode)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (workload == null) {
+                    finish()
+                    return@runOnUiThread
+                }
+                gameWorkload = workload
+                workloadController.start(workload)
+            }
+        }, "psdk-game-workload").start()
     }
 
     /**

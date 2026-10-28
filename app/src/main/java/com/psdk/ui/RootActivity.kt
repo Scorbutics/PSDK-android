@@ -516,19 +516,20 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
     override fun onDestroy() {
         if (::glSurface.isInitialized) glSurface.removeCallbacks(restartLoaderAfterResize)
-        // Terminal teardown: shutdown() destroys the persistent
-        // interpreter (blocks briefly waiting for the render thread
-        // to exit). The persistent interpreter survived every loader
-        // restart for the Activity's lifetime; this is the one place
-        // we actually tear it down.
+        // Terminal teardown: shutdown() asks the running script to close
+        // and destroys the persistent interpreter on a background thread
+        // once the script returns (never blocking here). The persistent
+        // interpreter survived every loader restart for the Activity's
+        // lifetime; this is the one place we actually tear it down.
         if (::workloadController.isInitialized) {
             workloadController.shutdown()
         } else {
             NativeSurface.requestClose()
         }
         // Drop the JNI global ref to this Activity that we registered in
-        // onCreate. Must come after the workload has finished so any
-        // late virtual-keyboard call from Ruby still finds a valid ref.
+        // onCreate. The script may still be unwinding: a late
+        // virtual-keyboard call from Ruby then finds no activity and is a
+        // no-op (SFML InputImpl checks hostActivity before using it).
         NativeSurface.setHostActivity(null)
         super.onDestroy()
     }

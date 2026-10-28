@@ -1,6 +1,7 @@
 package com.psdk.ui
 
 import android.content.Context
+import java.io.File
 import android.content.res.AssetManager
 import android.util.Log
 import com.psdk.ruby.vm.PsdkInterpreter
@@ -198,7 +199,7 @@ class RubyWorkloadController(
         synchronized(lock) {
             pendingWorkload = null
             if (currentWorkload != null) {
-                NativeSurface.requestClose()
+                requestCloseLocked()
             }
             interp = persistentInterpreter
             persistentInterpreter = null
@@ -224,7 +225,30 @@ class RubyWorkloadController(
      */
     private fun beginSwapLocked() {
         swapping = true
+        requestCloseLocked()
+    }
+
+    /**
+     * Caller MUST hold [lock]. Asks the running script to close its window.
+     * NativeSurface.requestClose is lost if the script hasn't created its
+     * window yet, so for the splash also drop a marker file it checks
+     * before creating the window and while it runs (loader/util.rb
+     * LOADER_STOP_PATH). Loader only: the `:game` process shares the data
+     * dir, and a marker written at game shutdown could land after the
+     * shell already cleared it for the restarted splash.
+     */
+    private fun requestCloseLocked() {
         NativeSurface.requestClose()
+        if (currentWorkload is RubyWorkload.Loader) setLoaderStopMarker(true)
+    }
+
+    private fun setLoaderStopMarker(present: Boolean) {
+        val marker = File(LoaderPaths.executionLocation(context), LOADER_STOP_MARKER)
+        try {
+            if (present) marker.writeText("") else marker.delete()
+        } catch (e: Exception) {
+            Log.w(TAG, "loader stop marker update failed (present=$present)", e)
+        }
     }
 
     /**
@@ -245,6 +269,7 @@ class RubyWorkloadController(
     /** Caller MUST hold [lock]. */
     private fun launchLocked(workload: RubyWorkload) {
         Log.i(TAG, "launching workload '${workload.name}' (execLoc=${workload.executionLocation})")
+        if (workload is RubyWorkload.Loader) setLoaderStopMarker(false)
 
         // Lazy first-use creation. The interpreter and its render
         // thread (rgss-worker-N) survive every subsequent workload
@@ -286,6 +311,9 @@ class RubyWorkloadController(
     }
 
     companion object {
+        /** Read by the splash as Loader::LOADER_STOP_PATH. */
+        private const val LOADER_STOP_MARKER = ".loader_stop"
+
         private const val TAG = "RubyWorkloadCtrl"
     }
 }

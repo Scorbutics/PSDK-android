@@ -36,6 +36,12 @@ module Loader
     end
 
     def show!
+      # Closed before we even had a window: leave it unopened, so every
+      # tick/hold reports closed and loader.rb unwinds to its ensure.
+      if loader_stop_requested?
+        loader_say 'stop requested before the window was created'
+        return
+      end
       font_loaded   = Assets.ensure_font_loaded
       @project_info = Assets.load_project_info
       icon_color    = Assets.load_icon_color
@@ -80,6 +86,7 @@ module Loader
     # closed (e.g. user dismissed it) — callers should bail.
     def tick
       return false if @window.closed?
+      return false if (@clock.frame % StatusFile::POLL_INTERVAL_F).zero? && loader_stop_requested?
       if @window.has_focus?
         @clock.tick!
         m = @clock.fade_out_multiplier

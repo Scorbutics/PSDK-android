@@ -21,6 +21,20 @@ unless defined?(LOADER_BASE_DIR)
 # and asset reads. Absolute paths via this constant sidestep the race.
 LOADER_BASE_DIR = Dir.pwd.freeze
 
+# Sticky close request (RubyWorkloadController writes it next to calling
+# NativeSurface.requestClose, and removes it before launching a loader).
+# requestClose is a no-op while no window exists yet, e.g. during the
+# extract prelude or show!'s asset loading: the splash would then never
+# see it, never exit, and the host's interpreter teardown would wait on
+# it forever.
+LOADER_STOP_PATH = "#{LOADER_BASE_DIR}/.loader_stop".freeze
+
+def loader_stop_requested?
+  File.exist?(LOADER_STOP_PATH)
+rescue StandardError
+  false
+end
+
 def loader_say(msg)
   puts "[loader] #{msg}"
 rescue StandardError
