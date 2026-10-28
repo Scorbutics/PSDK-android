@@ -17,6 +17,20 @@ configurations.all {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
 }
 
+// One APK embeds one Ruby minor version (the variant), because Pokemon Studio
+// game bytecode only loads on the Ruby minor that compiled it: 3.0 for games
+// compiled by the Windows Studio, 3.2 for macOS, 3.3 for Linux.
+// Select it with -PrubyVariant=3.2 (default 3.0).
+def rubyVariants = ['3.0', '3.2', '3.3']
+def rubyVariant = (project.findProperty('rubyVariant') ?: '3.0').toString()
+if (!rubyVariants.contains(rubyVariant)) {
+    throw new GradleException("Unsupported rubyVariant '${rubyVariant}', expected one of ${rubyVariants}")
+}
+
+base {
+    archivesName = "PSDK-android-ruby${rubyVariant}"
+}
+
 android {
     compileSdkVersion 34
 
@@ -34,6 +48,8 @@ android {
         targetSdkVersion 33
         versionCode 4
         versionName "1.2.1"
+
+        buildConfigField "String", "RUBY_VARIANT", "\"${rubyVariant}\""
 
         ndk {
             abiFilters += ["x86_64", "arm64-v8a"]
@@ -101,5 +117,6 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
 
-    implementation libs.rgss.runtime.android
+    // rgss-runtime is published once per Ruby variant: <version>-ruby<variant>.
+    implementation "com.scorbutics.rubyvm:rgss-runtime-android:${libs.versions.rgss.runtime.android.get()}-ruby${rubyVariant}"
 }

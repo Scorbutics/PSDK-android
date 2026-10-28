@@ -93,6 +93,16 @@ Alternatively, you can set the `GITHUB_USERNAME` and `GITHUB_TOKEN` environment 
 ./gradlew installDebug
 ```
 
+#### Ruby Variants
+
+One APK embeds one Ruby minor version, because Pokémon Studio game bytecode only loads on the Ruby minor that compiled it: **3.0** for games compiled by the Windows Studio (default), **3.2** for macOS, **3.3** for Linux. Select it with `-PrubyVariant`:
+
+```bash
+./gradlew assembleRelease -PrubyVariant=3.2   # app/build/outputs/apk/release/PSDK-android-ruby3.2-release.apk
+```
+
+Each release (tag `vX.Y.Z`) holds the debug and release APK of every variant: `PSDK-android-ruby<variant>-<debug|release>.apk`.
+
 ## 🔧 Configuration
 
 ### Gradle Configuration

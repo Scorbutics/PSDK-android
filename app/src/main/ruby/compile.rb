@@ -80,7 +80,7 @@ ARGV << util_flag unless ARGV.include?(util_flag)
 # neither possible nor needed.
 #
 # The embedded Ruby stdlib is installed under the app data dir as well
-# (<data>/files/ruby-vm/ruby/3.1.0/...), which IS the cwd in classic mode.
+# (<data>/files/ruby-vm/ruby/<ruby ABI version>/...), which IS the cwd in classic mode.
 # Keep those entries: re-executing openssl.rb & co. on top of their already
 # initialized C extensions raises (PSDK's `require 'openssl'` failed with
 # "superclass mismatch for class Cipher" once epsa_stream.rb had loaded it).
