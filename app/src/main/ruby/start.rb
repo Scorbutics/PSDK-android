@@ -227,6 +227,16 @@ SafeRunner.run(
     private :exit!
   end
 
+  # On-screen gamepad, provided by the runtime (litergss-everywhere's
+  # litergss/touch_overlay). It works at the LiteRGSS level, so every game
+  # gets it, compiled by any PSDK version on any platform; a game drawing its
+  # own touch controls (Input::InputTouch) keeps them.
+  if defined?(LiteRGSS::TouchOverlay)
+    LiteRGSS::TouchOverlay.install
+  else
+    VMLogger.error "[start.rb] This runtime has no LiteRGSS::TouchOverlay: no on-screen gamepad"
+  end
+
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
   # event constants on every run; Ruby would otherwise spam "already
