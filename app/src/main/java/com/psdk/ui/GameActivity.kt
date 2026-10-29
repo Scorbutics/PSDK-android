@@ -116,7 +116,11 @@ class GameActivity : AppCompatActivity() {
 
         imeBridge = ImeBridge(this, imeSink, focusRestoreTarget = glSurface)
         inputForwarder = GameInputForwarder(this).apply {
-            keyEventShouldConsume = { _ -> !imeBridge.isImeActive }
+            // While the soft keyboard is up, printable keys go to the IME
+            // sink (ImeBridge forwards its text to the game); the others
+            // (Backspace, Enter, arrows, Escape...) reach the game as keys,
+            // the way a desktop keyboard does while typing a name.
+            keyEventShouldConsume = { event -> !imeBridge.isImeActive || !producesText(event) }
         }
 
         workloadController = RubyWorkloadController(
@@ -329,6 +333,9 @@ class GameActivity : AppCompatActivity() {
         android.util.Log.i(TAG, "game session over — killing :game process")
         android.os.Process.killProcess(android.os.Process.myPid())
     }
+
+    private fun producesText(event: KeyEvent): Boolean =
+        event.getUnicodeChar(event.metaState) >= ' '.code
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // Super-user flow only: intercept BACK so the user can leave the

@@ -8,6 +8,8 @@ import android.text.TextWatcher
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.scorbutics.litergss.NativeSurface
 
 /**
@@ -46,14 +48,40 @@ class ImeBridge(
         }
     }
 
-    /** True iff the IME sink currently has focus (i.e. the soft keyboard is up). */
-    val isImeActive: Boolean get() = imeSink.isFocused
+    /**
+     * True iff the soft keyboard is on screen. Read from the window insets,
+     * not from the sink's focus: the keyboard can be opened by other paths
+     * than [showOnUiThread] (SFML's own JNI call) or closed by the system
+     * (back gesture) while the sink's focus says otherwise.
+     */
+    val isImeActive: Boolean
+        get() = ViewCompat.getRootWindowInsets(imeSink)?.isVisible(WindowInsetsCompat.Type.ime()) == true
 
     /**
      * Arm the native→Java IME bridge. Idempotent at the
      * NativeSurface level (setVirtualKeyboardListener overwrites).
      */
     fun start() {
+        // Installed up front: whatever opened the keyboard, the text it
+        // commits into the sink must reach the game.
+        installWatcher()
+        // The sink is only focusable while the keyboard is requested: a
+        // focused editor gets the hardware keys before the activity (the
+        // IME pre-processes them), which ate the physical keyboard's keys.
+        // Follow the keyboard whoever shows or hides it: SFML's
+        // Sf::Keyboard.virtual_keyboard= calls the InputMethodManager itself
+        // (with no text field focused, the keyboard cannot type), the system
+        // hides it on a back gesture.
+        ViewCompat.setOnApplyWindowInsetsListener(imeSink) { _, insets ->
+            val shown = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (shown && !imeSink.isFocused) {
+                focusSink()
+                imm()?.restartInput(imeSink)
+            } else if (!shown && imeSink.isFocused) {
+                releaseSink()
+            }
+            insets
+        }
         NativeSurface.setVirtualKeyboardListener(virtualKeyboardListener)
     }
 
@@ -67,8 +95,23 @@ class ImeBridge(
     }
 
     private fun showOnUiThread() {
-        // Install the watcher lazily on first show. Use removeTextChangedListener
-        // inside afterTextChanged to avoid recursion when we wipe the field.
+        installWatcher()
+        focusSink()
+        imm()?.showSoftInput(imeSink, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun imm(): InputMethodManager? =
+        context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+
+    private fun focusSink() {
+        imeSink.isFocusable = true
+        imeSink.isFocusableInTouchMode = true
+        imeSink.requestFocus()
+    }
+
+    // Use removeTextChangedListener inside afterTextChanged to avoid
+    // recursion when we wipe the field.
+    private fun installWatcher() {
         if (imeSinkWatcher == null) {
             val watcher = object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -92,20 +135,22 @@ class ImeBridge(
             imeSink.addTextChangedListener(watcher)
             imeSinkWatcher = watcher
         }
-        imeSink.requestFocus()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.showSoftInput(imeSink, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun hideOnUiThread() {
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(imeSink.windowToken, 0)
+        imm()?.hideSoftInputFromWindow(imeSink.windowToken, 0)
+        releaseSink()
+        // Watcher stays installed across hide/show cycles — cheaper than
+        // re-attaching every time.
+    }
+
+    private fun releaseSink() {
         imeSink.clearFocus()
+        imeSink.isFocusableInTouchMode = false
+        imeSink.isFocusable = false
         // Restore focus to the surface view so subsequent hardware-key
         // events reach the activity's dispatchKeyEvent through the
         // right View hierarchy path.
         focusRestoreTarget.requestFocus()
-        // Watcher stays installed across hide/show cycles — cheaper than
-        // re-attaching every time.
     }
 }

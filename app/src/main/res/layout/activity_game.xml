@@ -62,6 +62,6 @@
         android:alpha="0"
         android:inputType="text"
         android:importantForAutofill="no"
-        android:focusable="true"
-        android:focusableInTouchMode="true" />
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
 </FrameLayout>
