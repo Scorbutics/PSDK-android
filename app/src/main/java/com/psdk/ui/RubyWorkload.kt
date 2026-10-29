@@ -110,5 +110,12 @@ enum class GameMode {
             "debug_uncompiled" -> DEBUG_UNCOMPILED
             else               -> RELEASE
         }
+
+        /**
+         * The mode a project runs in: the one chosen for it, except that a
+         * compiled release has no Ruby sources to run in Debug.
+         */
+        fun forProject(chosen: GameMode, compiledRelease: Boolean): GameMode =
+            if (compiledRelease) RELEASE else chosen
     }
 }

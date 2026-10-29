@@ -137,7 +137,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             selectedMode = GameMode.RELEASE
             launchReady = false
         } else {
-            selectedMode = loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease)
+            selectedMode = GameMode.forProject(
+                loadStoredMode(executionLocation, defaultIfReleaseExists = hasRelease),
+                LoaderPaths.isCompiledRelease(executionLocation),
+            )
             recomputeLaunchReady(hasRelease)
         }
 
@@ -146,6 +149,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         modeToggleGroup = view.findViewById(R.id.modeToggleGroup)
         modeReleaseChip = view.findViewById(R.id.modeReleaseChip)
         modeDebugChip = view.findViewById(R.id.modeDebugChip)
+        modeDebugChip.isEnabled = !LoaderPaths.isCompiledRelease(executionLocation)
         toolbar.setNavigationOnClickListener {
             if ((viewModel.currentStep.value ?: 0) != 1) {
                 requireActivity().onBackPressedDispatcher.onBackPressed()
@@ -248,6 +252,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                     prelude = CompilationEngine.ARCHIVE_PRELUDES + EXTRACT_LOADER_ASSETS_SCRIPT,
                 )
             } else {
+                // A first import's validation only now wrote the marker
+                applyCompiledReleaseLock(executionLocation)
                 LoaderState.FromExtracted(sourceDir = File(executionLocation, "loader_assets"))
             }
             host.setLoaderState(state)
@@ -744,6 +750,29 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "mode-switch CTA write failed", e)
             }
+        }
+    }
+
+    /**
+     * A compiled release (marked at import, see [LoaderPaths.isCompiledRelease])
+     * has no Ruby sources to run in Debug: freeze the toggle on Release.
+     * Idempotent.
+     */
+    private fun applyCompiledReleaseLock(executionLocation: String) {
+        val compiledRelease = LoaderPaths.isCompiledRelease(executionLocation)
+        modeDebugChip.isEnabled = !compiledRelease
+        val mode = GameMode.forProject(selectedMode, compiledRelease)
+        if (mode == selectedMode) return
+        selectedMode = mode
+        storeMode(executionLocation, mode)
+        recomputeLaunchReady(File(executionLocation, "Release").exists())
+        applyModeChips()
+        applyToolbarTitle()
+        try {
+            LoaderPaths.statusFile(requireContext())
+                .writeText(SCENE_RESET_SENTINEL + currentCta())
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "compiled-release CTA write failed", e)
         }
     }
 

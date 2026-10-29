@@ -36,6 +36,12 @@ import java.io.File
 object ArchiveValidator {
     private const val TAG = "ArchiveValidator"
     private const val EXTRACT_SCRIPT = "extract_loader_assets.rb"
+    /**
+     * What extract_loader_assets.rb writes into loader_assets/extract_version
+     * (its EXTRACT_VERSION, keep both in sync). Bumped when the written files
+     * change: 2 adds the compiled_release marker.
+     */
+    private const val LOADER_ASSETS_VERSION = "2"
     private const val EXTRACT_TIMEOUT_MS = 120_000L
     const val NOT_AN_ARCHIVE = "Not a game archive: expected an .epsa, .psa or .zip file."
 
@@ -134,11 +140,14 @@ object ArchiveValidator {
      * writes on success, and each was last modified no earlier than the
      * staging file. icon_color.json is intentionally excluded: the script
      * skips it on all-transparent icons, so its absence does not mean the
-     * extraction was incomplete.
+     * extraction was incomplete. Assets written by another version of the
+     * script (extract_version, see LOADER_ASSETS_VERSION) are stale too.
      */
     private fun loaderAssetsFresh(executionLocation: String, stagingFile: File): Boolean {
         val dir = File(executionLocation, "loader_assets")
         if (!dir.isDirectory) return false
+        val version = File(dir, "extract_version")
+        if (!version.isFile || version.readText().trim() != LOADER_ASSETS_VERSION) return false
         val required = listOf("infos_config.json", "game.png", "game_font.ttf")
         val files = required.map { File(dir, it) }
         if (!files.all { it.exists() && it.length() > 0 }) return false

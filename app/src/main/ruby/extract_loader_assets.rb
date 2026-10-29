@@ -13,6 +13,7 @@
 # the metadata is read from Data/0.dat and the icon from its icon Yuki::VD.
 # Its Game.yarb must also load on this app's Ruby: a game compiled by
 # another Ruby is refused here, at import, instead of at its first launch.
+# TARGET_COMPILED marks it for the app: it has no sources to run in Debug.
 
 require 'fileutils'
 require 'json'
@@ -31,6 +32,12 @@ TARGET_INFOS     = File.join(TARGET_DIR, 'infos_config.json').freeze
 TARGET_ICON      = File.join(TARGET_DIR, 'game.png').freeze
 TARGET_FONT      = File.join(TARGET_DIR, 'game_font.ttf').freeze
 TARGET_COLOR     = File.join(TARGET_DIR, 'icon_color.json').freeze
+TARGET_COMPILED  = File.join(TARGET_DIR, 'compiled_release').freeze
+# Version of what this script writes: the app re-extracts loader_assets
+# written by another one (ArchiveValidator.LOADER_ASSETS_VERSION, keep both
+# in sync when the written files change).
+TARGET_VERSION   = File.join(TARGET_DIR, 'extract_version').freeze
+EXTRACT_VERSION  = '2'.freeze
 
 ArchiveMount.mount!
 
@@ -79,7 +86,8 @@ def detect_icon_color(png_data)
 end
 
 font_src = pick_font_source
-if GameContent.compiled_release?(PhysFS)
+compiled = GameContent.compiled_release?(PhysFS)
+if compiled
   GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME))
   infos = GameContent.compiled_infos(PhysFS)
   raise "#{GameContent::COMPILED_INFOS} missing from #{GameContent::COMPILED_CONFIGS}" unless infos
@@ -100,6 +108,9 @@ FileUtils.mkdir_p(TARGET_DIR)
 File.binwrite(TARGET_INFOS, infos_json)
 File.binwrite(TARGET_ICON,  icon_bytes)
 File.binwrite(TARGET_FONT,  PhysFS.read(font_src))
+# Removed otherwise: the directory may hold a previous import's marker
+compiled ? File.write(TARGET_COMPILED, '') : FileUtils.rm_f(TARGET_COMPILED)
+File.write(TARGET_VERSION, EXTRACT_VERSION)
 
 # Best-effort: an icon that decodes to no opaque pixels (all-transparent
 # PNG, or a decode failure) simply leaves icon_color.json absent —

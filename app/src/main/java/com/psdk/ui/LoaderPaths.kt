@@ -26,6 +26,16 @@ object LoaderPaths {
     /** loader.rb's chdir target — must match [statusFile]'s parent. */
     fun executionLocation(context: Context): String = context.applicationInfo.dataDir
 
+    /**
+     * True iff the project's archive is a compiled release (no Ruby sources
+     * to run in Debug): extract_loader_assets.rb marks it at import, in the
+     * project's own loader_assets.
+     */
+    fun isCompiledRelease(projectDir: String): Boolean =
+        File(projectDir, "$LOADER_ASSETS_DIR/$COMPILED_RELEASE_MARKER").exists()
+
+    private const val COMPILED_RELEASE_MARKER = "compiled_release"
+
     /** Where loader.rb reads game.png / infos_config.json / icon_color.json from. */
     fun assetsDir(context: Context): File = File(executionLocation(context), LOADER_ASSETS_DIR)
 
