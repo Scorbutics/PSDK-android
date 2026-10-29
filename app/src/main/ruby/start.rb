@@ -147,7 +147,10 @@ SafeRunner.run(
   # PSDK installs its own top-level rescue that writes Error.log and returns
   # normally — so Game.rb finishing "successfully" doesn't mean nothing crashed.
   # Snapshot Error.log's mtime before running and, in ensure, surface its
-  # contents if it appeared or was touched during this run.
+  # contents if it appeared or was touched during this run. The run then exits
+  # with game_error_exit_code: GameActivity reports a non-zero exit to the user
+  # with Error.log's summary (a code 0 ended the game silently).
+  game_error_exit_code = 3
   error_log = File.join(Dir.pwd, 'Error.log')
   error_log_mtime_before = File.exist?(error_log) ? File.mtime(error_log) : nil
 
@@ -251,7 +254,8 @@ SafeRunner.run(
     VMLogger.info "[start.rb] Game.rb finished normally"
   ensure
     $VERBOSE = old_verbose
-    if File.exist?(error_log) && File.mtime(error_log) != error_log_mtime_before
+    game_error = File.exist?(error_log) && File.mtime(error_log) != error_log_mtime_before
+    if game_error
       VMLogger.error "[start.rb] --- Error.log contents (#{error_log}) ---"
       File.read(error_log).each_line { |line| VMLogger.error line.chomp }
       VMLogger.error "[start.rb] --- end of Error.log ---"
@@ -262,4 +266,5 @@ SafeRunner.run(
       ArchiveMount.unmount! rescue nil
     end
   end
+  exit(game_error_exit_code) if game_error
 end
