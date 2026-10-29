@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -41,6 +42,8 @@ class ImeBridge(
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private var imeSinkWatcher: TextWatcher? = null
+    // The keyboard took room on screen at the last insets dispatch
+    private var imeInsetsShown = false
 
     private val virtualKeyboardListener = NativeSurface.VirtualKeyboardListener { show ->
         uiHandler.post {
@@ -65,6 +68,17 @@ class ImeBridge(
         // Installed up front: whatever opened the keyboard, the text it
         // commits into the sink must reach the game.
         installWatcher()
+        // The keyboard's action key (done, go...) is an editor action, not a
+        // key event: send the game the Enter a physical keyboard would (PSDK
+        // validates a name with it). Returning false keeps the default
+        // handling, which hides the keyboard.
+        imeSink.setOnEditorActionListener { _, _, event ->
+            if (event == null) {
+                NativeSurface.injectKeyDown(KeyEvent.KEYCODE_ENTER, 0, 0)
+                NativeSurface.injectKeyUp(KeyEvent.KEYCODE_ENTER, 0)
+            }
+            false
+        }
         // The sink is only focusable while the keyboard is requested: a
         // focused editor gets the hardware keys before the activity (the
         // IME pre-processes them), which ate the physical keyboard's keys.
@@ -72,14 +86,18 @@ class ImeBridge(
         // Sf::Keyboard.virtual_keyboard= calls the InputMethodManager itself
         // (with no text field focused, the keyboard cannot type), the system
         // hides it on a back gesture.
+        // Only a visible -> hidden change means the system hid it: a keyboard
+        // taking no room (Gboard's toolbar while a hardware keyboard is
+        // plugged) never shows in the insets, and must keep its text field.
         ViewCompat.setOnApplyWindowInsetsListener(imeSink) { _, insets ->
             val shown = insets.isVisible(WindowInsetsCompat.Type.ime())
             if (shown && !imeSink.isFocused) {
                 focusSink()
                 imm()?.restartInput(imeSink)
-            } else if (!shown && imeSink.isFocused) {
+            } else if (!shown && imeInsetsShown && imeSink.isFocused) {
                 releaseSink()
             }
+            imeInsetsShown = shown
             insets
         }
         NativeSurface.setVirtualKeyboardListener(virtualKeyboardListener)
