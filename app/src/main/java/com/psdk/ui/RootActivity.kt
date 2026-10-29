@@ -108,6 +108,17 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         ViewCompat.setOnApplyWindowInsetsListener(fragmentContainer) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            // The splash draws under the bars and reads them at start
+            // (startLoaderForCurrentState): restart it when they move, as on
+            // a resize (they may arrive after the resize's own restart).
+            if (bars != systemBarInsets) {
+                systemBarInsets = bars
+                if (::glSurface.isInitialized && ::workloadController.isInitialized &&
+                    workloadController.currentWorkload() is RubyWorkload.Loader) {
+                    glSurface.removeCallbacks(restartLoaderAfterResize)
+                    glSurface.postDelayed(restartLoaderAfterResize, LOADER_RESIZE_RESTART_DELAY_MS)
+                }
+            }
             insets
         }
 
@@ -368,6 +379,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // AND kicks the compositor into pulling buffers again.
         loaderFadedIn = false
         glSurfaceOverlay.alpha = 1f
+        // Read by loader/layers/text.rb: keeps the footer clear of the bars
+        val bars = systemBarInsets
+        android.system.Os.setenv(LOADER_INSETS_ENV, "${bars.left},${bars.top},${bars.right},${bars.bottom}", true)
         workloadController.start(
             RubyWorkload.Loader(
                 executionLocation = LoaderPaths.executionLocation(this),
@@ -452,6 +466,9 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("=") }.take(4).joinToString("\n")
         }.take(400)
     }
+
+    /** Last system bar insets, in window pixels. UI thread only. */
+    private var systemBarInsets = androidx.core.graphics.Insets.NONE
 
     /** See [setLoaderRestartsDeferred]. UI thread only. */
     private var loaderRestartsDeferred = false
@@ -578,6 +595,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         private const val LOADER_FADE_IN_MS = 80L
 
         private const val LOADER_RESIZE_RESTART_DELAY_MS = 300L
+        /** System bar insets for the splash, see loader/layers/text.rb's INSETS_ENV. */
+        private const val LOADER_INSETS_ENV = "PSDK_LOADER_INSETS"
 
         fun hubIntent(activity: AppCompatActivity): Intent =
             Intent(activity, RootActivity::class.java).putExtra(EXTRA_TARGET, TARGET_HUB)

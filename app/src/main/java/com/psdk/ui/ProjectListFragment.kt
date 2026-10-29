@@ -55,6 +55,7 @@ class ProjectListFragment : Fragment() {
     private lateinit var database: AppDatabase
 
     private lateinit var slots: List<View>
+    private lateinit var addProjectLabel: View
     private lateinit var fabContainer: FrameLayout
     private lateinit var emptyHint: View
 
@@ -84,6 +85,9 @@ class ProjectListFragment : Fragment() {
 
         val newProjectFab = view.findViewById<FloatingActionButton>(R.id.newProjectFab)
         val newProjectHalo = view.findViewById<View>(R.id.newProjectHalo)
+        addProjectLabel = view.findViewById(R.id.addProjectLabel)
+        addProjectLabel.animate().alpha(1f).setStartDelay(ADD_LABEL_FADE_DELAY_MS)
+            .setDuration(ADD_LABEL_FADE_MS).start()
         fabContainer = view.findViewById(R.id.fabContainer)
         emptyHint = view.findViewById(R.id.emptyHint)
         slots = listOf(
@@ -107,6 +111,7 @@ class ProjectListFragment : Fragment() {
             // and signals "you've maxed your debug-project budget".
             newProjectFab.visibility =
                 if (projects.size >= MAX_PROJECTS) View.GONE else View.VISIBLE
+            addProjectLabel.visibility = newProjectFab.visibility
             emptyHint.visibility = if (projects.isEmpty()) View.VISIBLE else View.GONE
         }
 
@@ -137,6 +142,7 @@ class ProjectListFragment : Fragment() {
         // transition disturbed.
         launching = false
         fabContainer.alpha = 1f
+        addProjectLabel.alpha = 1f
         slots.forEach { slot ->
             slot.alpha = 1f
             slot.scaleX = 1f
@@ -356,6 +362,7 @@ class ProjectListFragment : Fragment() {
             other.animate().alpha(0.2f).setDuration(180L).start()
         }
         fabContainer.animate().alpha(0.2f).setDuration(180L).start()
+        addProjectLabel.animate().alpha(0.2f).setDuration(180L).start()
     }
 
     // ── Centred "+" stack ────────────────────────────────────────────
@@ -622,6 +629,9 @@ class ProjectListFragment : Fragment() {
         private const val SATELLITE_HALO_BREATH_MS = 2400L
         private const val SATELLITE_FLY_MS = 280L
         private const val SATELLITE_FADE_IN_MS = 2000L
+
+        private const val ADD_LABEL_FADE_DELAY_MS = 300L
+        private const val ADD_LABEL_FADE_MS = 900L
 
         private const val PARTICLE_COUNT = 12
         private const val PARTICLE_SIZE_DP = 8

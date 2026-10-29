@@ -25,8 +25,17 @@ module Loader
       CTA_FONT_SIZE     = 12
       FOOTER_FONT_SIZE  = 9
       # Sized to roughly match the title font weight in the icon-present
-      # state — the hint IS the centerpiece copy in hub mode.
+      # state — the hint IS the centerpiece copy while preparing.
       HINT_FONT_SIZE    = 16
+      # System bar insets of the surface, "left,top,right,bottom" in surface
+      # pixels, set by RootActivity before each loader start (the loader is
+      # restarted on every resize, so they always match the canvas).
+      INSETS_ENV        = 'PSDK_LOADER_INSETS'
+      FOOTER_HEIGHT     = 12
+      FOOTER_MARGIN     = 8
+      # Footer offset from the canvas bottom without INSETS_ENV: a 3-button
+      # navigation bar at the bottom
+      FALLBACK_FOOTER_OFFSET = 56
 
       def initialize(project_info, font_loaded:, preparing_message: nil)
         @project_info      = project_info
@@ -48,15 +57,17 @@ module Loader
         # rise out of black.
         @accent = icon.cta_accent_color
 
-        # The GL surface draws edge-to-edge under the system navigation
-        # bar, so the bottom margin has to clear the nav bar's logical-
-        # pixel height on top of the visual gap. ~56 px covers the
-        # 3-button bar on typical xxhdpi/xxxhdpi phones at the 240px-
-        # short-edge logical canvas; gesture-nav devices end up with
-        # extra padding, which still reads as comfortable bottom
-        # whitespace.
-        footer_y = window_height - 56
-        @footer = LiteRGSS::Text.new(0, viewport, 0, footer_y, full_w, 12,
+        # The GL surface draws edge-to-edge under the system bars: the
+        # footer sits just above the bottom bar and centred between the side
+        # ones (landscape puts the navigation bar on a side).
+        left, _top, right, bottom = safe_insets(window_width)
+        footer_y = if bottom
+                     window_height - bottom - FOOTER_MARGIN - FOOTER_HEIGHT
+                   else
+                     window_height - FALLBACK_FOOTER_OFFSET
+                   end
+        @footer = LiteRGSS::Text.new(0, viewport, left.to_i, footer_y.to_i,
+                                     (full_w - left - right).to_i, FOOTER_HEIGHT,
                                      'Powered by PSDK · LiteRGSS2 · Ruby VM', 1)
         @footer.size          = FOOTER_FONT_SIZE
         @footer.fill_color    = LiteRGSS::Color.new(110, 125, 150, 200)
@@ -68,17 +79,19 @@ module Loader
         unless icon.present?
           # Hub mode: no project icon is loaded (the bundled
           # loader_assets_default ships no game.png on purpose so the
-          # centerpiece slot stays clean for the Android-side "+" FAB).
-          # We render a "Add project" hint just below the canvas centre
-          # — directly under where the FAB sits — so the bare splash
-          # doesn't leave the user guessing what the button does.
+          # centerpiece slot stays clean for the Android-side "+" FAB). Its
+          # "Add project" label is Android's too, laid out under the FAB:
+          # the canvas covers the system bars and the FAB doesn't, so a
+          # label drawn here drifted off it (landscape).
           #
           # While preparing (LoaderState.Preparing: no "+" FAB, nothing to
-          # add) the same line carries the host's message instead, centred
-          # where the icon would be.
-          hint_y = @preparing_message ? window_height / 2 - 12 : window_height / 2 + 52
+          # add) this line carries the host's message, centred where the
+          # icon would be.
+          return unless @preparing_message
+
+          hint_y = window_height / 2 - 12
           @hint = LiteRGSS::Text.new(0, viewport, 0, hint_y, full_w, 24,
-                                     @preparing_message || 'Add project', 1)
+                                     @preparing_message, 1)
           @hint.size              = HINT_FONT_SIZE
           @hint.fill_color        = LiteRGSS::Color.new(245, 245, 250, 255)
           @hint_outline_final     = [0, 0, 0, 220]
@@ -205,6 +218,17 @@ module Loader
       end
 
       private
+
+      # [left, top, right, bottom] system bar insets in canvas units, or nils
+      # when RootActivity didn't set INSETS_ENV.
+      def safe_insets(window_width)
+        values = ENV[INSETS_ENV].to_s.split(',').map(&:to_f)
+        surface_w = (LiteRGSS::DisplayWindow.desktop_width rescue 0).to_f
+        return [0, 0, 0, nil] if values.size != 4 || surface_w <= 0
+
+        scale = window_width / surface_w
+        values.map { |v| v * scale }
+      end
 
       def color(rgba)
         LiteRGSS::Color.new(rgba[0], rgba[1], rgba[2], rgba[3])

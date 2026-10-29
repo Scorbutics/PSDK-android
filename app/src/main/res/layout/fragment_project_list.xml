@@ -17,7 +17,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:translationY="120dp"
+        android:translationY="92dp"
         android:text="Tap + to import a game"
         android:textAppearance="@style/TextAppearance.Psdk.Body"
         android:textColor="@color/colorOnSurfaceVariant"
@@ -61,4 +61,24 @@
             app:maxImageSize="40dp"
             app:srcCompat="@android:drawable/ic_input_add" />
     </FrameLayout>
+
+    <!-- Under the "+" (88 dp): laid out here rather than drawn by the splash,
+         whose canvas covers the system bars, so it stays under the FAB
+         whatever the orientation. Shown with the FAB, faded in by the
+         fragment. -->
+    <TextView
+        android:id="@+id/addProjectLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:translationY="62dp"
+        android:alpha="0"
+        android:text="Add project"
+        android:textColor="#F5F5FA"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:shadowColor="#DC000000"
+        android:shadowRadius="4"
+        android:shadowDx="0"
+        android:shadowDy="1" />
 </FrameLayout>
