@@ -41,6 +41,13 @@ class ImeBridge(
 ) {
 
     private val uiHandler = Handler(Looper.getMainLooper())
+    private val keyTap = KeyTap(
+        injectKey = { keyCode, down ->
+            if (down) NativeSurface.injectKeyDown(keyCode, 0, 0) else NativeSurface.injectKeyUp(keyCode, 0)
+        },
+        injectText = { codePoint -> NativeSurface.injectText(codePoint) },
+        postDelayed = { delayMs, action -> uiHandler.postDelayed(action, delayMs) },
+    )
     private var imeSinkWatcher: TextWatcher? = null
     // The keyboard took room on screen at the last insets dispatch
     private var imeInsetsShown = false
@@ -69,13 +76,13 @@ class ImeBridge(
         // commits into the sink must reach the game.
         installWatcher()
         // The keyboard's action key (done, go...) is an editor action, not a
-        // key event: send the game the Enter a physical keyboard would (PSDK
-        // validates a name with it). Returning false keeps the default
-        // handling, which hides the keyboard.
+        // key event: send the game the Enter a physical keyboard would, key
+        // and typed newline (PSDK confirms a name on the newline), see
+        // KeyTap. Returning false keeps the default handling, which hides the
+        // keyboard.
         imeSink.setOnEditorActionListener { _, _, event ->
             if (event == null) {
-                NativeSurface.injectKeyDown(KeyEvent.KEYCODE_ENTER, 0, 0)
-                NativeSurface.injectKeyUp(KeyEvent.KEYCODE_ENTER, 0)
+                keyTap.tap(KeyEvent.KEYCODE_ENTER, '\n'.code)
             }
             false
         }
