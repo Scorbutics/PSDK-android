@@ -61,6 +61,7 @@
         android:layout_height="1px"
         android:alpha="0"
         android:inputType="text"
+        android:imeOptions="flagNoExtractUi|flagNoFullscreen"
         android:importantForAutofill="no"
         android:focusable="false"
         android:focusableInTouchMode="false" />
