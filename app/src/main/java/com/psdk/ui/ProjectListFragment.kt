@@ -94,6 +94,12 @@ class ProjectListFragment : Fragment() {
 
         setupCentralAddButton(newProjectFab, newProjectHalo, fabContainer)
 
+        // The activity survives rotations (configChanges): follow the view's
+        // size, the satellites' row must stay on screen in landscape.
+        view.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            if (bottom - top != oldBottom - oldTop) applyRestingPositions(v.height)
+        }
+
         // Observe projects → repaint the constellation.
         viewModel.projects.observe(viewLifecycleOwner) { projects ->
             arrangeSlots(projects)
@@ -115,6 +121,9 @@ class ProjectListFragment : Fragment() {
      */
     private var pendingWizardProject: Project? = null
 
+    /** A slot is flying to the centre: its position is the animation's. */
+    private var launching = false
+
     override fun onResume() {
         super.onResume()
         pendingWizardProject?.let { project ->
@@ -126,6 +135,7 @@ class ProjectListFragment : Fragment() {
         refreshProjects()
         // Returning from the wizard — restore everything the fly-to-centre
         // transition disturbed.
+        launching = false
         fabContainer.alpha = 1f
         slots.forEach { slot ->
             slot.alpha = 1f
@@ -154,12 +164,6 @@ class ProjectListFragment : Fragment() {
         satelliteHaloBreaths.forEach { it.cancel() }
         satelliteHaloBreaths.clear()
 
-        val density = resources.displayMetrics.density
-        val positions = listOf(
-            Pair(-SATELLITE_HORIZONTAL_DP * density, -SATELLITE_VERTICAL_DP * density),
-            Pair(0f,                                    -SATELLITE_VERTICAL_DP * density),
-            Pair(SATELLITE_HORIZONTAL_DP * density,  -SATELLITE_VERTICAL_DP * density),
-        )
         val activeIndices = when (projects.size) {
             0 -> emptyList()
             1 -> listOf(1)
@@ -168,10 +172,8 @@ class ProjectListFragment : Fragment() {
         }
 
         // Reset all slots, then populate the active ones.
-        slots.forEachIndexed { i, slot ->
-            val pos = positions[i]
-            slot.translationX = pos.first
-            slot.translationY = pos.second
+        applyRestingPositions(view?.height ?: 0)
+        slots.forEach { slot ->
             slot.visibility = View.GONE
             slot.alpha = 0f
             slot.scaleX = 1f
@@ -301,6 +303,33 @@ class ProjectListFragment : Fragment() {
     }
 
     /**
+     * Resting positions of the 3 slots, a row above the FAB (the view's
+     * centre). [viewHeight] is 0 before the first layout: the preferred
+     * offset is used, the layout listener corrects it.
+     */
+    private fun applyRestingPositions(viewHeight: Int) {
+        if (launching) return // the tapped slot is flying to the centre
+        val density = resources.displayMetrics.density
+        val vertical = if (viewHeight <= 0) {
+            SATELLITE_VERTICAL_DP * density
+        } else {
+            SatelliteLayout.verticalOffset(
+                viewHeight = viewHeight.toFloat(),
+                slotHeight = slots.maxOf { it.height }.toFloat().takeIf { it > 0f }
+                    ?: SATELLITE_HEIGHT_DP * density,
+                preferredOffset = SATELLITE_VERTICAL_DP * density,
+                margin = SATELLITE_EDGE_MARGIN_DP * density,
+                minOffset = SATELLITE_MIN_VERTICAL_DP * density,
+            )
+        }
+        val horizontal = SATELLITE_HORIZONTAL_DP * density
+        listOf(-horizontal, 0f, horizontal).forEachIndexed { i, x ->
+            slots[i].translationX = x
+            slots[i].translationY = -vertical
+        }
+    }
+
+    /**
      * Fly-to-centre transition: the tapped satellite arcs to the centre
      * while scaling up; everything else dims. When the animation lands,
      * we hand off to the wizard. The fragment-replace transaction tears
@@ -311,6 +340,7 @@ class ProjectListFragment : Fragment() {
         // Disable the whole constellation so a second tap during the
         // transition can't fire a second wizard.
         slots.forEach { it.isClickable = false }
+        launching = true
 
         slot.animate()
             .translationX(0f).translationY(0f)
@@ -579,9 +609,15 @@ class ProjectListFragment : Fragment() {
 
         // Resting positions for the 3 slots, in dp from the FAB centre.
         // Same Y for a clean horizontal arc; X spreads outward so the
-        // outer slots clear the FAB halo's gradient fade.
+        // outer slots clear the FAB halo's gradient fade. The row comes
+        // closer than SATELLITE_VERTICAL_DP on a short view (landscape),
+        // see SatelliteLayout.
         private const val SATELLITE_HORIZONTAL_DP = 110f
         private const val SATELLITE_VERTICAL_DP   = 200f
+        private const val SATELLITE_MIN_VERTICAL_DP = 90f
+        private const val SATELLITE_EDGE_MARGIN_DP = 8f
+        /** Until measured: 80 dp icon + name caption. */
+        private const val SATELLITE_HEIGHT_DP = 112f
 
         private const val SATELLITE_HALO_BREATH_MS = 2400L
         private const val SATELLITE_FLY_MS = 280L
