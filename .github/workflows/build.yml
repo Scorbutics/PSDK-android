@@ -47,22 +47,71 @@ jobs:
           name: app-release-ruby${{ matrix.ruby_variant }}
           path: app/build/outputs/apk/release/*.apk
 
+  # The app's Ruby scripts and the exporter (exporter/), which builds its APKs
+  # from the debug base APK just built. On Ruby 3.0, the oldest one the
+  # exporter runs on (Windows Pokemon Studio's); ubuntu-24.04 has no 3.0.
+  test-ruby:
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+
+      - name: Install gems
+        run: gem install rubyzip minitest --no-document
+
+      - name: Download the base APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug-ruby3.0
+          path: base-apk
+
+      - name: Run Ruby tests
+        run: |
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          export BASE_APK=base-apk/PSDK-android-ruby3.0-debug.apk
+          export APKSIGNER="$build_tools/apksigner" ZIPALIGN="$build_tools/zipalign"
+          for test in app/src/test/ruby/test_*.rb exporter/test/test_*.rb; do
+            echo "::group::$test"
+            ruby "$test"
+            echo "::endgroup::"
+          done
+
+      - name: Run the native KDF parity test
+        run: |
+          cc -O2 -o test_epsa_kdf app/src/main/cpp/test_epsa_kdf.c app/src/main/cpp/sha256.c \
+            app/src/main/cpp/hmac_sha256.c app/src/main/cpp/hkdf.c -I app/src/main/cpp
+          ./test_epsa_kdf
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, test-ruby]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download APKs
         uses: actions/download-artifact@v4
         with:
           pattern: app-*-ruby*
           path: artifacts
 
+      # The exporter that builds APKs from (and archives for) this release.
+      - name: Package the exporter
+        run: scripts/package_exporter.sh "$GITHUB_REF_NAME" artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: artifacts/*/*.apk
+          files: |
+            artifacts/*/*.apk
+            artifacts/psdk-android-exporter-*.zip
