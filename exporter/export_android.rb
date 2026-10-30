@@ -36,7 +36,8 @@
 # and APKs it builds. Each PSDK-android release attaches it as
 # psdk-android-exporter-<version>.zip (this file, lib/ and VERSION), to use
 # with the base APKs of the same release. Run it from the project root; it
-# only needs its lib/ next to it.
+# only needs its lib/ next to it. A project's plugins/ holds
+# plugin/export_android.rb instead, which downloads and runs this one.
 #
 # Keystore note: APK mode reads the signing key and certificate via Ruby's
 # OpenSSL (PKCS12 only, RSA or EC key), signs the APK with them and binds the

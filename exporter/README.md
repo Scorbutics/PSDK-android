@@ -14,6 +14,16 @@ attaches `psdk-android-exporter-<version>.zip` next to its base APKs. Use the
 exporter of the release whose APK you build from or play with: it writes the
 archive format that app reads.
 
+### In a project
+
+Copy [`plugin/export_android.rb`](plugin/export_android.rb) into the
+project's `plugins/`, and run it instead: it downloads the exporter of the
+latest release into `~/.psdk/android-exporter/`, updates it when a new release
+comes out, and runs it with the same arguments. For an APK without `--apk`,
+it also downloads the release's base APK for the Ruby running it. Offline, it
+runs the last exporter downloaded. `PSDK_ANDROID_RELEASE=v1.2.11` pins a
+release; `PSDK_ANDROID_EXPORTER=<PSDK-android>/exporter` runs a checkout.
+
 ## Usage
 
 Run it from the project root (the folder holding `project.studio`):
@@ -45,6 +55,7 @@ installed one.
 | File | Role |
 |---|---|
 | `export_android.rb` | Command line, project archive (step 1) |
+| `plugin/export_android.rb` | The copy for a project's `plugins/`: runs the latest release's exporter |
 | `lib/apk_export.rb` | APK build (steps 2-6) |
 | `lib/binary_manifest.rb`, `lib/resource_table.rb`, `lib/res_string_pool.rb` | Compiled manifest and resource edits |
 | `lib/apk_zip.rb`, `lib/apk_v2_signer.rb` | ZIP alignment, APK Signature Scheme v2 |
