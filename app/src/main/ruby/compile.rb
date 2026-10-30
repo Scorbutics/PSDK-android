@@ -51,6 +51,13 @@ else
   # and the splash showed "PSDK Game".
   FileUtils.rm_rf('./Data')
 
+  # Same for the scripts: PSDK's ScriptLoader unpacks the archive's
+  # mega_script.deflate onto the native FS and never removes what is
+  # already there. A script deleted or renamed by a game update stayed on
+  # the device and was still loaded (old patches on top of the new code, a
+  # renamed script twice). Every compile unpacks the full set again.
+  FileUtils.rm_rf(['./scripts', './pokemonsdk'])
+
   # PSDK's data-build expects Data/Events/Battle/ to be present on the
   # native FS even though every file inside is empty/optional. Without
   # this directory the data-build step raises.
