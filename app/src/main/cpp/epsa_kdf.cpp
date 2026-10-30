@@ -23,7 +23,7 @@
  * naive grep-based extraction.
  *
  * Must produce output byte-for-byte identical to the host Ruby implementation
- * in plugins/epsa_kdf.rb (derive_v4).
+ * in exporter/lib/epsa_kdf.rb (derive_v4).
  */
 
 static const uint8_t OBF_KEY = 0x7b;
@@ -48,8 +48,8 @@ static const uint8_t INFO_XOR[16] = {
 #define EPSA_KEY_SIZE      32
 
 /* v4 KDF info-suffix tags. Must exactly match the producer side
- * (PSDKTechnicalDemo/plugins/epsa_format.rb KDF_INFO_TAG_*) and the
- * consumer Ruby side (PSDK-android/app/src/main/ruby/lib/epsa_format.rb).
+ * and consumer Ruby sides (app/src/main/ruby/lib/epsa_format.rb
+ * KDF_INFO_TAG_*).
  * 16 bytes each. */
 static const char EPSA_V4_TAG_ENC[] = "psdk-epsa-enc-v4";
 static const char EPSA_V4_TAG_MAC[] = "psdk-epsa-mac-v4";

@@ -2,7 +2,8 @@
 #
 # A small inline producer (TestArchiveBuilder) writes v4 archives with
 # explicit enc_key/mac_key/nonce so each test is fully deterministic and
-# doesn't depend on the cross-repo EpsaWriter / EpsaKdf code path.
+# doesn't depend on the exporter's EpsaWriter / EpsaKdf code path
+# (exporter/test/test_export_android.rb covers that one).
 #
 # epsa_stream.rb deliberately does NOT `require_relative 'epsa_format'`
 # (see comment in that file), so this test loads epsa_format first
@@ -19,7 +20,7 @@ LIB = File.expand_path('../../main/ruby/lib', __dir__)
 require File.join(LIB, 'epsa_format')
 require File.join(LIB, 'epsa_stream')
 
-# Minimal v4 producer for tests. Mirrors PSDKTechnicalDemo's EpsaWriter but
+# Minimal v4 producer for tests. Mirrors the exporter's EpsaWriter but
 # takes keys directly instead of running HKDF — we want to exercise
 # EpsaStream's parsing and verification logic, not KDF parity.
 module TestArchiveBuilder

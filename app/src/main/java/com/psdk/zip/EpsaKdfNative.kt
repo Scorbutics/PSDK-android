@@ -5,7 +5,7 @@ package com.psdk.zip
  *
  * The full derivation runs in libepsakdf.so; Kotlin only marshals inputs and
  * outputs across the boundary. The companion host implementation lives in
- * plugins/epsa_kdf.rb and must produce byte-identical output.
+ * exporter/lib/epsa_kdf.rb and must produce byte-identical output.
  */
 object EpsaKdfNative {
 

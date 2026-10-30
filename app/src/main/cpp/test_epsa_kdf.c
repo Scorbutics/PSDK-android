@@ -3,7 +3,7 @@
  *
  * Compiles against the same sha256.c / hmac_sha256.c / hkdf.c files used by
  * the Android JNI library, so a passing test here proves the C implementation
- * agrees with the Ruby host implementation in plugins/epsa_kdf.rb.
+ * agrees with the Ruby host implementation in exporter/lib/epsa_kdf.rb.
  *
  * This file is NOT part of the Android build (CMakeLists.txt does not include
  * it). It is intended to be compiled with the host C compiler:
@@ -16,7 +16,7 @@
  *      -I app/src/main/cpp
  *   ./test_epsa_kdf
  *
- * Inputs and expected output must match plugins/test_epsa_kdf.rb byte-for-byte.
+ * Inputs and expected output must match exporter/test/test_epsa_kdf.rb byte-for-byte.
  */
 
 #include <stdio.h>
@@ -40,7 +40,7 @@ static const uint8_t INFO_XOR[16] = {
     0x1a, 0x56, 0x19, 0x0e, 0x15, 0x1f, 0x17, 0x1e
 };
 
-/* Test inputs — must match plugins/test_epsa_kdf.rb. */
+/* Test inputs — must match exporter/test/test_epsa_kdf.rb. */
 static const uint8_t TEST_CERT[32] = {
     0x34, 0x08, 0x0a, 0x5a, 0xcf, 0x49, 0xc2, 0xe3,
     0x63, 0x0c, 0xa1, 0x15, 0x81, 0x14, 0xb0, 0xc8,

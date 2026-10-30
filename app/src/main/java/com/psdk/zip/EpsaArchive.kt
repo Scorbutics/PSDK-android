@@ -24,8 +24,8 @@ import javax.crypto.spec.SecretKeySpec
  *      everything (cert, KDF, archive integrity) lines up before we hand
  *      the bundle to Ruby.
  *
- * Format reference: PSDKTechnicalDemo/plugins/epsa_format.rb (single source
- * of truth). v4 layout is mirrored in app/src/main/ruby/lib/epsa_format.rb.
+ * Format reference: app/src/main/ruby/lib/epsa_format.rb (single source
+ * of truth, shared with the exporter's writer).
  */
 object EpsaArchive {
     private const val TAG = "EpsaArchive"
