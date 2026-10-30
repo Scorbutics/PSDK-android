@@ -46,8 +46,8 @@ android {
         applicationId "com.psdk.starter"
         minSdkVersion 26
         targetSdkVersion 33
-        versionCode 13
-        versionName "1.2.10"
+        versionCode 14
+        versionName "1.2.11"
 
         buildConfigField "String", "RUBY_VARIANT", "\"${rubyVariant}\""
 
