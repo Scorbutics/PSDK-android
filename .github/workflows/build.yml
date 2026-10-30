@@ -48,7 +48,7 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
 
   # The app's Ruby scripts and the exporter (exporter/), which builds its APKs
-  # from the debug base APK just built. On Ruby 3.0, the oldest one the
+  # from the base APKs just built. On Ruby 3.0, the oldest one the
   # exporter runs on (Windows Pokemon Studio's); ubuntu-24.04 has no 3.0.
   test-ruby:
     needs: build
@@ -65,20 +65,25 @@ jobs:
       - name: Install gems
         run: gem install rubyzip minitest --no-document
 
-      - name: Download the base APK
+      # Both: a release one has shortened resource paths (res/zu.png).
+      - name: Download the base APKs
         uses: actions/download-artifact@v4
         with:
-          name: app-debug-ruby3.0
+          pattern: app-*-ruby3.0
           path: base-apk
 
       - name: Run Ruby tests
         run: |
           build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          export BASE_APK=base-apk/PSDK-android-ruby3.0-debug.apk
           export APKSIGNER="$build_tools/apksigner" ZIPALIGN="$build_tools/zipalign"
-          for test in app/src/test/ruby/test_*.rb exporter/test/test_*.rb; do
+          for test in app/src/test/ruby/test_*.rb exporter/test/test_epsa_kdf.rb; do
             echo "::group::$test"
             ruby "$test"
+            echo "::endgroup::"
+          done
+          for base_apk in base-apk/*/*.apk; do
+            echo "::group::exporter/test/test_export_android.rb on $base_apk"
+            BASE_APK="$base_apk" ruby exporter/test/test_export_android.rb
             echo "::endgroup::"
           done
 

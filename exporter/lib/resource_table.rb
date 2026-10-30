@@ -66,9 +66,11 @@ class ResourceTable
     indices.size
   end
 
-  # The values of the string resource `name`, one per configuration.
-  def string_values(name)
-    string_value_indices('string', name).map { |index| @values.strings[index] }
+  # The string values of the resource `type`/`name`, one per configuration:
+  # a string resource's text, or a file resource's path in the APK
+  # (res/drawable/logo.png, or res/zu.png once a release build shortened it).
+  def string_values(name, type: 'string')
+    string_value_indices(type, name).map { |index| @values.strings[index] }
   end
 
   # Renames the package, like aapt2 --rename-resources-package: lookups by

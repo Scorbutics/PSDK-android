@@ -23,7 +23,9 @@ module ApkExport
   LAUNCH_MODE_META_DATA = 'com.psdk.CLASSIC_DEFAULT_MODE'
   DEBUG_LAUNCH_MODE     = 'debug_uncompiled'
   ARCHIVE_ENTRIES       = %w[assets/game.epsa assets/game.psa].freeze
-  ICON_ENTRY            = %r{\Ares/(drawable|mipmap)[^/]*/logo\.png\z}
+  # The icon resource the manifest uses, @drawable/logo (or a mipmap).
+  ICON_RESOURCE         = 'logo'
+  ICON_TYPES            = %w[drawable mipmap].freeze
 
   # @param archive_path [String] the game archive, bundled as assets/<archive_name>
   # @param archive_name [String] game.epsa or game.psa
@@ -98,16 +100,21 @@ module ApkExport
     resources.package_name = package_id
     puts "  App name: #{app_name}"
 
+    # The icon's files, as the resource table names them: a release build
+    # shortens their paths (res/zu.png).
     icon = icon_path && File.binread(icon_path)
+    icon_files = ICON_TYPES.flat_map { |type| resources.string_values(ICON_RESOURCE, type: type) }
+                           .select { |file| file.end_with?('.png') }
+    warn "  No #{ICON_RESOURCE}.png icon in the base APK: its icon is kept" if icon && icon_files.empty?
     entries.map! do |entry|
       case entry.name
       when 'AndroidManifest.xml' then ApkZip.deflated(entry.name, manifest.to_bytes)
       # Stored, as aapt2 does: Android maps the resource table from the APK.
       when 'resources.arsc' then ApkZip.stored(entry.name, resources.to_bytes)
-      when ICON_ENTRY
+      when *icon_files
         next entry unless icon
 
-        puts "  Icon replaced: #{File.dirname(entry.name)}"
+        puts "  Icon replaced: #{entry.name}"
         ApkZip.stored(entry.name, icon)
       else entry
       end

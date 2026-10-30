@@ -2,8 +2,9 @@
 # cwd = the project root) on a minimal PSDK project, and read back with the
 # app's own reader (EpsaStream): .psa, .epsa and, given a base APK, .apk.
 #
-# The APK tests need the base PSDK APK the app builds, in BASE_APK; they are
-# skipped without it. With APKSIGNER and ZIPALIGN (Android SDK build-tools)
+# The APK tests need a base PSDK APK the app builds, in BASE_APK (debug or
+# release: a release one has shortened resource paths); they are skipped
+# without it. With APKSIGNER and ZIPALIGN (Android SDK build-tools)
 # they also check the APK with them.
 #
 # Run:  BASE_APK=app/build/outputs/apk/debug/PSDK-android-ruby3.0-debug.apk \
@@ -91,7 +92,9 @@ class ExportAndroidTest < Minitest::Test
     refute manifest.add_meta_data(ApkExport::LAUNCH_MODE_META_DATA, 'any'), 'no launch mode meta-data'
     resources = ResourceTable.new(apk_entry(output_path, 'resources.arsc'))
     assert_equal ['Exporter Test'], resources.string_values('app_name')
-    assert_equal ICON, apk_entry(output_path, 'res/drawable/logo.png')
+    icon_files = resources.string_values('logo', type: 'drawable')
+    refute_empty icon_files
+    icon_files.each { |file| assert_equal ICON, apk_entry(output_path, file) }
     check_with_build_tools(output_path)
 
     # A re-export onto the exported APK (base = output) keeps one archive.
