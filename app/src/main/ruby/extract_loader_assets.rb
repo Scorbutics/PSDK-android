@@ -39,6 +39,9 @@ TARGET_COMPILED  = File.join(TARGET_DIR, 'compiled_release').freeze
 TARGET_VERSION   = File.join(TARGET_DIR, 'extract_version').freeze
 EXTRACT_VERSION  = '2'.freeze
 
+# The PhysFS state is process-wide: a compile started meanwhile (the game icon
+# tapped during the validation) may have mounted the archive already
+mounted_here = !ArchiveMount.mounted?
 ArchiveMount.mount!
 
 def pick_font_source
@@ -126,5 +129,7 @@ puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FO
 # Unmount so this validation-time mount does not leak into the compile
 # interpreter, which mounts again from check_engine.rb. The PhysFS state
 # is process-wide (statically linked Init_physfs), not per-interpreter,
-# so without this the compile-side mount would stack a second copy.
-ArchiveMount.unmount!
+# so without this the compile-side mount would stack a second copy. A mount
+# made by a compile running meanwhile stays: it would lose its whole VFS
+# (LoadError on ./Game.rb).
+ArchiveMount.unmount! if mounted_here
