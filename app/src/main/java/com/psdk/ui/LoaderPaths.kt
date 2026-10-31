@@ -18,12 +18,11 @@ import java.io.File
  */
 object LoaderPaths {
     private const val LOADER_ASSETS_DIR = "loader_assets"
-    private const val LOADER_STATUS_FILE_NAME = ".loader_status"
 
     /** Bundled default asset dir under `assets/` inside the APK. */
     const val DEFAULT_ASSETS_APK_DIR = "loader_assets_default"
 
-    /** loader.rb's chdir target — must match [statusFile]'s parent. */
+    /** loader.rb's chdir target: the parent of its assets and stop marker. */
     fun executionLocation(context: Context): String = context.applicationInfo.dataDir
 
     /**
@@ -38,9 +37,6 @@ object LoaderPaths {
 
     /** Where loader.rb reads game.png / infos_config.json / icon_color.json from. */
     fun assetsDir(context: Context): File = File(executionLocation(context), LOADER_ASSETS_DIR)
-
-    /** The polled status file; CompileProgressFragment writes here. */
-    fun statusFile(context: Context): File = File(executionLocation(context), LOADER_STATUS_FILE_NAME)
 
     /**
      * Wipe [assetsDir] and reinstall the APK-bundled defaults. Called at

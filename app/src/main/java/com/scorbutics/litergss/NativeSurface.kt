@@ -48,7 +48,7 @@ object NativeSurface {
     /**
      * Push a sf::Event::Closed into the active hosted DisplayWindow's event
      * queue. The Ruby render loop drains it on its next frame, fires
-     * on_closed, which (with the default loader.rb proc returning truthy)
+     * on_closed, which (with loader/splash_window.rb's proc returning truthy)
      * makes LiteRGSS raise rb_eClosedWindow and unwind the script via
      * exception. m_gameWindow.close() runs as part of the exception path,
      * destroying WindowImplAndroid (singleInstance=NULL, looper released)

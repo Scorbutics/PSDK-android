@@ -12,8 +12,8 @@ module Loader
     #   Powered by PSDK · …     ← FOOTER_FONT_SIZE, canvas bottom
     #
     # The status line ("‹ Initializing… ›") doubles as the externally-
-    # driven progress display — StatusFile calls #update_status as the
-    # compile wizard writes new sub-step labels.
+    # driven progress display — HostMessages calls #update_status as the
+    # compile wizard posts new sub-step labels.
     #
     # The footer renders in every state, including the no-icon default
     # where the splash is just background + particles. Title / version

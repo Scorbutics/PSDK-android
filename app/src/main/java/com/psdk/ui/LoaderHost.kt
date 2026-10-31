@@ -54,6 +54,32 @@ interface LoaderHost {
      * restart re-chdirs, which broke the compile's relative paths.
      */
     fun setLoaderRestartsDeferred(deferred: Boolean)
+
+    /**
+     * Send [message] to the splash. Callable from any thread, never waits.
+     * A splash restarted in the same state shows the last message again;
+     * [setLoaderState] to another state drops it, along with any message
+     * sent before it and not yet applied.
+     */
+    fun sendLoaderMessage(message: LoaderMessage)
+}
+
+/** A message to the splash: loader/host_messages.rb applies each topic. */
+sealed class LoaderMessage(val topic: String, val payload: String = "") {
+    /** The status line: a compile sub-step, a call to action. */
+    class Status(text: String) : LoaderMessage("loader.status", text)
+
+    /** Lift the centerpiece to make room for the result card, then show [text]. */
+    class Lift(text: String) : LoaderMessage("loader.lift", text)
+
+    /** Settle the centerpiece back once the result card is dismissed. */
+    object Unlift : LoaderMessage("loader.unlift")
+
+    /** Play the release-on-icon visual without a finger (classic bootstrap). */
+    object Tap : LoaderMessage("loader.tap")
+
+    /** Wipe the compile cycle's scene state in place, then show [text]. */
+    class Reset(text: String) : LoaderMessage("loader.reset", text)
 }
 
 interface LoaderListener {

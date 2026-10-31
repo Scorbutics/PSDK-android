@@ -2,8 +2,8 @@
 <!--
     Intentionally empty: during compilation the splash (GL surface) IS the
     UI. CompileProgressFragment exists only to bootstrap the compile
-    engine, route sub-step labels into loader.rb's status_text via
-    <executionLocation>/.loader_status, and advance to CompileDoneFragment
+    engine, route sub-step labels into loader.rb's status_text as
+    loader.status messages, and advance to CompileDoneFragment
     when the engine finishes. A thin slim progress bar at the top would
     just compete with the splash for attention — and the full per-step
     logs are surfaced from CompileDoneFragment ("View Logs") instead.

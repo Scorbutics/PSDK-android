@@ -201,7 +201,7 @@
          [wizardContainer] use transparent backgrounds so the surface
          shows through. Step 0 mounts no fragment — the game.png logo
          rendered into the GL surface IS the "start compilation" tap
-         target (see loader.rb's ICON_TAPPED_SENTINEL). -->
+         target (the loader.icon_tapped host event). -->
     <FrameLayout
         android:id="@+id/wizardContainer"
         android:layout_width="match_parent"

@@ -2,7 +2,7 @@ unless defined?(Loader::SceneState::LIFT_OFFSET_PX)
 
 module Loader
   # Shared event/trigger state for the splash. Mutated by the touch
-  # router and the external-status poller; read by every layer's
+  # router and the host messages; read by every layer's
   # animate. Centralizing the trigger frame indexes here is what kills
   # the cross-layer spaghetti — layers never poke each other directly.
   class SceneState

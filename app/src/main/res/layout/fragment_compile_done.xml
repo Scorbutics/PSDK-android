@@ -3,7 +3,7 @@
     Bottom-anchored result card.
 
     The root FrameLayout is transparent — the GL surface (logo lifted
-    upward by loader.rb via LIFT_SENTINEL) stays visible in the space
+    upward by loader.rb on loader.lift) stays visible in the space
     above the card. CompileDoneFragment slides @+id/resultCard up from
     below its resting position on attach (see doOnPreDraw in the .kt).
 -->

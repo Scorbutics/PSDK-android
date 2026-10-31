@@ -89,11 +89,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     /** Guards [slideInStepIndicator] against repeating on rotation. */
     private var stepIndicatorRevealed: Boolean = false
 
-    // Classic-bootstrap auto-tap: writes TAP_SENTINEL into the loader's
-    // status file so the splash plays the bang/shake/spin combo a real
-    // touch would have produced, then advances the wizard step
-    // CLASSIC_AUTO_TAP_HOLD_MS later (gives the loader's ~133ms poll a
-    // window to see the sentinel).
+    // Classic-bootstrap auto-tap: sends loader.tap so the splash plays
+    // the bang/shake/spin combo a real touch would have produced, then
+    // advances the wizard step CLASSIC_AUTO_TAP_HOLD_MS later (time for
+    // the splash to play it).
     private val classicAutoTapHandler by lazy {
         android.os.Handler(android.os.Looper.getMainLooper())
     }
@@ -206,9 +205,9 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
 
         // Listen for splash icon-taps + readiness. The activity-owned
-        // loader emits ICON_TAPPED_SENTINEL on every hit; we filter for
+        // loader sends loader.icon_tapped on every hit; we filter for
         // "still on step 0 AND have a valid archive" in [onIconTapped].
-        // READY_SENTINEL drives the classic-bootstrap auto-tap timer.
+        // loader.ready drives the classic-bootstrap auto-tap timer.
         (requireActivity() as LoaderHost).setLoaderListener(this)
 
         // Observe step changes
@@ -438,21 +437,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         }
         stepIndicatorBlock.visibility = View.GONE
 
-        // Reset the splash's Ruby SceneState in-place via the status-file
-        // sentinel, then write the play CTA in the same payload. Cheaper
-        // than a full workload restart, which would re-eval loader.rb and
-        // replay the glSurfaceOverlay fade-in (activity background showing
-        // until the next [loader-ready]).
-        // The sentinel keeps the same Loader::Splash alive — its next poll
-        // wipes lifted_start / unlifted_start / rolling_start / shake_start /
-        // pressed_finger and resets the icon angle to 0, then the trailing
-        // payload becomes the new status text.
-        try {
-            LoaderPaths.statusFile(requireContext())
-                .writeText(SCENE_RESET_SENTINEL + currentPlayCta())
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "debug-play CTA write failed", e)
-        }
+        // Reset the splash's Ruby SceneState in place, with the play CTA
+        // as the new status. Cheaper than a full workload restart, which
+        // would re-eval loader.rb and replay the glSurfaceOverlay fade-in
+        // (activity background showing until the next loader.ready).
+        // The same Loader::Splash stays alive: it wipes lifted_start /
+        // unlifted_start / rolling_start / shake_start / pressed_finger and
+        // resets the icon angle to 0, then shows the CTA.
+        sendToSplash(LoaderMessage.Reset(currentPlayCta()))
         clearFragmentContainer()
     }
 
@@ -471,15 +463,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         // SceneState is just as dirty on the failure path (lifted_start +
         // unlifted_start fired, rolling_start pinned, icon angle non-zero) —
         // a retry tap on a stale scene leaves the icon in its post-unlift
-        // position with a stuck rotation. The sentinel clears that state
+        // position with a stuck rotation. The reset clears that state
         // without paying the workload-restart cost (see kdoc on the success
         // path for why a restart is wrong here).
-        try {
-            LoaderPaths.statusFile(requireContext())
-                .writeText(SCENE_RESET_SENTINEL + COMPILE_CTA)
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "compile CTA write failed", e)
-        }
+        sendToSplash(LoaderMessage.Reset(COMPILE_CTA))
         // Retreat to the pre-compile look: step indicator hidden again so
         // the user lands on the same blank splash they saw on first entry.
         // [stepIndicatorRevealed] is reset so a subsequent retry slides it
@@ -557,19 +544,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     /**
      * Two-phase auto-tap (classic-bootstrap only):
-     *  1. Write TAP_SENTINEL so the loader plays the release-on-icon combo.
+     *  1. Send loader.tap so the loader plays the release-on-icon combo.
      *  2. After CLASSIC_AUTO_TAP_HOLD_MS, advance the wizard step.
      */
     private fun performClassicAutoTap() {
         if (viewModel.currentStep.value != 0) return
         if (viewModel.archive.value == null) return
 
-        try {
-            LoaderPaths.statusFile(requireContext())
-                .writeText(CompileProgressFragment.TAP_SENTINEL)
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "classic auto-tap sentinel write failed", e)
-        }
+        sendToSplash(LoaderMessage.Tap)
         classicAutoTapHandler.removeCallbacks(classicAutoTapAdvanceRunnable)
         classicAutoTapHandler.postDelayed(
             classicAutoTapAdvanceRunnable,
@@ -582,19 +564,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
     override fun onLoaderReady() {
         if (launchReady) {
             // Override loader.rb's default "‹ Tap logo to compile ›" CTA
-            // with the play variant. The write also flips
+            // with the play variant. A status also flips
             // `external_status_received` inside the loader so the default
-            // CTA branch is suppressed (see loader.rb's
-            // poll_external_status).
-            try {
-                LoaderPaths.statusFile(requireContext()).writeText(currentPlayCta())
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "play CTA write failed", e)
-            }
+            // CTA branch is suppressed (loader/host_messages.rb).
+            sendToSplash(LoaderMessage.Status(currentPlayCta()))
             return
         }
         // Classic-bootstrap auto-tap is gated on the splash actually being
-        // visible (= READY_SENTINEL = first @window.update flipped onto
+        // visible (= loader.ready = first @window.update flipped onto
         // EGL), not on archive availability. The archive is bound much
         // earlier than ready (key derivation is ~ms vs the prelude's ~2s),
         // so a finger-equivalent tap couldn't be visually responded to
@@ -741,15 +718,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             if (exec != null) storeMode(exec, next)
             val hasRelease = exec?.let { File(it, "Release").exists() } ?: false
             recomputeLaunchReady(hasRelease)
-            // Refresh the splash CTA in-place. <<RESET>> wipes the scene
+            // Refresh the splash CTA in place. The reset wipes the scene
             // state (so a stale tap-animation doesn't get carried over)
-            // and the trailing payload becomes the new status text.
-            try {
-                LoaderPaths.statusFile(requireContext())
-                    .writeText(SCENE_RESET_SENTINEL + currentCta())
-            } catch (e: Exception) {
-                android.util.Log.w(TAG, "mode-switch CTA write failed", e)
-            }
+            // and shows the CTA.
+            sendToSplash(LoaderMessage.Reset(currentCta()))
         }
     }
 
@@ -768,12 +740,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         recomputeLaunchReady(File(executionLocation, "Release").exists())
         applyModeChips()
         applyToolbarTitle()
-        try {
-            LoaderPaths.statusFile(requireContext())
-                .writeText(SCENE_RESET_SENTINEL + currentCta())
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "compiled-release CTA write failed", e)
-        }
+        sendToSplash(LoaderMessage.Reset(currentCta()))
     }
 
     private fun applyModeChips() {
@@ -819,6 +786,9 @@ class CompileWizardFragment : Fragment(), LoaderListener {
      *   launch-ready + DEBUG   → "< Tap logo to play (Debug) >"
      *   compile-pending        → "< Tap logo to compile >"
      */
+    private fun sendToSplash(message: LoaderMessage) =
+        (requireActivity() as LoaderHost).sendLoaderMessage(message)
+
     private fun currentCta(): String = if (launchReady) currentPlayCta() else COMPILE_CTA
 
     private fun currentPlayCta(): String = when (selectedMode) {
@@ -879,8 +849,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         /**
          * Mirrors the bracket styling of the loader's default
          * "‹ Tap logo to compile ›" CTA so the swap reads as a label
-         * change, not a font change. Written into [LoaderPaths.statusFile]
-         * in debug-play mode once the splash is ready.
+         * change, not a font change. Sent as the splash status in
+         * debug-play mode once the splash is ready.
          */
         private const val PLAY_CTA = "< Tap logo to play >"
 
@@ -896,22 +866,12 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         /**
          * Restores the loader's default CTA after a failed compile is
          * dismissed. Matches the literal string loader.rb prints when
-         * external_status_received is still false — once we've written
-         * anything to the status file that flag is permanently true,
+         * external_status_received is still false — once we've sent any
+         * status to the splash that flag is permanently true,
          * so we have to push the text ourselves rather than rely on
          * the loader's own default.
          */
         private const val COMPILE_CTA = "< Tap logo to compile >"
-
-        /**
-         * Matches Loader::StatusFile::RESET_SENTINEL in
-         * loader/status_file.rb verbatim. Writing this prefix on the
-         * status file asks the splash to wipe its SceneState in-place
-         * (lifted/unlifted/rolling/shake/pressed all back to nil, icon
-         * angle back to 0) without restarting the workload — anything
-         * after the prefix becomes the new status text in the same poll.
-         */
-        private const val SCENE_RESET_SENTINEL = "<<RESET>>"
 
         fun newInstance(
             executionLocation: String,

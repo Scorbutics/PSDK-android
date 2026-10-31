@@ -8,10 +8,12 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import com.scorbutics.rubyvm.BuildInfo
+import com.scorbutics.rubyvm.HostEventListener
 import com.scorbutics.rubyvm.execute
 import com.scorbutics.rubyvm.LibraryConfig
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.RubyVMPaths
+import com.scorbutics.rubyvm.post
 import com.scorbutics.rubyvm.RubyInterpreter as KmpInterpreter
 
 typealias CompletionTask = (Int) -> Unit
@@ -20,7 +22,8 @@ class PsdkInterpreter private constructor(
     private val paths: RubyVMPaths.Paths,
     private val assets: AssetManager,
     private val listener: LogListener,
-    private val onError: ((Exception) -> Unit)? = null
+    private val onError: ((Exception) -> Unit)? = null,
+    private val hostEventListener: HostEventListener? = null,
 ) {
     // Written from enqueue's worker threads and read/cleared by close()
     // from the caller's thread.
@@ -60,6 +63,18 @@ class PsdkInterpreter private constructor(
         }.start()
     }
 
+    /**
+     * Send a message to the scripts (`VMHost.each_message`), through this
+     * interpreter: never one running a long script (the message would wait
+     * for its end). Blocks until queued: call it off the UI thread.
+     *
+     * @return 0 once queued
+     */
+    fun post(topic: String, payload: String = ""): Int {
+        ensureInterpreter()
+        return interpreter!!.post(topic, payload)
+    }
+
     @Synchronized
     private fun ensureInterpreter() {
         // Never resurrect after close(): the interpreter would be leaked.
@@ -72,6 +87,7 @@ class PsdkInterpreter private constructor(
                 listener = listener
             )
             interpreter!!.enableLogging()
+            hostEventListener?.let { interpreter!!.setHostEventListener(it) }
             armRemoteListeners(interpreter!!)
         }
     }
@@ -151,13 +167,18 @@ class PsdkInterpreter private constructor(
             Log.i(TAG, rgssRuntimeBanner)
         }
 
+        /**
+         * @param hostEventListener gets the host events (`VMHost.emit`) of
+         * the scripts this interpreter runs, in order, on a thread of their own
+         */
         fun create(
             context: Context,
             listener: LogListener,
-            onError: ((Exception) -> Unit)? = null
+            onError: ((Exception) -> Unit)? = null,
+            hostEventListener: HostEventListener? = null,
         ): PsdkInterpreter {
             val paths = RubyVMPaths.getDefaultPaths(context)
-            return PsdkInterpreter(paths, context.assets, listener, onError)
+            return PsdkInterpreter(paths, context.assets, listener, onError, hostEventListener)
         }
     }
 }

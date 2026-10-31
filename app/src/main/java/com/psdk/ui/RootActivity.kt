@@ -12,7 +12,8 @@ import androidx.core.view.WindowInsetsCompat
 import com.psdk.R
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.scorbutics.litergss.NativeSurface
-import com.scorbutics.rubyvm.LogMessage
+import com.scorbutics.rubyvm.HostEvent
+import com.scorbutics.rubyvm.HostEventListener
 
 /**
  * Shell Activity: hub, wizard and splash all live here, in the main
@@ -65,7 +66,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     private val stateLock = Any()
     private var currentLoaderState: LoaderState = LoaderState.Default
 
-    /** Latched true on the first READY_SENTINEL so subsequent restarts don't re-fade. */
+    /** Latched true on the first loader.ready event so subsequent restarts don't re-fade. */
     private var loaderFadedIn = false
 
     /**
@@ -131,7 +132,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         workloadController = RubyWorkloadController(
             context = this,
             assets = assets,
-            onLog = { logMessage -> handleWorkloadLog(logMessage) },
+            hostEventListener = HostEventListener { event -> handleLoaderEvent(event) },
             onError = { e -> android.util.Log.e(TAG, "workload error", e) },
             onWorkloadCompleted = { workload, exitCode ->
                 android.util.Log.i(TAG, "workload ${workload.name} exited (code=$exitCode)")
@@ -146,17 +147,10 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // so the reset doesn't conflict with whichever fragment lands here.
         LoaderPaths.resetToDefaults(this)
 
-        // Cold-start wipe of the status file so a stale "<<LIFT>>" from
-        // last run doesn't immediately fire the lift on the new splash.
-        // Skip on rotation (savedInstanceState != null) — the wizard may
-        // have written a real status the splash is mid-displaying.
-        if (savedInstanceState == null) {
-            try {
-                LoaderPaths.statusFile(this).delete()
-            } catch (_: Exception) {
-                // best-effort
-            }
-        }
+        // A new activity in a process that already showed a splash: what
+        // that splash was shown is not for this one. setLoaderState clears
+        // too, but onSurfaceReady's fallback start doesn't go through it.
+        LoaderMessages.clear(this)
 
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
@@ -220,10 +214,6 @@ class RootActivity : AppCompatActivity(), LoaderHost {
     private var isClassicMode: Boolean = false
 
     /**
-     * Dispatcher for log lines coming out of the loader's Ruby thread:
-     * sentinel watching for the splash fade-in and icon-tap callback.
-     */
-    /**
      * Synthesize a single ACTION_HOVER_MOVE that travels through the
      * input dispatcher and reaches the SurfaceView's layer-visibility
      * revalidation path — the same path a real touch would trigger.
@@ -250,22 +240,12 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         }
     }
 
-    private fun handleWorkloadLog(logMessage: LogMessage) {
-        // TEMP diagnostic: confirm the LogListener pipeline is actually
-        // delivering loader-side messages here. If the user's repeated
-        // taps fire ICON_TAPPED on the Ruby side but we never see this
-        // log line, that proves the native-side stdout-to-logcat path is
-        // independent of our LogListener, and the listener isn't wired
-        // to the persistent interpreter's output. Logged only for the
-        // tap sentinel to avoid logspam from the frame-per-second feed.
-        if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
-            android.util.Log.i(TAG, "handleWorkloadLog: ICON_TAPPED entry " +
-                "(currentWorkload=${workloadController.currentWorkload()?.name})")
-        }
+    /** The splash's host events (loader/splash.rb), on their own thread. */
+    private fun handleLoaderEvent(event: HostEvent) {
         if (workloadController.currentWorkload() !is RubyWorkload.Loader) return
 
-        if (logMessage.message.contains(LOADER_READY_SENTINEL)) {
-            glSurface.post {
+        when (event.topic) {
+            LOADER_READY_EVENT -> glSurface.post {
                 if (!loaderFadedIn) {
                     loaderFadedIn = true
                     glSurfaceOverlay.animate()
@@ -298,24 +278,17 @@ class RootActivity : AppCompatActivity(), LoaderHost {
                 wakeCompositor()
                 loaderListener?.onLoaderReady()
             }
-        }
-        if (logMessage.message.contains(LOADER_ICON_TAPPED_SENTINEL)) {
-            // Diagnostic: surface whether the dispatch reaches a non-null
-            // listener. "tap log appears but nothing happens" reports
-            // routinely reduce to "listener was null at dispatch time"
-            // (fragment view destroyed in the gap between the loader's
-            // emit and glSurface.post running on the UI thread).
-            glSurface.post {
-                val listener = loaderListener
-                android.util.Log.i(TAG, "ICON_TAPPED dispatch: listener=${listener?.javaClass?.simpleName}")
-                listener?.onIconTapped()
-            }
+            // The listener can be null here: the fragment's view destroyed
+            // between the tap and this post running on the UI thread.
+            LOADER_ICON_TAPPED_EVENT -> glSurface.post { loaderListener?.onIconTapped() }
         }
     }
 
     override fun setLoaderListener(listener: LoaderListener?) {
         loaderListener = listener
     }
+
+    override fun sendLoaderMessage(message: LoaderMessage) = LoaderMessages.send(this, message)
 
     override fun setLoaderState(state: LoaderState) {
         synchronized(stateLock) {
@@ -324,6 +297,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             android.util.Log.i(TAG, "setLoaderState (state=$state)")
             currentLoaderState = state
             prepareAssetsFor(state)
+            // What the previous state's splash showed is not for the new one
+            LoaderMessages.clear(this)
             startLoaderForCurrentState()
         }
     }
@@ -342,13 +317,6 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             }
         }
         if (state !is LoaderState.Preparing) LoaderPaths.clearPreparingMessage(this)
-        // Clear stale status so a new loader run doesn't immediately fire
-        // a sentinel left by the previous one.
-        try {
-            LoaderPaths.statusFile(this).delete()
-        } catch (_: Exception) {
-            // best-effort
-        }
     }
 
     private fun startLoaderForCurrentState() {
@@ -361,12 +329,12 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // previous loader's surface content was disposed in
         // setLoaderState's restart cycle, but the surface itself was
         // reused (DisplayWindow.cpp:143 "Reusing existing window"), so
-        // until the next [loader-ready] re-establishes content the
+        // until the next loader.ready re-establishes content the
         // SurfaceView is showing stale/blank pixels.
         //
         // Resetting `loaderFadedIn` alone is NOT enough — if a previous
         // run already animated alpha to 1, the `.alpha(1f)` call in the
-        // [loader-ready] handler is a no-op animation and the surface
+        // loader.ready handler is a no-op animation and the surface
         // compositor never gets a state change to react to. The render
         // thread happily queues frames; the compositor (with no fresh
         // signal that this layer is "interesting") leaves them buffered
@@ -393,7 +361,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
 
     /**
      * True from [startGame] until [gameLauncher] reports the game finished.
-     * The splash emits one icon-tap sentinel per release, and taps already
+     * The splash emits one loader.icon_tapped event per release, and taps already
      * queued ahead of the loader's Closed event still reach us after the
      * first launch: without this guard a double tap started two
      * GameActivity instances in the same `:game` process. UI thread only.
@@ -577,7 +545,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             "loader/assets.rb",
             "loader/splash_window.rb",
             "loader/touch_router.rb",
-            "loader/status_file.rb",
+            "loader/host_messages.rb",
             "loader/layers/background.rb",
             "loader/layers/ambient_particles.rb",
             "loader/layers/dust.rb",
@@ -586,11 +554,11 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             "loader/splash.rb",
         )
 
-        /** Matches Loader::Splash::READY_SENTINEL in loader/splash.rb verbatim. */
-        private const val LOADER_READY_SENTINEL = "[loader-ready]"
+        /** Matches Loader::Splash::READY_EVENT in loader/splash.rb. */
+        private const val LOADER_READY_EVENT = "loader.ready"
 
-        /** Matches Loader::Splash::ICON_TAPPED_SENTINEL in loader/splash.rb verbatim. */
-        private const val LOADER_ICON_TAPPED_SENTINEL = "[loader-icon-tapped]"
+        /** Matches Loader::Splash::ICON_TAPPED_EVENT in loader/splash.rb. */
+        private const val LOADER_ICON_TAPPED_EVENT = "loader.icon_tapped"
 
         private const val LOADER_FADE_IN_MS = 80L
 

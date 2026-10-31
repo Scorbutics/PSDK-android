@@ -9,7 +9,7 @@ legacy = "1.0.0"
 zip4j = "2.11.5"
 kotlinx-serialization = "1.7.0"
 # Base version; app/build.gradle appends the -ruby<variant> suffix.
-rgss-runtime-android = "1.2.11"
+rgss-runtime-android = "1.3.0"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }

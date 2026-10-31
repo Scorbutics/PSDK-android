@@ -13,6 +13,7 @@ import com.psdk.R
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RemoteListenerConfig
 import com.scorbutics.litergss.NativeSurface
+import com.scorbutics.rubyvm.HostEventListener
 import java.io.FileWriter
 
 /**
@@ -51,23 +52,8 @@ class GameActivity : AppCompatActivity() {
     /** Posted on [showGameStartOverlay]; cancelled on [hideGameStartOverlay]. */
     private val gameStartTimeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val gameStartTimeoutRunnable = Runnable {
-        android.util.Log.w(TAG, "game-start overlay timeout reached without ready file — forcing hide")
+        android.util.Log.w(TAG, "game-start overlay timeout reached without game.ready — forcing hide")
         hideGameStartOverlay()
-    }
-
-    /** File [start.rb] writes when PSDK's first LiteRGSS::DisplayWindow.new returns. */
-    private var gameReadyFile: java.io.File? = null
-    private val gameReadyPollHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val gameReadyPollRunnable = object : Runnable {
-        override fun run() {
-            val f = gameReadyFile
-            if (f != null && f.exists()) {
-                android.util.Log.i(TAG, "game-ready file appeared at ${f.absolutePath} — hiding overlay")
-                hideGameStartOverlay()
-                return
-            }
-            gameReadyPollHandler.postDelayed(this, GAME_READY_POLL_INTERVAL_MS)
-        }
     }
 
     private lateinit var workloadController: RubyWorkloadController
@@ -134,6 +120,13 @@ class GameActivity : AppCompatActivity() {
                     finish()
                 }
             },
+            // start.rb emits game.ready once PSDK's first LiteRGSS::DisplayWindow.new returns
+            hostEventListener = HostEventListener { event ->
+                if (event.topic == "game.ready") {
+                    android.util.Log.i(TAG, "game.ready event — hiding overlay")
+                    hideGameStartOverlay()
+                }
+            },
         )
 
         isClassicMode = intent.getBooleanExtra(EXTRA_CLASSIC_MODE, false)
@@ -193,8 +186,8 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * Open the start overlay: bind the project's icon, animate a continuous
-     * rotation. Hidden by [hideGameStartOverlay] once start.rb writes the
-     * ready file, or by the timeout.
+     * rotation. Hidden by [hideGameStartOverlay] once start.rb sends
+     * game.ready, or by the timeout.
      */
     private fun showGameStartOverlay(executionLocation: String) {
         // Project icon. extract_loader_assets.rb writes game.png alongside
@@ -224,22 +217,14 @@ class GameActivity : AppCompatActivity() {
             start()
         }
 
-        // Defensive timeout. If start.rb's marker file never appears
+        // Defensive timeout. If start.rb's game.ready never arrives
         // (script error before DisplayWindow.new, the wrapper code didn't
         // catch the construction path for some reason, etc.) we still
         // reveal the GL surface so the user sees whatever the game IS
         // rendering. Long enough to cover a cold debug-uncompiled boot
         // (PSDK's script load on PhysFS is ~10–25s on a mid-range device);
-        // the marker-file path normally pre-empts it.
+        // game.ready normally pre-empts it.
         gameStartTimeoutHandler.postDelayed(gameStartTimeoutRunnable, GAME_START_TIMEOUT_MS)
-
-        // Wipe any stale marker file from a prior run and start polling.
-        val readyFile = gameReadyFile(executionLocation)
-        try {
-            if (readyFile.exists()) readyFile.delete()
-        } catch (_: Exception) { /* best-effort */ }
-        gameReadyFile = readyFile
-        gameReadyPollHandler.postDelayed(gameReadyPollRunnable, GAME_READY_POLL_INTERVAL_MS)
     }
 
     /**
@@ -253,8 +238,6 @@ class GameActivity : AppCompatActivity() {
     private fun hideGameStartOverlay() {
         runOnUiThread {
             gameStartTimeoutHandler.removeCallbacks(gameStartTimeoutRunnable)
-            gameReadyPollHandler.removeCallbacks(gameReadyPollRunnable)
-            gameReadyFile = null
             if (gameStartOverlay.visibility != View.VISIBLE) return@runOnUiThread
             gameStartOverlay.animate()
                 .alpha(0f)
@@ -268,14 +251,10 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
-    private fun gameReadyFile(executionLocation: String): java.io.File =
-        java.io.File(executionLocation, ".game_ready")
-
     /**
      * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
-     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE,
-     * RGSS_GAME_READY_FILE, RGSS_REMOTE_*). Process-local, which is why it
-     * runs here and not in the shell process.
+     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_REMOTE_*).
+     * Process-local, which is why it runs here and not in the shell process.
      */
     private fun configureGameEnv(executionLocation: String, mode: GameMode) {
         // The error log lives next to whichever Game.rb actually ran:
@@ -290,7 +269,6 @@ class GameActivity : AppCompatActivity() {
         android.system.Os.setenv("RGSS_LOG_FILE", "$executionLocation/last_stdout.log", true)
         android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$errorLogLocation/Error.log", true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
-        android.system.Os.setenv("RGSS_GAME_READY_FILE", gameReadyFile(executionLocation).absolutePath, true)
 
         try {
             FileWriter("$executionLocation/last_stdout.log", false).flush()
@@ -319,7 +297,6 @@ class GameActivity : AppCompatActivity() {
         if (::inputForwarder.isInitialized) inputForwarder.stop()
         if (::imeBridge.isInitialized) imeBridge.stop()
         gameStartTimeoutHandler.removeCallbacks(gameStartTimeoutRunnable)
-        gameReadyPollHandler.removeCallbacks(gameReadyPollRunnable)
         if (::workloadController.isInitialized) {
             workloadController.shutdown()
         } else {
@@ -403,9 +380,6 @@ class GameActivity : AppCompatActivity() {
             "lib/epsa_stream.rb",
             "lib/archive_mount.rb",
         )
-
-        /** Poll interval for [gameReadyFile]. Cheap stat call, 100ms feels instant. */
-        private const val GAME_READY_POLL_INTERVAL_MS = 100L
 
         /**
          * Window inside which a second BACK press is treated as

@@ -8,6 +8,7 @@ import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
 import com.psdk.ruby.vm.ScriptLocation
 import com.scorbutics.litergss.NativeSurface
+import com.scorbutics.rubyvm.HostEventListener
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
 
@@ -48,17 +49,18 @@ import com.scorbutics.rubyvm.LogMessage
  * conflict with the persistent track.
  *
  * Thread safety: every public method is callable from any thread.
- * All state mutation is inside [lock]. Callbacks ([onLog],
- * [onWorkloadCompleted]) fire from the Ruby render thread or from
- * the KMP enqueue thread that wraps it — consumers are responsible
- * for hopping to the UI thread if they touch View state.
+ * All state mutation is inside [lock]. [onWorkloadCompleted] fires
+ * from the KMP enqueue thread, [hostEventListener] from a thread of
+ * the interpreter's own — consumers are responsible for hopping to
+ * the UI thread if they touch View state.
  */
 class RubyWorkloadController(
     private val context: Context,
     private val assets: AssetManager,
-    private val onLog: (LogMessage) -> Unit = { },
     private val onError: (Exception) -> Unit = { e -> Log.e(TAG, "interpreter error", e) },
     private val onWorkloadCompleted: (RubyWorkload, Int) -> Unit = { _, _ -> },
+    /** The host events (VMHost.emit) of the workloads' scripts */
+    private val hostEventListener: HostEventListener? = null,
 ) {
 
     private val lock = Any()
@@ -214,8 +216,9 @@ class RubyWorkloadController(
 
     /**
      * Caller MUST hold [lock]. Pushes Closed into the DisplayWindow's
-     * event queue. The current script's render loop drains it on its
-     * next frame, raises rb_eClosedWindow, unwinds. The ensure block
+     * event queue (and, for the splash, drops its stop marker, see
+     * [requestCloseLocked]). The current script's render loop drains it
+     * on its next frame, raises rb_eClosedWindow, unwinds. The ensure block
      * (loader.rb's `begin/ensure dispose end` and the equivalent in
      * start.rb / Game.rb) runs on the persistent render thread,
      * releases the EGL context cleanly via cgss::DisplayWindow::stop's
@@ -230,16 +233,20 @@ class RubyWorkloadController(
 
     /**
      * Caller MUST hold [lock]. Asks the running script to close its window.
-     * NativeSurface.requestClose is lost if the script hasn't created its
-     * window yet, so for the splash also drop a marker file it checks
-     * before creating the window and while it runs (loader/util.rb
-     * LOADER_STOP_PATH). Loader only: the `:game` process shares the data
-     * dir, and a marker written at game shutdown could land after the
-     * shell already cleared it for the restarted splash.
+     * The splash's window is shared with the next splash
+     * (setReuseSharedWindow): NativeSurface.requestClose queues a Closed
+     * event that whichever splash pumps events next gets, and none does
+     * while the script hasn't created its window yet. So for the splash,
+     * first drop a marker file: it checks it before creating the window
+     * and while it runs, and on its first event pump ignores a Closed the
+     * marker doesn't back (loader/util.rb LOADER_STOP_PATH). requestClose still wakes a splash
+     * blocked in waitEvent without focus. Loader only: the `:game` process
+     * shares the data dir, and a marker written at game shutdown could land
+     * after the shell already cleared it for the restarted splash.
      */
     private fun requestCloseLocked() {
-        NativeSurface.requestClose()
         if (currentWorkload is RubyWorkload.Loader) setLoaderStopMarker(true)
+        NativeSurface.requestClose()
     }
 
     private fun setLoaderStopMarker(present: Boolean) {
@@ -247,7 +254,9 @@ class RubyWorkloadController(
         try {
             if (present) marker.writeText("") else marker.delete()
         } catch (e: Exception) {
-            Log.w(TAG, "loader stop marker update failed (present=$present)", e)
+            // Without the marker, a splash still loading never sees its
+            // close request: the swap, or the shutdown, waits for it
+            Log.e(TAG, "loader stop marker update failed (present=$present)", e)
         }
     }
 
@@ -275,12 +284,7 @@ class RubyWorkloadController(
         // thread (rgss-worker-N) survive every subsequent workload
         // swap — only Activity.onDestroy via [shutdown] tears it down.
         if (persistentInterpreter == null) {
-            val listener = object : LogListener {
-                override fun onLogMessage(logMessage: LogMessage) {
-                    onLog(logMessage)
-                }
-            }
-            persistentInterpreter = PsdkInterpreter.create(context, listener, onError)
+            persistentInterpreter = PsdkInterpreter.create(context, NO_LOGS, onError, hostEventListener)
         }
         currentWorkload = workload
 
@@ -315,5 +319,10 @@ class RubyWorkloadController(
         private const val LOADER_STOP_MARKER = ".loader_stop"
 
         private const val TAG = "RubyWorkloadCtrl"
+
+        /** The workloads talk to their hosts through [hostEventListener], not logs */
+        private val NO_LOGS = object : LogListener {
+            override fun onLogMessage(logMessage: LogMessage) {}
+        }
     }
 }

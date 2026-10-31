@@ -6,7 +6,7 @@
                            EGL context the game renders into.
        [gameStartOverlay]  Spinning project icon shown from launch until
                            Game.rb has constructed its DisplayWindow (start.rb
-                           writes RGSS_GAME_READY_FILE). Hides the blank
+                           emits game.ready). Hides the blank
                            surface during PSDK's require chain.
        [imeSink]           1×1px transparent EditText used by ImeBridge to
                            capture soft-keyboard input when Ruby code asks

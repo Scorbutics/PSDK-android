@@ -24,6 +24,8 @@ module Loader
       @width, @height = compute_logical_size
       @closed = false
       @has_focus = true
+      @first_pump = true
+      @skip_resize = false
       # Touch events arrive in surface-pixel coordinates; the icon is
       # laid out in logical canvas units. The surface can change size
       # while the loader runs (RootActivity keeps itself alive across
@@ -42,13 +44,28 @@ module Loader
         title, @width, @height, WINDOW_SCALE, 32, 60, true, false, false
       )
       # litergss2 has no should_close? — the close signal comes via
-      # this callback. Returning truthy lets the C side raise
-      # rb_eClosedWindow, which is the right behavior for a real Closed
-      # event (user-driven window close). Android activity teardown no
-      # longer flows through here — surface destroy/recreate uses
-      # SFML's LostFocus/GainedFocus path, and terminal shutdown uses
-      # $rgss_should_stop from CompileWizardFragment.onDestroy.
-      @window.on_closed = proc { @closed = true; next true }
+      # this callback: RubyWorkloadController's requestClose. Returning
+      # truthy lets the C side raise rb_eClosedWindow, which unwinds the
+      # splash. Surface destroy/recreate doesn't flow through here, it
+      # uses SFML's LostFocus/GainedFocus path.
+      #
+      # On the first event pump, a Closed the stop marker doesn't back is
+      # ignored: the window is shared between splash runs, and a run that
+      # left before pumping events leaves its close request queued for the
+      # next one (which only starts once that run has ended, so later
+      # Closed events are all its own). On a false return litergss2 falls
+      # through to its Resized case (DisplayWindowInput.cpp, no break) with
+      # the size fields a Closed never sets: that call is skipped.
+      @window.on_closed = proc do
+        if @first_pump && !loader_stop_requested?
+          loader_say 'stale close request ignored'
+          @skip_resize = true
+          next false
+        end
+
+        @closed = true
+        next true
+      end
       # PSDK's Android pause-resume strategy: flip polling so the next
       # event pump blocks in waitEvent instead of busy-looping with
       # pollEvent. The @has_focus flag is what `tick` reads to skip
@@ -64,7 +81,11 @@ module Loader
       # Keeps taps on the icon after the surface is resized; the canvas
       # itself is rebuilt by RootActivity restarting the loader.
       @window.on_resized = proc do |surface_w, surface_h|
-        update_touch_scale(surface_w.to_i, surface_h.to_i)
+        if @skip_resize
+          @skip_resize = false
+        else
+          update_touch_scale(surface_w.to_i, surface_h.to_i)
+        end
       end
       @window.on_touch_began = proc do |finger, tx, ty|
         @on_touch_began&.call(finger, tx * @touch_scale_x, ty * @touch_scale_y)
@@ -100,10 +121,12 @@ module Loader
     # SIGSEGV from SFML touching a dead EGLSurface.
     def update
       @window.update
+      pumped
     end
 
     def update_only_input
       @window.update_only_input
+      pumped
     end
 
     def dispose
@@ -114,6 +137,12 @@ module Loader
     end
 
     private
+
+    # After each event pump (see #open's on_closed)
+    def pumped
+      @first_pump = false
+      @skip_resize = false
+    end
 
     # Surface pixels -> logical canvas units, per axis.
     def update_touch_scale(surface_w, surface_h)

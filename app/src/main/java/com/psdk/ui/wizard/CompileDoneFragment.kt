@@ -18,7 +18,8 @@ import com.psdk.R
 import com.psdk.compilation.CompilationEngine
 import com.psdk.ui.CompileWizardFragment
 import com.psdk.ui.CompileWizardViewModel
-import com.psdk.ui.LoaderPaths
+import com.psdk.ui.LoaderHost
+import com.psdk.ui.LoaderMessage
 import com.psdk.ui.LogBottomSheetFragment
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -54,8 +55,8 @@ class CompileDoneFragment : Fragment() {
         // runs after layout but before the first frame, so we set
         // translationY to "fully off-screen below" before the user
         // ever sees the card at rest — no flash. The loader.rb side
-        // lifts its centerpiece in parallel (triggered by the LIFT
-        // sentinel CompileProgressFragment wrote on finish), so the
+        // lifts its centerpiece in parallel (triggered by the
+        // loader.lift CompileProgressFragment sent on finish), so the
         // composition reads as "splash makes room, result rises in".
         resultCard.doOnPreDraw {
             val bottomMargin = (resultCard.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
@@ -146,16 +147,10 @@ class CompileDoneFragment : Fragment() {
         if (dismissing) return
         dismissing = true
 
-        // Mirror of CompileProgressFragment's LIFT_SENTINEL push: settle
-        // the splash centerpiece back to its resting position in parallel
-        // with the card slide-out. The loader picks this up on its next
-        // file poll (~133 ms); minor de-sync vs. the card animation is
-        // fine for the same reason it was on the way up.
-        try {
-            LoaderPaths.statusFile(requireContext()).writeText(UNLIFT_SENTINEL)
-        } catch (e: Exception) {
-            // Best-effort — the card slide-out runs regardless.
-        }
+        // Mirror of CompileProgressFragment's lift: settle the splash
+        // centerpiece back to its resting position in parallel with the
+        // card slide-out (the loader applies it on its next frame).
+        (requireActivity() as LoaderHost).sendLoaderMessage(LoaderMessage.Unlift)
 
         val bottomMargin = (card.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
         card.animate()
@@ -180,14 +175,5 @@ class CompileDoneFragment : Fragment() {
         // new resting height — gives the eye a chance to track the
         // logo first, then read the result.
         private const val SLIDE_DURATION_MS = 520L
-
-        /**
-         * Matches Loader::StatusFile::UNLIFT_SENTINEL in
-         * loader/status_file.rb verbatim. Writing this string into
-         * [LoaderPaths.statusFile] asks the splash to settle its
-         * centerpiece back to its resting position — the inverse of
-         * CompileProgressFragment's LIFT_SENTINEL.
-         */
-        const val UNLIFT_SENTINEL = "<<UNLIFT>>"
     }
 }

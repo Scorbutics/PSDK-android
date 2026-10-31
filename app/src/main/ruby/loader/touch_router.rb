@@ -4,8 +4,8 @@ module Loader
   # Maps the SplashWindow's touch callbacks onto SceneState mutations
   # and Dust spawns. Receives logical canvas coordinates already (the
   # window does the surface→canvas scaling). The activity is still the
-  # arbiter of icon-tap actionability — the loader only fires
-  # ICON_TAPPED_SENTINEL on every hit; the activity decides whether to
+  # arbiter of icon-tap actionability — the loader only sends
+  # ICON_TAPPED_EVENT on every hit; the activity decides whether to
   # advance.
   class TouchRouter
     def initialize(state:, icon:, dust:, clock:)
@@ -34,7 +34,7 @@ module Loader
         # First tap kicks off the rolling animation; later taps keep
         # the same spin start so the speed ramp doesn't visibly reset.
         @state.rolling_start ||= @clock.frame
-        loader_say Splash::ICON_TAPPED_SENTINEL
+        loader_emit Splash::ICON_TAPPED_EVENT
       else
         @dust.spawn(lx, ly, Layers::Dust::RELEASE_COUNT, born_at: @clock.frame)
       end

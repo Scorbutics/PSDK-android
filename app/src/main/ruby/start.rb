@@ -156,53 +156,32 @@ SafeRunner.run(
 
   # One-shot signal to the Android host: PSDK has constructed its main
   # window, so the Kotlin-side "starting…" overlay can fade out and
-  # reveal Game.rb's first frame.
-  #
-  # Implemented as a marker file written from inside a `.new` wrapper on
-  # LiteRGSS::DisplayWindow. The file path is the env var
-  # RGSS_GAME_READY_FILE that GameActivity sets on workload launch;
-  # GameActivity polls for it via Handler and fades the overlay out as
-  # soon as it appears.
-  #
-  # Why a file and not a log sentinel: the VMLogger/STDOUT pipeline
-  # delivers reliably for the loader workload but is silently dropped
-  # for the game workload on this host (observed: C-side LiteRGSS
-  # warnings reach the LogListener but Ruby-side puts/VMLogger.info do
-  # not). File-based sync sidesteps that entirely — and the
-  # mechanism is already proven by the wizard ↔ loader status file.
+  # reveal Game.rb's first frame. A game.ready host event (GameActivity's
+  # HostEventListener), sent from a `.new` wrapper on
+  # LiteRGSS::DisplayWindow.
   #
   # Aliasing `.new` on the singleton class (rather than prepending on
   # `initialize`) is dispatch-agnostic: `.new` is the public entry
   # point regardless of how the C side wires up internals, so it works
   # even if the litergss2 C code ever takes a `rb_class_new_instance`
   # shortcut around Ruby-level method lookup.
-  ready_file_path = ENV['RGSS_GAME_READY_FILE']
-  if ready_file_path.nil? || ready_file_path.empty?
-    STDERR.puts '[start.rb] RGSS_GAME_READY_FILE not set; sentinel skipped'
-  elsif !defined?(LiteRGSS::DisplayWindow)
-    STDERR.puts '[start.rb] LiteRGSS::DisplayWindow not defined; sentinel skipped'
-  else
-    # Stale file from a prior session would tell the host the game is
-    # ready before this session has constructed anything. Wipe it before
-    # installing the wrapper.
-    File.delete(ready_file_path) rescue nil
-
+  if defined?(LiteRGSS::DisplayWindow)
     LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_signaled, false)
-    LiteRGSS::DisplayWindow.class_variable_set(:@@__game_display_ready_path, ready_file_path)
     LiteRGSS::DisplayWindow.singleton_class.send(:alias_method, :__game_display_orig_new, :new)
     LiteRGSS::DisplayWindow.singleton_class.send(:define_method, :new) do |*args, &block|
       instance = __game_display_orig_new(*args, &block)
       unless class_variable_get(:@@__game_display_signaled)
         class_variable_set(:@@__game_display_signaled, true)
-        path = class_variable_get(:@@__game_display_ready_path)
         begin
-          File.write(path, "ready\n")
+          STDERR.puts '[start.rb] game.ready not sent: no logging pipe' unless VMHost.emit('game.ready')
         rescue StandardError => e
-          STDERR.puts "[start.rb] failed to write ready file #{path}: #{e.class}: #{e.message}"
+          STDERR.puts "[start.rb] game.ready not sent: #{e.class}: #{e.message}"
         end
       end
       instance
     end
+  else
+    STDERR.puts '[start.rb] LiteRGSS::DisplayWindow not defined; game.ready skipped'
   end
 
   # exit! must end the game. SafeRunner turns exit/exit! into a SystemExit so

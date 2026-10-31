@@ -91,7 +91,7 @@ begin
   # Gated on external_status_received? so the CTA never clobbers a real
   # sub-step label. Classic-bootstrap's auto-tap fires before this point
   # and the compile engine's first onStepStarted ("Check engine…")
-  # arrives via the .loader_status poll inside hold_seconds, which sets
+  # arrives as a loader.status message inside hold_seconds, which sets
   # the flag — so the CTA is skipped entirely in classic mode. Same
   # protection covers fast super-user taps where the user races the
   # 3-second hold.

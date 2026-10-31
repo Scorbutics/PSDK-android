@@ -17,17 +17,21 @@ unless defined?(LOADER_BASE_DIR)
 # (the compile engine, archive validator, etc.) can run their own
 # `Dir.chdir`. `Dir.chdir` without a block is `chdir(2)`, which is
 # *process*-wide, so a concurrent compile interpreter chdir'd to a
-# project dir would silently break our relative `.loader_status` poll
-# and asset reads. Absolute paths via this constant sidestep the race.
+# project dir would silently break our relative file reads (assets, the
+# stop marker). Absolute paths via this constant sidestep the race.
 LOADER_BASE_DIR = Dir.pwd.freeze
 
-# Sticky close request (RubyWorkloadController writes it next to calling
+# Sticky close request (RubyWorkloadController writes it before calling
 # NativeSurface.requestClose, and removes it before launching a loader).
-# requestClose is a no-op while no window exists yet, e.g. during the
-# extract prelude or show!'s asset loading: the splash would then never
-# see it, never exit, and the host's interpreter teardown would wait on
-# it forever.
+# The splash windows are one shared window: requestClose queues a Closed
+# event that the next splash pumping events gets, and none does while
+# there's no window yet (the extract prelude, show!'s asset loading). So
+# the splash checks this marker before creating its window and while it
+# runs, and on its first event pump ignores a Closed the marker doesn't
+# back (SplashWindow#open): a stale one would kill the next splash.
 LOADER_STOP_PATH = "#{LOADER_BASE_DIR}/.loader_stop".freeze
+# Frames between two checks of LOADER_STOP_PATH (~7.5 Hz at 60 Hz)
+LOADER_STOP_POLL_INTERVAL_F = 8
 
 def loader_stop_requested?
   File.exist?(LOADER_STOP_PATH)
@@ -39,6 +43,14 @@ def loader_say(msg)
   puts "[loader] #{msg}"
 rescue StandardError
   STDERR.puts "[loader] #{msg}" rescue nil
+end
+
+# Tell the host (RootActivity's HostEventListener), and the logs
+def loader_emit(topic)
+  loader_say topic
+  loader_say "#{topic} not sent: no logging pipe" unless VMHost.emit(topic)
+rescue StandardError => e
+  loader_say "#{topic} not sent: #{e.class}: #{e.message}"
 end
 
 require 'LiteRGSS'

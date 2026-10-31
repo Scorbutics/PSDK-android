@@ -10,7 +10,8 @@ import com.psdk.R
 import com.psdk.compilation.CompilationEngine
 import com.psdk.compilation.CompileSubStepMapper
 import com.psdk.ui.CompileWizardViewModel
-import com.psdk.ui.LoaderPaths
+import com.psdk.ui.LoaderHost
+import com.psdk.ui.LoaderMessage
 import java.io.File
 
 /**
@@ -18,9 +19,9 @@ import java.io.File
  *
  * The visible UI during compile is the GL surface running loader.rb —
  * its `status_text` shows the current sub-step. We get text into Ruby
- * via a polled file ([LoaderPaths.statusFile]) instead of bringing up an
- * Android overlay, because we already pay for the splash and a second
- * UI layer just competes for the user's eye.
+ * as [LoaderMessage]s instead of bringing up an Android overlay, because
+ * we already pay for the splash and a second UI layer just competes for
+ * the user's eye.
  *
  * The fragment owns nothing visual on purpose: the wizard's toolbar
  * and step indicator are the only Kotlin-side chrome, and the full
@@ -74,21 +75,19 @@ class CompileProgressFragment : Fragment() {
 
             override fun onCompilationFinished(success: Boolean, logFile: File, errorLogFile: File) {
                 // Trigger the splash lift BEFORE the wizard advances —
-                // the loader picks up <<LIFT>> on its next file poll
-                // (≤133ms) and the icon + title + version + status
+                // the loader applies it on its next frame and the
+                // icon + title + version + status
                 // animate upward to make room for CompileDoneFragment's
                 // bottom card sliding up. The card's slide animation
                 // and the splash lift play in parallel; minor de-sync
                 // is fine because the card and lifted content land in
                 // separate regions of the screen.
                 //
-                // The tail after the sentinel becomes the new status
-                // text (loader/status_file.rb strips the sentinel then
-                // falls through to update_status), so the splash flips
-                // from the last sub-step ("Finalizing…") to the final
-                // outcome as it lifts.
+                // The lift carries the new status text, so the splash
+                // flips from the last sub-step ("Finalizing…") to the
+                // final outcome as it lifts.
                 val finalStatus = if (success) "Compilation done" else "Compilation failed"
-                pushStatus("$LIFT_SENTINEL$finalStatus")
+                (activity as? LoaderHost)?.sendLoaderMessage(LoaderMessage.Lift(finalStatus))
                 activity?.runOnUiThread {
                     viewModel.compilationSuccess.value = success
                     viewModel.currentStep.value = 2
@@ -116,49 +115,14 @@ class CompileProgressFragment : Fragment() {
     }
 
     /**
-     * Write a one-line status into [LoaderPaths.statusFile], the file the
-     * splash's loader.rb polls each frame. We debounce identical writes
-     * so the loader's mtime-based poll doesn't re-read the same string
-     * repeatedly.
-     *
-     * The status file lives next to the loader's assets dir (app data
-     * dir), not next to the wizard's per-project executionLocation — the
-     * loader is activity-scoped since Cut 2 and chdir's to one stable
-     * location regardless of which project is compiling.
-     *
-     * Best-effort: a failed write (disk full, permission flake) just
-     * means the splash keeps the previous label until the next update
-     * lands. That's a strictly worse UX than the happy path, never a
-     * broken one.
+     * Send a one-line status to the splash ([LoaderMessage.Status]),
+     * skipping repeats of the same text. Best-effort: a lost message just
+     * means the splash keeps the previous label until the next one lands.
      */
     private fun pushStatus(text: String) {
         if (text == lastStatusWritten) return
-        try {
-            LoaderPaths.statusFile(requireContext()).writeText(text)
-            lastStatusWritten = text
-        } catch (e: Exception) {
-            // Swallow — see kdoc above.
-        }
-    }
-
-    companion object {
-        /**
-         * Matches Loader::StatusFile::LIFT_SENTINEL in
-         * loader/status_file.rb verbatim. Writing this string to
-         * [LoaderPaths.statusFile] asks the splash to lift its
-         * centerpiece upward — see StatusFile#poll and the staggered
-         * SceneState::LIFT_DELAY_* offsets in the Icon / Text layers.
-         */
-        const val LIFT_SENTINEL = "<<LIFT>>"
-
-        /**
-         * Matches Loader::StatusFile::TAP_SENTINEL in
-         * loader/status_file.rb verbatim. Writing this string asks the
-         * splash to play the release-on-icon combo (bang + shake +
-         * spin) without waiting for a real finger. Currently only the
-         * classic-setup bootstrap path uses it — see
-         * CompileWizardFragment.performClassicAutoTap.
-         */
-        const val TAP_SENTINEL = "<<TAP>>"
+        val host = activity as? LoaderHost ?: return
+        host.sendLoaderMessage(LoaderMessage.Status(text))
+        lastStatusWritten = text
     }
 }

@@ -2,7 +2,7 @@ unless defined?(Loader::Splash::INTRO_FRAMES)
 
 module Loader
   # Composes the clock, scene state, window, asset bundle, layers,
-  # touch router, and status-file poller. The orchestrator at the
+  # touch router, and host message reader. The orchestrator at the
   # bottom of loader.rb instantiates one of these, calls show! +
   # run_intro, then drives tick in a loop.
   class Splash
@@ -13,20 +13,18 @@ module Loader
     # already supply a real sub-step label.
     INIT_TO_READY_SECS = 3.0
 
-    # Logged exactly once, on the LogListener, the first time
-    # @window.update actually flips a frame onto the EGL surface. The
-    # host activity matches against this verbatim to fade its
-    # SurfaceView in only after pixels are really on screen — change
-    # here, change RootActivity.kt together.
-    READY_SENTINEL = '[loader-ready]'.freeze
+    # Host event sent exactly once, the first time @window.update
+    # actually flips a frame onto the EGL surface: the host activity
+    # fades its SurfaceView in only after pixels are really on screen.
+    # Matches RootActivity.LOADER_READY_EVENT.
+    READY_EVENT = 'loader.ready'.freeze
 
-    # Logged every time a touch lands inside the icon's hit rect. The
-    # compile wizard activity matches against this verbatim to advance
-    # from the import step to the compile step — change here, change
-    # CompileWizardFragment.kt together. The fragment itself decides
-    # whether the tap is actionable (archive validated, still on step
-    # 0), so we emit on every hit rather than one-shot.
-    ICON_TAPPED_SENTINEL = '[loader-icon-tapped]'.freeze
+    # Host event sent every time a touch lands inside the icon's hit rect.
+    # The compile wizard advances from the import step to the compile step
+    # on it; the fragment decides whether the tap is actionable (archive
+    # validated, still on step 0), so it goes on every hit rather than
+    # once. Matches RootActivity.LOADER_ICON_TAPPED_EVENT.
+    ICON_TAPPED_EVENT = 'loader.icon_tapped'.freeze
 
     def initialize
       @clock  = Clock.new
@@ -71,7 +69,7 @@ module Loader
       @window.on_touch_moved = ->(lx, ly)          { @touch_router.handle_moved(lx, ly) }
       @window.on_touch_ended = ->(finger, lx, ly) { @touch_router.handle_ended(finger, lx, ly) }
 
-      @status_file = StatusFile.new(
+      @host_messages = HostMessages.new(
         state: @state, text_layer: @text, dust: @dust, icon: @icon, clock: @clock
       )
 
@@ -86,16 +84,16 @@ module Loader
     # closed (e.g. user dismissed it) — callers should bail.
     def tick
       return false if @window.closed?
-      return false if (@clock.frame % StatusFile::POLL_INTERVAL_F).zero? && loader_stop_requested?
+      return false if (@clock.frame % LOADER_STOP_POLL_INTERVAL_F).zero? && loader_stop_requested?
       if @window.has_focus?
         @clock.tick!
         m = @clock.fade_out_multiplier
         @layers.each { |l| l.animate(@clock, @state, m) }
-        @status_file.poll
+        @host_messages.poll
         @window.update
         unless @state.first_frame_signaled
           @state.first_frame_signaled = true
-          loader_say READY_SENTINEL
+          loader_emit READY_EVENT
         end
       else
         @window.update_only_input
@@ -123,7 +121,7 @@ module Loader
       STATUS_HOLD.times { return unless tick }
     end
 
-    # True iff StatusFile has overwritten the status text at least once
+    # True iff HostMessages has overwritten the status text at least once
     # with a real activity-supplied payload (a compile sub-step,
     # typically). The bottom-of-file script reads this after the intro
     # hold to decide whether to flash the manual-tap CTA; in
