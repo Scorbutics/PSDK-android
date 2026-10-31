@@ -414,7 +414,8 @@ class CompilationEngine(
             "lib/epsa_format.rb",
             "lib/epsa_stream.rb",
             "lib/archive_mount.rb",
-            "lib/game_content.rb"
+            "lib/game_content.rb",
+            "lib/touch_layouts.rb"
         )
     }
 }

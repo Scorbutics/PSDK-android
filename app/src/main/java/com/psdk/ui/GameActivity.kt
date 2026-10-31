@@ -180,7 +180,7 @@ class GameActivity : AppCompatActivity() {
             executionLocation = executionLocation,
             mode = mode,
             archive = resolvedArchive,
-            preludes = if (mode == GameMode.DEBUG_UNCOMPILED) START_PRELUDES_DEBUG else emptyList(),
+            preludes = if (mode == GameMode.DEBUG_UNCOMPILED) START_PRELUDES_DEBUG else START_PRELUDES,
         )
     }
 
@@ -370,16 +370,19 @@ class GameActivity : AppCompatActivity() {
         /** Result extra: the start.rb workload's exit code. */
         const val RESULT_EXIT_CODE = "EXIT_CODE"
 
+        /** start.rb's helper modules: TouchLayouts loads the gamepad's layout files. */
+        private val START_PRELUDES = listOf("lib/touch_layouts.rb")
+
         /**
-         * Helper modules for DEBUG_UNCOMPILED mode. start.rb's debug branch
-         * needs EpsaFormat / EpsaStream / ArchiveMount in scope to mount the
-         * encrypted .epsa via PhysFS. RELEASE mode needs no preludes.
+         * DEBUG_UNCOMPILED mode's: start.rb's debug branch also needs
+         * EpsaFormat / EpsaStream / ArchiveMount in scope to mount the
+         * encrypted .epsa via PhysFS.
          */
         private val START_PRELUDES_DEBUG = listOf(
             "lib/epsa_format.rb",
             "lib/epsa_stream.rb",
             "lib/archive_mount.rb",
-        )
+        ) + START_PRELUDES
 
         /**
          * Window inside which a second BACK press is treated as

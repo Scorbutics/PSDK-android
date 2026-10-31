@@ -125,6 +125,8 @@ else
   $VERBOSE = nil
   begin
     require './Game.rb'
+    # Still mounted: the archive's touch layout goes into the release too
+    STDERR.puts "[compile] touch layout files installed: #{TouchLayouts.install_game_file(PhysFS, 'Release')}"
   ensure
     $VERBOSE = old_verbose
     ArchiveMount.unmount! # cleanup
