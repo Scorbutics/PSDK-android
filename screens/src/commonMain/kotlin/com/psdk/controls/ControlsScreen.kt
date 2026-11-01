@@ -110,21 +110,30 @@ private fun Section(title: String) {
 private fun Gamepad(model: ControlsModel) {
     val layout = model.layout
     Section("Gamepad")
-    StepSlider(
-        "Size", layout.scale, PlayerLayout.SCALES, PlayerLayout.SCALE_STEP,
-        format = { "×${(it * 100).roundToInt() / 100.0}" }, onDone = model::setScale,
-    )
+    // A size the file has but the screen doesn't offer selects none
+    ChoiceRow("Size", SIZES, layout.scale, model::setScale)
     StepSlider(
         "Opacity", layout.opacity, PlayerLayout.OPACITIES, PlayerLayout.OPACITY_STEP,
         format = { "${(it * 100).roundToInt()}%" }, onDone = model::setOpacity,
     )
-    Text("A and B buttons", style = MaterialTheme.typography.bodyLarge)
-    val choices = listOf(ActionLayout.NINTENDO to "A on the right", ActionLayout.XBOX to "A at the bottom")
+    ChoiceRow(
+        "A and B buttons", listOf(ActionLayout.NINTENDO to "A on the right", ActionLayout.XBOX to "A at the bottom"),
+        layout.actionLayout, model::setActionLayout,
+    )
+    ChoiceRow(
+        "X and Y buttons", listOf(ActionLayout.XBOX to "X on the left", ActionLayout.NINTENDO to "X at the top"),
+        layout.xyLayout, model::setXyLayout,
+    )
+}
+
+@Composable
+private fun <T> ChoiceRow(title: String, choices: List<Pair<T, String>>, selected: T, onPick: (T) -> Unit) {
+    Text(title, style = MaterialTheme.typography.bodyLarge)
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         choices.forEachIndexed { index, (value, label) ->
             SegmentedButton(
-                selected = layout.actionLayout == value,
-                onClick = { model.setActionLayout(value) },
+                selected = selected == value,
+                onClick = { onPick(value) },
                 shape = SegmentedButtonDefaults.itemShape(index, choices.size),
             ) { Text(label) }
         }
@@ -149,7 +158,8 @@ private fun StepSlider(
     Slider(
         value = current,
         onValueChange = { current = it },
-        onValueChangeFinished = { onDone(current.toDouble()) },
+        // A touch that changes nothing writes nothing over the game's value
+        onValueChangeFinished = { if (current != value.toFloat()) onDone(current.toDouble()) },
         valueRange = range.start.toFloat()..range.endInclusive.toFloat(),
         steps = ((range.endInclusive - range.start) / step).roundToInt() - 1,
     )
@@ -303,6 +313,9 @@ private fun KeyDialog(title: String, key: String?, gameDefault: Boolean, onPick:
 }
 
 private const val GAME_KEY = "Game's key"
+
+/** The gamepad sizes offered (PlayerLayout.scale) */
+private val SIZES = listOf(0.5 to "Small", 1.0 to "Medium", 1.5 to "Large")
 
 @Composable
 private fun Reset(model: ControlsModel) {
