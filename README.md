@@ -158,6 +158,14 @@ Either one may hold the **project sources** (compiled on the device on first lau
 
 [`exporter/`](exporter/README.md) builds a game's APK from a base APK of a release, or an archive to import. Each release attaches it as `psdk-android-exporter-<version>.zip`: use the one of the release you build from. It needs Ruby and the `rubyzip` gem only.
 
+### Touch Controls
+
+Every game gets the runtime's on-screen gamepad, whatever its PSDK version. A game can ship its own layout as `Data/touch_layout.json`, with its button images under `Data/`: places and sizes, hidden or added buttons, the keys they send, A / B and X / Y placement, size and opacity (format: litergss-everywhere's [Layout files](https://github.com/Scorbutics/litergss-everywhere/blob/master/docs/INTEGRATION.md#layout-files)). The export keeps it, `--compiled` included.
+
+The player's own layout goes on top of the game's, setting by setting: the in-game editor (tools button) moves and resizes buttons, the app's Controls screen (tools button → Settings) sets the size, opacity, A / B and X / Y placement, the keys of the gamepad's buttons and the player's extra buttons. It sits beside the compiled game (`Release/`), so a recompile keeps it.
+
+In the background, the runtime pauses the game and its sound by itself: the scripts handle nothing for it.
+
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.
