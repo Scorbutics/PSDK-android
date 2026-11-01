@@ -45,14 +45,15 @@ class PlayerLayoutTest {
     }
 
     @Test
-    fun aButtonGetsAPlaceItsImageAndKeepsItsPlaceWhenChanged() {
+    fun aNewButtonHasNoPlaceAndKeepsTheOneTheEditorGaveIt() {
         val added = PlayerLayout.EMPTY.withButton(PlayerButton("player_1", "RUN", "LShift"))
         val entry = json(added)["buttons"]!!.jsonObject["player_1"]!!.jsonObject
-        assertEquals(setOf("anchor", "x", "y", "key", "image", "label"), entry.keys)
+        assertEquals(setOf("key", "image", "label"), entry.keys)
         assertEquals("\"touch_layout/player_1.png\"", entry["image"].toString())
         // The in-game editor moved it
         val moved = PlayerLayout.parse(
-            added.toJson().replace("\"top_left\"", "\"bottom_left\""),
+            """{"version": 1, "buttons": {"player_1": {"anchor": "bottom_left", "x": 0.1, "y": 0.2,
+                "key": "LShift", "image": "touch_layout/player_1.png", "label": "RUN"}}}""",
         ).withButton(PlayerButton("player_1", "JUMP", "Space"))
         val movedEntry = json(moved)["buttons"]!!.jsonObject["player_1"]!!.jsonObject
         assertEquals("\"bottom_left\"", movedEntry["anchor"].toString())
@@ -72,24 +73,30 @@ class PlayerLayoutTest {
     }
 
     @Test
-    fun aNewButtonTakesAFreePlace() {
-        fun place(layout: PlayerLayout, name: String) =
-            json(layout)["buttons"]!!.jsonObject[name]!!.jsonObject.let {
-                assertEquals("\"top_left\"", it["anchor"].toString())
-                it["x"].toString() to it["y"].toString()
-            }
-        val two = PlayerLayout.EMPTY.withButton(PlayerButton("player_1", "A", "A")).withButton(PlayerButton("player_2", "B", "B"))
-        assertEquals("0.35" to "0.3", place(two, "player_1"))
-        assertEquals("0.47" to "0.3", place(two, "player_2"))
-        val again = two.withoutButton("player_1").withButton(PlayerButton("player_1", "C", "C"))
-        assertEquals("0.35" to "0.3", place(again, "player_1"))
-        // The last place once all are taken
-        val four = (3..4).fold(two) { layout, n -> layout.withButton(PlayerButton("player_$n", "$n", "A")) }
-        assertEquals("0.59" to "0.3", place(four, "player_3"))
-        assertEquals("0.59" to "0.3", place(four, "player_4"))
-        // Any entry on a place takes it
-        val held = PlayerLayout.parse("""{"version": 1, "buttons": {"run": {"anchor": "top_left", "x": 0.35, "y": 0.3, "visible": false}}}""")
-        assertEquals("0.47" to "0.3", place(held.withButton(PlayerButton("player_1", "A", "A")), "player_1"))
+    fun gamepadButtonsTakeAKeyAndGiveItBack() {
+        val placed = PlayerLayout.parse("""{"version": 1, "buttons": {"start": {"anchor": "top_left", "x": 0.1, "y": 0.1}}}""")
+        val remapped = placed.withRemap("a", "Space").withRemap("start", "K")
+        assertEquals(mapOf("a" to "Space", "start" to "K"), remapped.remaps)
+        assertEquals(emptyList(), remapped.buttons)
+        val back = remapped.withRemap("a", null).withRemap("start", null)
+        assertEquals(emptyMap(), back.remaps)
+        // The place the editor gave stays; an entry left empty goes
+        assertEquals(json(placed)["buttons"], json(back)["buttons"])
+        assertNull(json(PlayerLayout.EMPTY.withRemap("a", "Space").withRemap("a", null))["buttons"])
+        // A cross's button holds only its key; a row button keeps its other fields
+        val cross = json(PlayerLayout.EMPTY.withRemap("up", "W"))["buttons"]!!.jsonObject["up"]!!.jsonObject
+        assertEquals(setOf("key"), cross.keys)
+        val start = PlayerLayout.parse("""{"version": 1, "buttons": {"start": {"visible": false, "size": 1.5}}}""")
+        assertEquals(setOf("visible", "size", "key"), json(start.withRemap("start", "K"))["buttons"]!!.jsonObject["start"]!!.jsonObject.keys)
+    }
+
+    @Test
+    fun onlyGamepadButtonsCountAsRemapped() {
+        val layout = PlayerLayout.parse(
+            """{"version": 1, "buttons": {"a": {"key": null}, "player_1": {"key": "A", "image": "x.png", "label": "A"}, "b": {"key": "K"}}}""",
+        )
+        assertEquals(mapOf("b" to "K"), layout.remaps)
+        assertFailsWith<IllegalArgumentException> { layout.withRemap("player_1", null) }
     }
 
     @Test

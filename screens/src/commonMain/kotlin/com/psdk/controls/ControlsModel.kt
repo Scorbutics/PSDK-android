@@ -74,6 +74,11 @@ class ControlsModel(private val store: ControlsStore, private val labels: LabelR
         save { layout.withActionLayout(value) }
     }
 
+    /** @param key null: the game's key again */
+    fun setRemap(name: String, key: String?) {
+        save { layout.withRemap(name, key) }
+    }
+
     /** @param name the button to change, null for a new one */
     fun saveButton(name: String?, label: String, key: String) {
         save {

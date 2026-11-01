@@ -59,6 +59,16 @@ class ControlsModelTest {
     }
 
     @Test
+    fun aGamepadKeyIsWrittenAtOnce() {
+        val store = MemoryStore()
+        val model = ControlsModel(store, labels)
+        model.setRemap("b", "Escape")
+        assertEquals(mapOf("b" to "Escape"), PlayerLayout.parse(store.file).remaps)
+        model.setRemap("b", null)
+        assertEquals(emptyMap(), PlayerLayout.parse(store.file).remaps)
+    }
+
+    @Test
     fun resetRemovesTheFile() {
         val store = MemoryStore("""{"version": 1, "scale": 2.0}""")
         val model = ControlsModel(store, labels)

@@ -2,7 +2,9 @@ package com.psdk.controls
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,13 +17,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +45,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.psdk.screens.PsdkTheme
 import kotlin.math.roundToInt
@@ -76,6 +81,8 @@ fun ControlsScreen(model: ControlsModel, onClose: () -> Unit, onLogs: (() -> Uni
             ) {
                 model.problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Gamepad(model)
+                HorizontalDivider()
+                GamepadKeys(model)
                 HorizontalDivider()
                 Buttons(model)
                 HorizontalDivider()
@@ -151,7 +158,7 @@ private fun Buttons(model: ControlsModel) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     Section("My buttons")
     Text(
-        "New buttons appear in the middle of the screen. Move them in game: " +
+        "New buttons appear where the screen is free. Move them in game: " +
             "tap the gamepad's gear button, then Edit controls.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -188,13 +195,11 @@ private fun Buttons(model: ControlsModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 /** @param button the one changed, null for a new one */
+@Composable
 private fun ButtonDialog(button: PlayerButton?, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
     var label by rememberSaveable { mutableStateOf(button?.label ?: "") }
     var key by rememberSaveable { mutableStateOf(button?.key ?: "") }
-    var keysOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (button == null) "New button" else "Button") },
@@ -206,24 +211,7 @@ private fun ButtonDialog(button: PlayerButton?, onSave: (String, String) -> Unit
                     label = { Text("Label") },
                     singleLine = true,
                 )
-                ExposedDropdownMenuBox(expanded = keysOpen, onExpandedChange = { keysOpen = it }) {
-                    OutlinedTextField(
-                        value = if (key.isEmpty()) "" else Keys.label(key),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Key it sends") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(keysOpen) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                    )
-                    ExposedDropdownMenu(expanded = keysOpen, onDismissRequest = { keysOpen = false }) {
-                        Keys.ALL.forEach { (name, shown) ->
-                            DropdownMenuItem(text = { Text(shown) }, onClick = {
-                                key = name
-                                keysOpen = false
-                            })
-                        }
-                    }
-                }
+                KeyField("Key it sends", key.ifEmpty { null }, onPick = { key = it.orEmpty() })
             }
         },
         confirmButton = {
@@ -233,6 +221,85 @@ private fun ButtonDialog(button: PlayerButton?, onSave: (String, String) -> Unit
     )
 }
 
+/** The key each gamepad button sends: the game's, or the player's choice. */
+@Composable
+private fun GamepadKeys(model: ControlsModel) {
+    val remaps = model.layout.remaps
+    Section("Gamepad keys")
+    Text(
+        "Each gamepad button sends the game's key, or the one you choose here: the game's key settings no longer change that button.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    PlayerLayout.GAMEPAD.forEach { (name, shown) ->
+        KeyField(shown, remaps[name], gameDefault = true, onPick = { model.setRemap(name, it) })
+    }
+}
+
+/**
+ * A key: the field shows it, a tap opens every key, by kind (Keys.GROUPS).
+ * @param gameDefault offers "Game's key" (null) too
+ */
+@Composable
+private fun KeyField(
+    title: String,
+    key: String?,
+    onPick: (String?) -> Unit,
+    gameDefault: Boolean = false,
+) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    val shown = key?.let(Keys::label) ?: if (gameDefault) GAME_KEY else ""
+    Box {
+        // Drawn only: the box over it is the one control (its click, focus, TalkBack)
+        OutlinedTextField(
+            value = shown,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            label = { Text(title) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
+            modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.clearAndSetSemantics {},
+        )
+        Box(
+            Modifier.matchParentSize()
+                .clickable(role = Role.Button, onClickLabel = "Choose") { open = true }
+                .semantics { contentDescription = "$title: ${shown.ifEmpty { "none" }}" },
+        )
+    }
+    if (open) {
+        KeyDialog(title, key, gameDefault, onPick = {
+            onPick(it)
+            open = false
+        }, onDismiss = { open = false })
+    }
+}
+
+@Composable
+private fun KeyDialog(title: String, key: String?, gameDefault: Boolean, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (gameDefault) {
+                    FilterChip(selected = key == null, onClick = { onPick(null) }, label = { Text(GAME_KEY) })
+                }
+                Keys.GROUPS.forEach { (group, keys) ->
+                    Text(group, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        keys.forEach { (name, shown) ->
+                            FilterChip(selected = name == key, onClick = { onPick(name) }, label = { Text(shown) })
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private const val GAME_KEY = "Game's key"
+
 @Composable
 private fun Reset(model: ControlsModel) {
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -241,7 +308,7 @@ private fun Reset(model: ControlsModel) {
         AlertDialog(
             onDismissRequest = { confirming = false },
             title = { Text("Reset controls?") },
-            text = { Text("The game's controls come back: your buttons, places and settings are removed.") },
+            text = { Text("The game's controls come back: your buttons, places, keys and settings are removed.") },
             confirmButton = {
                 TextButton(onClick = {
                     model.reset()

@@ -23,9 +23,11 @@ data class PlayerButton(val name: String, val label: String, val key: String)
 /**
  * The player's layout file, `touch_layout.json` in the game's folder: the
  * runtime's LiteRGSS::TouchOverlay::LayoutFile, version 1, loaded over the
- * game's own. The Controls screen changes the gamepad's size, opacity and A / B
- * order, and the player's buttons; the rest of the file (the places the
- * in-game editor wrote) is kept as is. Immutable: each change is a new one.
+ * game's own (runtime 1.6.0 and later: buttons without a place, gamepad
+ * keys). The Controls screen changes the gamepad's size, opacity, A / B order
+ * and the keys its buttons send, and the player's buttons; the rest of the
+ * file (the places the in-game editor wrote) is kept as is. Immutable: each
+ * change is a new one.
  */
 class PlayerLayout private constructor(private val root: Map<String, JsonElement>) {
 
@@ -54,16 +56,35 @@ class PlayerLayout private constructor(private val root: Map<String, JsonElement
 
     /**
      * Add [button], or change its label and key: a button already in the file
-     * keeps its place. A new one goes in the middle of the screen until the
-     * player moves it (in-game editor), see [NEW_PLACES].
+     * keeps its place. A new one has none: the runtime puts it where the
+     * screen is free, until the player moves it (in-game editor).
      */
     fun withButton(button: PlayerButton): PlayerLayout {
         val buttons = section(BUTTONS)
-        val entry = (buttons[button.name] as? JsonObject)?.toMutableMap() ?: freePlace(buttons.values)
+        val entry = (buttons[button.name] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
         entry[KEY] = JsonPrimitive(button.key)
         entry[IMAGE] = JsonPrimitive(imagePath(button.name))
         entry[LABEL] = JsonPrimitive(button.label)
         return with(BUTTONS, JsonObject(buttons + (button.name to JsonObject(entry))))
+    }
+
+    /** The keys the player gives the gamepad's own buttons ([GAMEPAD] names). */
+    val remaps: Map<String, String>
+        get() = GAMEPAD.mapNotNull { (name, _) ->
+            string((section(BUTTONS)[name] as? JsonObject)?.get(KEY))?.let { name to it }
+        }.toMap()
+
+    /**
+     * The key a gamepad button sends: null puts back the game's (its layout
+     * file's, else its own binding). The button's place stays.
+     */
+    fun withRemap(name: String, key: String?): PlayerLayout {
+        require(GAMEPAD.any { it.first == name }) { "$name is not a gamepad button" }
+        val buttons = section(BUTTONS)
+        val entry = (buttons[name] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
+        if (key == null) entry.remove(KEY) else entry[KEY] = JsonPrimitive(key)
+        val changed = if (entry.isEmpty()) buttons - name else buttons + (name to JsonObject(entry))
+        return with(BUTTONS, if (changed.isEmpty()) null else JsonObject(changed))
     }
 
     fun withoutButton(name: String): PlayerLayout {
@@ -88,16 +109,6 @@ class PlayerLayout private constructor(private val root: Map<String, JsonElement
 
     private fun string(element: JsonElement?) = (element as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
-    /** The first of [NEW_PLACES] no button of the file sits on (the last when all are taken). */
-    private fun freePlace(entries: Collection<JsonElement>): MutableMap<String, JsonElement> {
-        val taken = entries.mapNotNull { entry ->
-            val fields = entry as? JsonObject ?: return@mapNotNull null
-            Triple(string(fields["anchor"]), (fields["x"] as? JsonPrimitive)?.doubleOrNull, (fields["y"] as? JsonPrimitive)?.doubleOrNull)
-        }.toSet()
-        val (x, y) = NEW_PLACES.firstOrNull { (x, y) -> Triple(NEW_ANCHOR, x, y) !in taken } ?: NEW_PLACES.last()
-        return mutableMapOf("anchor" to JsonPrimitive(NEW_ANCHOR), "x" to JsonPrimitive(x), "y" to JsonPrimitive(y))
-    }
-
     companion object {
         const val VERSION = 1
         const val FILE_NAME = "touch_layout.json"
@@ -108,6 +119,13 @@ class PlayerLayout private constructor(private val root: Map<String, JsonElement
         const val DEFAULT_OPACITY = 0.5
         const val SCALE_STEP = 0.25
         const val OPACITY_STEP = 0.1
+
+        /** The gamepad's own buttons a key can be given to, and how the screen names them. */
+        val GAMEPAD = listOf(
+            "a" to "A", "b" to "B", "x" to "X", "y" to "Y", "l" to "L", "r" to "R",
+            "start" to "Start", "select" to "Select",
+            "up" to "Up", "down" to "Down", "left" to "Left", "right" to "Right",
+        )
 
         /** The player's buttons; their images go in the game's folder, under [IMAGE_DIR]. */
         const val BUTTON_PREFIX = "player_"
@@ -123,17 +141,6 @@ class PlayerLayout private constructor(private val root: Map<String, JsonElement
         private const val LABEL = "label"
 
         private val JSON = Json { prettyPrint = true }
-
-        /**
-         * Where new buttons go, a starting place only: a row in the middle of
-         * the screen, below the editor's toolbar, between the gamepad's sides
-         * and games' own buttons (top corners) on phone screens, both
-         * orientations, any gamepad size. Neighbours overlap once a button is
-         * wider than their 12% spacing (portrait, a gamepad larger than
-         * ×1.25); more buttons share the last place.
-         */
-        private const val NEW_ANCHOR = "top_left"
-        private val NEW_PLACES = listOf(0.35 to 0.3, 0.47 to 0.3, 0.59 to 0.3)
 
         val EMPTY = PlayerLayout(mapOf("version" to JsonPrimitive(VERSION)))
 
