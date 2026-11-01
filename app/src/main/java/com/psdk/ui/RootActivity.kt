@@ -150,7 +150,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // A new activity in a process that already showed a splash: what
         // that splash was shown is not for this one. setLoaderState clears
         // too, but onSurfaceReady's fallback start doesn't go through it.
-        LoaderMessages.clear(this)
+        HostMessages.clearLoader(this)
 
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
@@ -288,7 +288,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         loaderListener = listener
     }
 
-    override fun sendLoaderMessage(message: LoaderMessage) = LoaderMessages.send(this, message)
+    override fun sendLoaderMessage(message: LoaderMessage) = HostMessages.send(this, message)
 
     override fun setLoaderState(state: LoaderState) {
         synchronized(stateLock) {
@@ -298,7 +298,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             currentLoaderState = state
             prepareAssetsFor(state)
             // What the previous state's splash showed is not for the new one
-            LoaderMessages.clear(this)
+            HostMessages.clearLoader(this)
             startLoaderForCurrentState()
         }
     }

@@ -1,7 +1,7 @@
 unless defined?(Loader::HostMessages::PREFIX)
 
 module Loader
-  # Applies the messages the host posts to the splash (LoaderMessages.kt),
+  # Applies the messages the host posts to the splash (HostMessages.kt),
   # read with VMHost.each_message once per frame:
   #
   #   loader.status <text>  — the status line (a compile sub-step, a CTA)

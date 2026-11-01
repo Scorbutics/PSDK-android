@@ -7,6 +7,23 @@ require 'minitest/autorun'
 require 'tmpdir'
 require File.expand_path('../../main/ruby/lib/touch_layouts', __dir__)
 
+# embedded-ruby-vm's host channel, as far as TouchLayouts uses it
+module VMHost
+  class << self
+    attr_accessor :emitted, :pending
+
+    def emit(topic, _payload = '')
+      emitted << topic
+      true
+    end
+
+    def each_message(prefix)
+      taken, self.pending = pending.partition { |topic, _| topic.start_with?(prefix) }
+      taken.each { |topic, payload| yield topic, payload }
+    end
+  end
+end
+
 class TestTouchLayouts < Minitest::Test
   # The archive, as PhysFS shows it
   class FakeFs
@@ -17,8 +34,12 @@ class TestTouchLayouts < Minitest::Test
 
   # What TouchLayouts uses of LiteRGSS::TouchOverlay
   class FakeOverlay
-    attr_reader :loads
-    attr_accessor :on_layout_saved
+    attr_reader :loads, :clears
+    attr_accessor :on_layout_saved, :on_settings
+
+    def clear_layout
+      @clears = clears.to_i + 1
+    end
 
     def initialize = (@loads = [])
 
@@ -38,8 +59,15 @@ class TestTouchLayouts < Minitest::Test
                          'evil' => { 'key' => 'RShift', 'image' => '../../escape.png' }
                        })
 
+  # A window class whose update the game calls once per frame
+  class FakeWindow
+    def update = :updated
+  end
+
   def setup
     @dir = Dir.mktmpdir
+    VMHost.emitted = []
+    VMHost.pending = []
   end
 
   def teardown
@@ -106,5 +134,39 @@ class TestTouchLayouts < Minitest::Test
     overlay.on_layout_saved.call('{"version": 1}')
     assert_equal 'not json', File.read("#{path}.broken")
     assert_equal '{"version": 1}', File.read(path)
+  end
+
+  def test_settings_tell_the_app_and_its_reload_message_loads_the_files_again
+    File.write(File.join(@dir, 'touch_layout.json'), '{"version": 1}')
+    overlay = FakeOverlay.new
+    window_class = Class.new(FakeWindow)
+    TouchLayouts.serve_settings(overlay, FakeFs.new({}), @dir, window_class)
+    overlay.on_settings.call
+    assert_equal ['overlay.settings'], VMHost.emitted
+    window = window_class.new
+    assert_equal :updated, window.update
+    assert_empty overlay.loads
+    VMHost.pending = [['overlay.reload', ''], ['overlay.other', '']]
+    window.update
+    assert_equal [1, [true]], [overlay.clears, overlay.loads.map(&:last)]
+    assert_equal [['overlay.other', '']], VMHost.pending
+  end
+
+  def test_a_failing_reload_is_dropped
+    overlay = FakeOverlay.new
+    def overlay.clear_layout = raise(IOError, 'gone')
+    window_class = Class.new(FakeWindow)
+    TouchLayouts.serve_settings(overlay, FakeFs.new({}), @dir, window_class)
+    VMHost.pending = [['overlay.reload', '']]
+    _, err = capture_io { window_class.new.update }
+    assert_match(/layout not reloaded: IOError/, err)
+    assert_empty VMHost.pending
+  end
+
+  def test_a_runtime_without_settings_keeps_its_menu
+    overlay = Struct.new(:loads).new([])
+    window_class = Class.new(FakeWindow)
+    TouchLayouts.serve_settings(overlay, FakeFs.new({}), @dir, window_class)
+    refute window_class.ancestors.include?(TouchLayouts::Reload)
   end
 end

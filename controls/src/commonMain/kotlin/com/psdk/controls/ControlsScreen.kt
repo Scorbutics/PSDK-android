@@ -1,0 +1,262 @@
+package com.psdk.controls
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+
+/** The app's palette (PSDK-android's colors.xml). */
+private val COLORS = darkColorScheme(
+    primary = Color(0xFF03DAC5),
+    onPrimary = Color.Black,
+    secondary = Color(0xFF0F70B0),
+    background = Color(0xFF1E1E2E),
+    surface = Color(0xFF2A2A3E),
+    surfaceVariant = Color(0xFF3A3A4E),
+    surfaceContainerHigh = Color(0xFF323248),
+    onSurfaceVariant = Color(0xFF8B8B9E),
+    error = Color(0xFFCF6679),
+)
+
+/**
+ * The player's Controls: the gamepad's size, opacity and A / B order, the
+ * player's own buttons, and the way back to the game's controls. Places are
+ * changed in game (the gamepad's tools button, Edit controls).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ControlsScreen(model: ControlsModel, onClose: () -> Unit) {
+    MaterialTheme(colorScheme = COLORS) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Controls") },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(
+                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                model.problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Gamepad(model)
+                HorizontalDivider()
+                Buttons(model)
+                HorizontalDivider()
+                Reset(model)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Section(title: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun Gamepad(model: ControlsModel) {
+    val layout = model.layout
+    Section("Gamepad")
+    StepSlider(
+        "Size", layout.scale, PlayerLayout.SCALES, PlayerLayout.SCALE_STEP,
+        format = { "×${(it * 100).roundToInt() / 100.0}" }, onDone = model::setScale,
+    )
+    StepSlider(
+        "Opacity", layout.opacity, PlayerLayout.OPACITIES, PlayerLayout.OPACITY_STEP,
+        format = { "${(it * 100).roundToInt()}%" }, onDone = model::setOpacity,
+    )
+    Text("A and B buttons", style = MaterialTheme.typography.bodyLarge)
+    val choices = listOf(ActionLayout.NINTENDO to "A on the right", ActionLayout.XBOX to "A at the bottom")
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        choices.forEachIndexed { index, (value, label) ->
+            SegmentedButton(
+                selected = layout.actionLayout == value,
+                onClick = { model.setActionLayout(value) },
+                shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+            ) { Text(label) }
+        }
+    }
+}
+
+/** Saved once the finger leaves it: each save rewrites the file. */
+@Composable
+private fun StepSlider(
+    title: String,
+    value: Double,
+    range: ClosedRange<Double>,
+    step: Double,
+    format: (Double) -> String,
+    onDone: (Double) -> Unit,
+) {
+    var current by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(format(current.toDouble()), color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Slider(
+        value = current,
+        onValueChange = { current = it },
+        onValueChangeFinished = { onDone(current.toDouble()) },
+        valueRange = range.start.toFloat()..range.endInclusive.toFloat(),
+        steps = ((range.endInclusive - range.start) / step).roundToInt() - 1,
+    )
+}
+
+@Composable
+private fun Buttons(model: ControlsModel) {
+    // The dialog: a new button, or the name of the one changed
+    var adding by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    Section("My buttons")
+    Text(
+        "New buttons appear in the middle of the screen. Move them in game: " +
+            "tap the gamepad's gear button, then Edit controls.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    model.layout.buttons.forEach { button ->
+        Row(
+            Modifier.fillMaxWidth().clickable { editing = button.name }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(button.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.widthIn(min = 72.dp))
+            Text(Keys.label(button.key), modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IconButton(onClick = { model.deleteButton(button.name) }) { Icon(Icons.Filled.Delete, "Delete ${button.label}") }
+        }
+    }
+    OutlinedButton(onClick = { adding = true }) {
+        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+        Spacer(Modifier.size(8.dp))
+        Text("Add a button")
+    }
+    val edited = editing?.let { name -> model.layout.buttons.find { it.name == name } }
+    if (adding || edited != null) {
+        val close = {
+            adding = false
+            editing = null
+        }
+        ButtonDialog(
+            edited,
+            onSave = { label, key ->
+                model.saveButton(edited?.name, label, key)
+                close()
+            },
+            onDismiss = close,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+/** @param button the one changed, null for a new one */
+private fun ButtonDialog(button: PlayerButton?, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var label by rememberSaveable { mutableStateOf(button?.label ?: "") }
+    var key by rememberSaveable { mutableStateOf(button?.key ?: "") }
+    var keysOpen by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (button == null) "New button" else "Button") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it.take(ControlsModel.LABEL_MAX) },
+                    label = { Text("Label") },
+                    singleLine = true,
+                )
+                ExposedDropdownMenuBox(expanded = keysOpen, onExpandedChange = { keysOpen = it }) {
+                    OutlinedTextField(
+                        value = if (key.isEmpty()) "" else Keys.label(key),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Key it sends") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(keysOpen) },
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(expanded = keysOpen, onDismissRequest = { keysOpen = false }) {
+                        Keys.ALL.forEach { (name, shown) ->
+                            DropdownMenuItem(text = { Text(shown) }, onClick = {
+                                key = name
+                                keysOpen = false
+                            })
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(label, key) }, enabled = label.isNotBlank() && key.isNotEmpty()) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun Reset(model: ControlsModel) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    OutlinedButton(onClick = { confirming = true }) { Text("Reset controls") }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Reset controls?") },
+            text = { Text("The game's controls come back: your buttons, places and settings are removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    model.reset()
+                    confirming = false
+                }) { Text("Reset") }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
+    }
+}

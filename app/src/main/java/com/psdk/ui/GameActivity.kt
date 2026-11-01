@@ -10,6 +10,7 @@ import android.widget.EditText
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import com.psdk.R
+import com.psdk.controls.ControlsActivity
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RemoteListenerConfig
 import com.scorbutics.litergss.NativeSurface
@@ -78,6 +79,21 @@ class GameActivity : AppCompatActivity() {
     /** Active "press again to quit" toast so the second press can dismiss it instantly. */
     private var gameBackToast: android.widget.Toast? = null
 
+    /**
+     * The Controls screen, opened over the game by its tools menu's Settings
+     * (start.rb's overlay.settings event). It saves as it goes: once closed,
+     * the game loads the player's layout file again.
+     */
+    private val controlsScreen = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        controlsOpen = false
+        HostMessages.send(this, CONTROLS_RELOAD_MESSAGE)
+    }
+
+    /** Settings tapped again before the screen showed: one screen only. */
+    private var controlsOpen = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Fresh process: redo the process-wide native setup EntryActivity
@@ -122,9 +138,12 @@ class GameActivity : AppCompatActivity() {
             },
             // start.rb emits game.ready once PSDK's first LiteRGSS::DisplayWindow.new returns
             hostEventListener = HostEventListener { event ->
-                if (event.topic == "game.ready") {
-                    android.util.Log.i(TAG, "game.ready event — hiding overlay")
-                    hideGameStartOverlay()
+                when (event.topic) {
+                    "game.ready" -> {
+                        android.util.Log.i(TAG, "game.ready event — hiding overlay")
+                        hideGameStartOverlay()
+                    }
+                    CONTROLS_EVENT -> runOnUiThread { openControls() }
                 }
             },
         )
@@ -288,6 +307,17 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    private fun openControls() {
+        if (isFinishing || isDestroyed || controlsOpen) return
+        val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION) ?: return
+        try {
+            controlsScreen.launch(ControlsActivity.intent(this, executionLocation))
+            controlsOpen = true
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Controls screen not opened", e)
+        }
+    }
+
     // onPause/onResume intentionally NOT overridden to push focus events:
     // the SurfaceHolder callbacks already do it (see the long note in
     // RootActivity). A second push produces back-to-back LostFocus events
@@ -369,6 +399,10 @@ class GameActivity : AppCompatActivity() {
 
         /** Result extra: the start.rb workload's exit code. */
         const val RESULT_EXIT_CODE = "EXIT_CODE"
+
+        /** TouchLayouts (lib/touch_layouts.rb): SETTINGS_EVENT and RELOAD_MESSAGE. */
+        private const val CONTROLS_EVENT = "overlay.settings"
+        private const val CONTROLS_RELOAD_MESSAGE = "overlay.reload"
 
         /** start.rb's helper modules: TouchLayouts loads the gamepad's layout files. */
         private val START_PRELUDES = listOf("lib/touch_layouts.rb")

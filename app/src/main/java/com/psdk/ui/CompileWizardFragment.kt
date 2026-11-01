@@ -161,6 +161,8 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         // menu never paints there. Item visibility is mode-dependent:
         //   - Game Logs: only when the release dir exists (a compile has
         //     run at least once — log files exist to inspect).
+        //   - Controls: the player's layout file of this project's game,
+        //     any time (no game runs while the wizard shows).
         //   - Delete project: any time we know which project this is
         //     (super-user always; classic has no Project entity).
         if (!classicBootstrap) {
@@ -172,6 +174,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 when (item.itemId) {
                     R.id.action_game_logs -> {
                         showGameLogs(executionLocation, releaseLocation)
+                        true
+                    }
+                    R.id.action_controls -> {
+                        startActivity(com.psdk.controls.ControlsActivity.intent(requireContext(), executionLocation))
                         true
                     }
                     R.id.action_delete_project -> {

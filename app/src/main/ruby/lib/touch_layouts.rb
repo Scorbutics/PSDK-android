@@ -75,6 +75,56 @@ module TouchLayouts
     overlay.on_layout_saved = ->(json) { write(player, json) }
   end
 
+  # The tools menu's Settings: the app opens its Controls screen over the
+  # game (GameActivity, on SETTINGS_EVENT), which changes the player's file,
+  # then posts RELOAD_MESSAGE. The game's thread reads it after each window
+  # update and loads both files again.
+  # @param window_class [Class] LiteRGSS::DisplayWindow
+  def serve_settings(overlay, fs, execution_location, window_class)
+    # A runtime before 1.5.0 has no Settings in the menu
+    return unless overlay.respond_to?(:on_settings=)
+
+    overlay.on_settings = lambda do
+      warn "[touch_layouts] #{SETTINGS_EVENT} not sent: no host" unless VMHost.emit(SETTINGS_EVENT)
+    end
+    Reload.action = lambda do
+      overlay.clear_layout
+      load(overlay, fs, execution_location)
+    end
+    window_class.prepend(Reload) unless window_class.ancestors.include?(Reload)
+  end
+
+  SETTINGS_EVENT = 'overlay.settings'.freeze
+  RELOAD_MESSAGE = 'overlay.reload'.freeze
+
+  # Hooked on the window's update (serve_settings)
+  module Reload
+    class << self
+      attr_accessor :action
+
+      # A failing reload must not reach the game, nor stay pending forever
+      def check
+        VMHost.each_message(RELOAD_MESSAGE) do |topic, _|
+          next unless topic == RELOAD_MESSAGE
+
+          begin
+            action&.call
+          rescue StandardError => e
+            warn "[touch_layouts] layout not reloaded: #{e.class}: #{e.message}"
+          end
+        end
+      rescue StandardError => e
+        warn "[touch_layouts] layout reload not read: #{e.class}: #{e.message}"
+      end
+    end
+
+    def update(*args)
+      result = super
+      Reload.check
+      result
+    end
+  end
+
   # Whole or not at all: the game may be killed while it writes
   def write(path, json)
     tmp = "#{path}.tmp"

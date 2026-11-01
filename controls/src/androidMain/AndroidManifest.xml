@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Opened over the game (its tools menu's Settings) and from a
+             project's page. The game process keeps running under it. -->
+        <activity android:name="com.psdk.controls.ControlsActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+    </application>
+</manifest>

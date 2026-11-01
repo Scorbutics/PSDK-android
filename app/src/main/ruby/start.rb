@@ -219,12 +219,15 @@ SafeRunner.run(
   rescue LoadError => e
     VMLogger.error "[start.rb] No on-screen gamepad in this runtime: #{e.message}"
   end
-  # Its layout: the game's file, then the player's (lib/touch_layouts.rb).
+  # Its layout: the game's file, then the player's (lib/touch_layouts.rb),
+  # loaded again once the app's Controls screen (the tools menu's Settings)
+  # changed it.
   # A layout problem must never stop the game: it keeps the default one.
   if defined?(LiteRGSS::TouchOverlay) && execution_location && !execution_location.empty?
     begin
       files = game_mode == 'debug_uncompiled' ? PhysFS : TouchLayouts::ReleaseFiles
       TouchLayouts.load(LiteRGSS::TouchOverlay, files, execution_location)
+      TouchLayouts.serve_settings(LiteRGSS::TouchOverlay, files, execution_location, LiteRGSS::DisplayWindow)
     rescue StandardError => e
       VMLogger.error "[start.rb] Touch layout not loaded: #{e.class}: #{e.message}"
     end

@@ -8,35 +8,40 @@ import com.scorbutics.rubyvm.LogMessage
 import java.util.concurrent.Executors
 
 /**
- * Sends the [LoaderMessage]s of [RootActivity] (LoaderHost.sendLoaderMessage).
+ * Posts messages to the scripts of this process's Ruby VM (VMHost.deliver,
+ * read with VMHost.each_message): the splash's [LoaderMessage]s
+ * (LoaderHost.sendLoaderMessage) in the shell process, the game's in the
+ * `:game` process.
  *
- * They go through an interpreter of their own (the loader's runs the
- * splash, a message posted there would wait for it to end), one after
- * the other on a background thread: callers never wait, and the splash
- * gets them in the order they were sent. Best-effort: a failure is
- * logged, the splash keeps its state.
+ * They go through an interpreter of their own (the one running the splash or
+ * the game is busy until it ends: a message posted there would wait), one
+ * after the other on a background thread: callers never wait, and the
+ * scripts get them in the order they were sent. Best-effort: a failure is
+ * logged, the scripts keep their state.
  */
-internal object LoaderMessages {
-    private const val TAG = "LoaderMessages"
+internal object HostMessages {
+    private const val TAG = "HostMessages"
 
     private val sender = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "loader-messages").apply { isDaemon = true }
+        Thread(task, "host-messages").apply { isDaemon = true }
     }
 
     /** Created on [sender] at the first message, kept for the process. */
     private var interpreter: PsdkInterpreter? = null
 
-    fun send(context: Context, message: LoaderMessage) {
+    fun send(context: Context, topic: String, payload: String = "") {
         val appContext = context.applicationContext
-        sender.execute { post(appContext, message.topic, message.payload) }
+        sender.execute { post(appContext, topic, payload) }
     }
+
+    fun send(context: Context, message: LoaderMessage) = send(context, message.topic, message.payload)
 
     /**
      * A new splash state: what the splash was shown is not shown again.
      * Asynchronous like the rest: a splash reading before it lands (not
      * before show! has loaded its assets) briefly shows the old state.
      */
-    fun clear(context: Context) {
+    fun clearLoader(context: Context) {
         val appContext = context.applicationContext
         sender.execute {
             // No interpreter yet: nothing was ever sent, nothing to clear
@@ -58,7 +63,7 @@ internal object LoaderMessages {
             override fun onLogMessage(logMessage: LogMessage) {
                 // A post's own errors only: this interpreter can also get
                 // the process's native output (interpreter id 0), which
-                // the splash's interpreter does not log either.
+                // the scripts' interpreter does not log either.
                 if (logMessage.isError() && logMessage.interpreterId != 0) Log.e(TAG, logMessage.message)
             }
         }).also { interpreter = it }

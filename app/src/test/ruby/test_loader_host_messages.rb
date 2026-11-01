@@ -1,5 +1,5 @@
 # Unit tests for Loader::HostMessages — how the splash applies the messages
-# the host sends (LoaderMessages.kt) through VMHost.
+# the host sends (HostMessages.kt) through VMHost.
 #
 # VMHost is the runtime's (embedded-ruby-vm); this stand-in keeps its
 # each_message contract: the pending messages under a prefix, oldest first,

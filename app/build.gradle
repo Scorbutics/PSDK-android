@@ -32,7 +32,7 @@ base {
 }
 
 android {
-    compileSdkVersion 34
+    compileSdkVersion 35
 
     sourceSets {
         main {
@@ -116,6 +116,7 @@ dependencies {
     implementation(libs.kotlinx.serialization)
     implementation libs.kotlin.stdlib
 
+    implementation project(':controls')
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
 
