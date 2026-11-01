@@ -25,7 +25,6 @@ module Loader
       @closed = false
       @has_focus = true
       @first_pump = true
-      @skip_resize = false
       # Touch events arrive in surface-pixel coordinates; the icon is
       # laid out in logical canvas units. The surface can change size
       # while the loader runs (RootActivity keeps itself alive across
@@ -53,13 +52,10 @@ module Loader
       # ignored: the window is shared between splash runs, and a run that
       # left before pumping events leaves its close request queued for the
       # next one (which only starts once that run has ended, so later
-      # Closed events are all its own). On a false return litergss2 falls
-      # through to its Resized case (DisplayWindowInput.cpp, no break) with
-      # the size fields a Closed never sets: that call is skipped.
+      # Closed events are all its own).
       @window.on_closed = proc do
         if @first_pump && !loader_stop_requested?
           loader_say 'stale close request ignored'
-          @skip_resize = true
           next false
         end
 
@@ -81,11 +77,7 @@ module Loader
       # Keeps taps on the icon after the surface is resized; the canvas
       # itself is rebuilt by RootActivity restarting the loader.
       @window.on_resized = proc do |surface_w, surface_h|
-        if @skip_resize
-          @skip_resize = false
-        else
-          update_touch_scale(surface_w.to_i, surface_h.to_i)
-        end
+        update_touch_scale(surface_w.to_i, surface_h.to_i)
       end
       @window.on_touch_began = proc do |finger, tx, ty|
         @on_touch_began&.call(finger, tx * @touch_scale_x, ty * @touch_scale_y)
@@ -141,7 +133,6 @@ module Loader
     # After each event pump (see #open's on_closed)
     def pumped
       @first_pump = false
-      @skip_resize = false
     end
 
     # Surface pixels -> logical canvas units, per axis.
