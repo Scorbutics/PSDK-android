@@ -20,7 +20,8 @@ import com.psdk.ui.CompileWizardFragment
 import com.psdk.ui.CompileWizardViewModel
 import com.psdk.ui.LoaderHost
 import com.psdk.ui.LoaderMessage
-import com.psdk.ui.LogBottomSheetFragment
+import com.psdk.logs.LogFile
+import com.psdk.logs.LogsActivity
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -134,12 +135,8 @@ class CompileDoneFragment : Fragment() {
 
     private fun showLogs(logFile: File, errorLogFile: File) {
         if (logFile.exists()) {
-            val fragment = LogBottomSheetFragment.newInstance(
-                outputLogPath = logFile.absolutePath,
-                errorLogPath = if (errorLogFile.exists()) errorLogFile.absolutePath else null,
-                title = "Compilation Logs"
-            )
-            fragment.show(parentFragmentManager, "compilation_logs")
+            val files = listOf(LogFile("Output", logFile.path), LogFile("Errors", errorLogFile.path, fromEnd = false))
+            startActivity(LogsActivity.intent(requireContext(), "Compilation logs", files))
         }
     }
 

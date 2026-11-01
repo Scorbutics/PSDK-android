@@ -1,8 +1,11 @@
-// The player's Controls screen: the on-screen gamepad's settings, written to
-// the player's layout file (litergss-everywhere's TouchOverlay::LayoutFile).
-// Kotlin Multiplatform: the screen and the file are shared code; Android
-// hosts them in ControlsActivity. An iOS target joins once an iOS app hosts
-// the module.
+// The app's Compose screens:
+// - com.psdk.controls, the player's Controls: the on-screen gamepad's
+//   settings, written to the player's layout file (litergss-everywhere's
+//   TouchOverlay::LayoutFile);
+// - com.psdk.logs, a developer's logs, never shown from the player's settings.
+// Kotlin Multiplatform: the screens and their models are shared code; Android
+// hosts them in activities. An iOS target joins once an iOS app hosts the
+// module.
 plugins {
     id 'org.jetbrains.kotlin.multiplatform'
     id 'com.android.kotlin.multiplatform.library'
@@ -15,7 +18,7 @@ kotlin {
     jvmToolchain(17)
 
     androidLibrary {
-        namespace = 'com.psdk.controls'
+        namespace = 'com.psdk.screens'
         compileSdk = 35
         minSdk = 26
         withHostTest {}

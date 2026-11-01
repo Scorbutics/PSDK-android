@@ -33,9 +33,9 @@ jobs:
         env:
           GITHUB_USERNAME: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # The Controls module's tests don't depend on the Ruby variant: run
+        # The screens module's tests don't depend on the Ruby variant: run
         # them once, with the 3.0 build
-        run: ./gradlew assembleDebug assembleRelease ${{ matrix.ruby_variant == '3.0' && ':controls:testAndroidHostTest' || '' }} -PrubyVariant=${{ matrix.ruby_variant }}
+        run: ./gradlew assembleDebug assembleRelease ${{ matrix.ruby_variant == '3.0' && ':screens:testAndroidHostTest' || '' }} -PrubyVariant=${{ matrix.ruby_variant }}
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

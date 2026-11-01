@@ -30,9 +30,6 @@
 
         <!-- TextInput style -->
         <item name="textInputStyle">@style/Widget.Psdk.TextInputLayout</item>
-
-        <!-- Bottom sheet -->
-        <item name="bottomSheetDialogTheme">@style/Theme.Psdk.BottomSheet</item>
     </style>
 
     <!-- Button Styles -->
@@ -80,24 +77,6 @@
         <item name="boxCornerRadiusTopEnd">8dp</item>
         <item name="boxCornerRadiusBottomStart">8dp</item>
         <item name="boxCornerRadiusBottomEnd">8dp</item>
-    </style>
-
-    <!-- Bottom Sheet Theme -->
-    <style name="Theme.Psdk.BottomSheet" parent="Theme.MaterialComponents.BottomSheetDialog">
-        <item name="bottomSheetStyle">@style/Widget.Psdk.BottomSheet</item>
-        <item name="android:colorBackground">@color/colorSurface</item>
-        <item name="android:windowIsFloating">false</item>
-    </style>
-
-    <style name="Widget.Psdk.BottomSheet" parent="Widget.MaterialComponents.BottomSheet">
-        <item name="backgroundTint">@color/colorSurface</item>
-        <item name="shapeAppearance">@style/ShapeAppearance.Psdk.BottomSheet</item>
-    </style>
-
-    <style name="ShapeAppearance.Psdk.BottomSheet" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSizeTopLeft">16dp</item>
-        <item name="cornerSizeTopRight">16dp</item>
     </style>
 
     <!-- Dialog Theme -->

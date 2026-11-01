@@ -173,7 +173,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             toolbar.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     R.id.action_game_logs -> {
-                        showGameLogs(executionLocation, releaseLocation)
+                        startActivity(GameLogs.intent(requireContext(), executionLocation))
                         true
                     }
                     R.id.action_controls -> {
@@ -621,15 +621,6 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         }
         android.util.Log.i(TAG, "launchGame: calling host.startGame(execLoc=$executionLocation, mode=$selectedMode)")
         host.startGame(executionLocation, selectedMode)
-    }
-
-    private fun showGameLogs(executionLocation: String, releaseLocation: String) {
-        val fragment = LogBottomSheetFragment.newInstance(
-            outputLogPath = "$executionLocation/last_stdout.log",
-            errorLogPath = "$releaseLocation/Error.log",
-            title = "Game Logs",
-        )
-        fragment.show(parentFragmentManager, "game_logs")
     }
 
     /**

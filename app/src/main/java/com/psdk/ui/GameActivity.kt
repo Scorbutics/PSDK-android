@@ -276,21 +276,13 @@ class GameActivity : AppCompatActivity() {
      * Process-local, which is why it runs here and not in the shell process.
      */
     private fun configureGameEnv(executionLocation: String, mode: GameMode) {
-        // The error log lives next to whichever Game.rb actually ran:
-        //   RELEASE          → <exec>/Release/Error.log  (PSDK's traditional spot)
-        //   DEBUG_UNCOMPILED → <exec>/Error.log         (we chdir to <exec>)
-        val errorLogLocation = if (mode == GameMode.DEBUG_UNCOMPILED) {
-            executionLocation
-        } else {
-            "$executionLocation/Release"
-        }
         android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
-        android.system.Os.setenv("RGSS_LOG_FILE", "$executionLocation/last_stdout.log", true)
-        android.system.Os.setenv("RGSS_ERROR_LOG_FILE", "$errorLogLocation/Error.log", true)
+        android.system.Os.setenv("RGSS_LOG_FILE", GameLogs.output(executionLocation).path, true)
+        android.system.Os.setenv("RGSS_ERROR_LOG_FILE", GameLogs.errors(executionLocation, mode).path, true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
 
         try {
-            FileWriter("$executionLocation/last_stdout.log", false).flush()
+            FileWriter(GameLogs.output(executionLocation), false).flush()
         } catch (e: Exception) {
             android.util.Log.w(TAG, "failed to reset stdout log: ${e.message}")
         }
@@ -310,8 +302,13 @@ class GameActivity : AppCompatActivity() {
     private fun openControls() {
         if (isFinishing || isDestroyed || controlsOpen) return
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION) ?: return
+        // A developer's game (debug mode) gets a link to its logs
+        val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
+        val logs = if (mode == GameMode.DEBUG_UNCOMPILED) {
+            GameLogs.intent(this, executionLocation, GameLogs.errors(executionLocation, mode))
+        } else null
         try {
-            controlsScreen.launch(ControlsActivity.intent(this, executionLocation))
+            controlsScreen.launch(ControlsActivity.intent(this, executionLocation, logs))
             controlsOpen = true
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Controls screen not opened", e)

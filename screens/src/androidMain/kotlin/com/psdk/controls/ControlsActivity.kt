@@ -21,13 +21,20 @@ class ControlsActivity : ComponentActivity() {
         // The screen is dark whatever the system's theme
         enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         val model = ControlsModel(FileControlsStore(File(executionLocation)), AndroidLabelRenderer())
-        setContent { ControlsScreen(model, onClose = ::finish) }
+        @Suppress("DEPRECATION") // getParcelableExtra(name, class) needs API 33
+        val logs = intent.getParcelableExtra<Intent>(EXTRA_LOGS)
+        val onLogs = logs?.let { { startActivity(it) } }
+        setContent { ControlsScreen(model, onClose = ::finish, onLogs = onLogs) }
     }
 
     companion object {
         const val EXTRA_EXECUTION_LOCATION = "EXECUTION_LOCATION"
+        private const val EXTRA_LOGS = "LOGS"
 
-        fun intent(context: Context, executionLocation: String): Intent =
-            Intent(context, ControlsActivity::class.java).putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
+        /** @param logs opens the game's logs, for a developer (debug mode): a link to it */
+        fun intent(context: Context, executionLocation: String, logs: Intent? = null): Intent =
+            Intent(context, ControlsActivity::class.java)
+                .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)
+                .putExtra(EXTRA_LOGS, logs)
     }
 }

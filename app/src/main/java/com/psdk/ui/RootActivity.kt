@@ -385,10 +385,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         if (!crashed && (exitCode == null || exitCode == 0)) return
         val location = gameExecutionLocation ?: return
 
-        val errorLog = listOf(java.io.File(location, "Release/Error.log"), java.io.File(location, "Error.log"))
-            // 2 s slack: file mtimes can be coarser than the clock.
-            .filter { it.isFile && it.lastModified() >= gameStartedAtMs - 2_000 }
-            .maxByOrNull { it.lastModified() }
+        // 2 s slack: file mtimes can be coarser than the clock.
+        val errorLog = GameLogs.lastErrors(location)?.takeIf { it.lastModified() >= gameStartedAtMs - 2_000 }
         val details = errorLog?.let { runCatching { it.readText() }.getOrNull() }?.takeIf { it.isNotBlank() }
         val summary = details?.let(::summarizeErrorLog)
             ?: if (crashed) "The game closed unexpectedly and did not write an error report."
@@ -398,11 +396,8 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             .setTitle("The game stopped")
             .setMessage(summary)
             .setPositiveButton(android.R.string.ok, null)
-        if (details != null) {
-            dialog.setNeutralButton("Details") { _, _ ->
-                LogBottomSheetFragment.newInstanceWithContent(details, title = "Game error")
-                    .show(supportFragmentManager, "game_error")
-            }
+        if (errorLog != null && details != null) {
+            dialog.setNeutralButton("Details") { _, _ -> startActivity(GameLogs.intent(this, location, errorLog, errorsFirst = true)) }
         }
         dialog.show()
     }

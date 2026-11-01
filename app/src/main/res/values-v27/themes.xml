@@ -25,6 +25,5 @@
         <item name="floatingActionButtonStyle">@style/Widget.Psdk.FAB</item>
         <item name="materialCardViewStyle">@style/Widget.Psdk.CardView</item>
         <item name="textInputStyle">@style/Widget.Psdk.TextInputLayout</item>
-        <item name="bottomSheetDialogTheme">@style/Theme.Psdk.BottomSheet</item>
     </style>
 </resources>

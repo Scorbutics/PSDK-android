@@ -36,7 +36,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -46,32 +45,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.psdk.screens.PsdkTheme
 import kotlin.math.roundToInt
-
-/** The app's palette (PSDK-android's colors.xml). */
-private val COLORS = darkColorScheme(
-    primary = Color(0xFF03DAC5),
-    onPrimary = Color.Black,
-    secondary = Color(0xFF0F70B0),
-    background = Color(0xFF1E1E2E),
-    surface = Color(0xFF2A2A3E),
-    surfaceVariant = Color(0xFF3A3A4E),
-    surfaceContainerHigh = Color(0xFF323248),
-    onSurfaceVariant = Color(0xFF8B8B9E),
-    error = Color(0xFFCF6679),
-)
 
 /**
  * The player's Controls: the gamepad's size, opacity and A / B order, the
  * player's own buttons, and the way back to the game's controls. Places are
  * changed in game (the gamepad's tools button, Edit controls).
+ * @param onLogs the game's logs, for a developer only (debug mode): null hides them
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ControlsScreen(model: ControlsModel, onClose: () -> Unit) {
-    MaterialTheme(colorScheme = COLORS) {
+fun ControlsScreen(model: ControlsModel, onClose: () -> Unit, onLogs: (() -> Unit)? = null) {
+    PsdkTheme {
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -93,6 +80,11 @@ fun ControlsScreen(model: ControlsModel, onClose: () -> Unit) {
                 Buttons(model)
                 HorizontalDivider()
                 Reset(model)
+                onLogs?.let {
+                    HorizontalDivider()
+                    Section("Developer")
+                    OutlinedButton(onClick = it) { Text("Game logs") }
+                }
             }
         }
     }
