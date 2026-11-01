@@ -82,6 +82,13 @@ class TestTouchLayouts < Minitest::Test
     refute File.exist?(File.join(@dir, '../escape.png'))
   end
 
+  def test_an_image_path_not_read_alike_everywhere_is_refused
+    ['touch\\run.png', "touch/run\0.png", "t\xFF.png"].each do |path|
+      refute TouchLayouts.safe?(path), path.inspect
+    end
+    assert TouchLayouts.safe?('touch/run.png')
+  end
+
   def test_no_game_file_installs_nothing
     assert_equal 0, TouchLayouts.install_game_file(FakeFs.new({}), @dir)
   end

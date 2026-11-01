@@ -151,9 +151,12 @@ module TouchLayouts
     File.join(dir, path)
   end
 
+  # Inside its directory, a path any file system reads alike (a backslash
+  # separates on Windows): the exporter packs a --compiled release's images
+  # by the same rule (exporter/export_android.rb touch_layout_files)
   def safe?(path)
-    path.is_a?(String) && !path.empty? && !path.start_with?('/') && !path.end_with?('/') &&
-      !path.split('/').include?('..')
+    path.is_a?(String) && path.valid_encoding? && !path.empty? && !path.start_with?('/') && !path.end_with?('/') &&
+      !path.include?('\\') && !path.include?("\0") && !path.split('/').include?('..')
   end
 end
 

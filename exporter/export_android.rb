@@ -503,6 +503,28 @@ def release_files(with_saves)
   end
 end
 
+# --compiled: the game's layout of the on-screen gamepad comes from the
+# project, the compilation packing the file into a Data/*.dat and leaving its
+# images out. Its images are relative to Data/ and stay inside it: the rule
+# of the app's TouchLayouts.safe? (app/src/main/ruby/lib/touch_layouts.rb).
+TOUCH_LAYOUT_PATH = 'Data/touch_layout.json'
+def touch_layout_files
+  return [] unless File.file?(TOUCH_LAYOUT_PATH)
+
+  data = JSON.parse(File.read(TOUCH_LAYOUT_PATH))
+  buttons = data['buttons'] if data.is_a?(Hash)
+  images = buttons.is_a?(Hash) ? buttons.each_value.filter_map { |entry| entry['image'] if entry.is_a?(Hash) } : []
+  images = images.select do |path|
+    path.is_a?(String) && path.valid_encoding? && !path.empty? && !path.start_with?('/') && !path.end_with?('/') &&
+      !path.include?('\\') && !path.include?("\0") && !path.split('/').include?('..')
+  end
+  ([TOUCH_LAYOUT_PATH] + images.map { |path| File.join('Data', path) }.select { |path| File.file?(path) }).uniq
+rescue StandardError => e
+  # The runtime reports a broken file and keeps the default layout
+  warn "  #{TOUCH_LAYOUT_PATH}: images not read (#{e.class}: #{e.message})"
+  [TOUCH_LAYOUT_PATH]
+end
+
 # In archive mode the archive is the final artifact; in APK mode it's an
 # intermediate that gets bundled into assets/ before rebuilding the APK.
 archive_name = plain_mode ? 'game.psa' : 'game.epsa'
@@ -522,6 +544,9 @@ Zip::File.open(zip_path, create: true) do |zip|
       zip.mkdir(dir) unless files.any? { |rel| rel.start_with?("#{dir}/") }
     end
     zip.add(STUDIO_ICON_ARCHIVE_PATH, studio_icon_path) if studio_icon_path && !files.include?(STUDIO_ICON_ARCHIVE_PATH)
+    layout_files = touch_layout_files.reject { |rel| files.include?(rel) }
+    layout_files.each { |rel| zip.add(rel, rel) }
+    puts "  #{TOUCH_LAYOUT_PATH}: #{layout_files.size} file(s) from the project" unless layout_files.empty?
     next
   end
 

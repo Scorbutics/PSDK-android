@@ -64,6 +64,45 @@ class ExportAndroidTest < Minitest::Test
     assert_archive_contents(File.binread(output_path))
   end
 
+  def test_compiled_archive_keeps_the_game_touch_layout
+    {
+      'Release/Game.yarb' => RubyVM::InstructionSequence.compile('1').to_binary,
+      'Release/Data/0.dat' => 'compiled data',
+      'Data/touch_layout.json' => '{"version": 1, "buttons": {"run": {"key": "LShift", "image": "touch/run.png"}, ' \
+                                  '"out": {"key": "A", "image": "../Game.rb"}, "out2": {"key": "B", "image": "..\\\\Game.rb"}, ' \
+                                  '"same": {"key": "C", "image": "touch_layout.json"}, "nul": {"key": "D", "image": "touch/run\\u0000.png"}}}',
+      'Data/touch/run.png' => ICON
+    }.each do |path, content|
+      FileUtils.mkdir_p(File.dirname(File.join(@project, path)))
+      File.binwrite(File.join(@project, path), content)
+    end
+    output_path = File.join(@dir, 'game.psa')
+    export('--compiled', '-o', output_path)
+    names = Zip::File.open_buffer(File.binread(output_path)).entries.map(&:name)
+    assert_includes names, 'Data/0.dat'
+    assert_includes names, 'Data/touch_layout.json'
+    assert_includes names, 'Data/touch/run.png'
+    refute names.any? { |name| name.include?('..') }, names.inspect
+    assert_equal names.uniq, names
+  end
+
+  def test_compiled_archive_with_an_unreadable_touch_layout
+    {
+      'Release/Game.yarb' => RubyVM::InstructionSequence.compile('1').to_binary,
+      'Data/touch_layout.json' => "{\"version\": 1, \"buttons\": {\"bad\": {\"key\": \"A\", \"image\": \"t\xFF/r.png\"}, " \
+                                  "\"run\": {\"key\": \"B\", \"image\": \"touch/run.png\"}}}".b,
+      'Data/touch/run.png' => ICON
+    }.each do |path, content|
+      FileUtils.mkdir_p(File.dirname(File.join(@project, path)))
+      File.binwrite(File.join(@project, path), content)
+    end
+    output_path = File.join(@dir, 'game.psa')
+    export('--compiled', '-o', output_path)
+    names = Zip::File.open_buffer(File.binread(output_path)).entries.map(&:name)
+    assert_includes names, 'Data/touch_layout.json'
+    assert_includes names, 'Data/touch/run.png'
+  end
+
   def test_encrypted_archive_for_a_cert
     keystore = generate_keystore
     cert_path = File.join(@dir, 'cert.der')
