@@ -141,7 +141,9 @@ module ApkZip
     elsif entry.path
       File.open(entry.path, 'rb') { |file| IO.copy_stream(file, io) }
     else
-      IO.copy_stream(source, io, entry.compressed_size, entry.data_offset)
+      # No copy_stream offset: it reads with pread(), which Windows lacks
+      source.seek(entry.data_offset)
+      IO.copy_stream(source, io, entry.compressed_size)
     end
   end
 

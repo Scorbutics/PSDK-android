@@ -96,7 +96,8 @@ module AndroidExporterPlugin
 
         target = File.join(staging, entry.name.delete_prefix("#{EXPORTER_DIR}/"))
         FileUtils.mkdir_p(File.dirname(target))
-        File.binwrite(target, entry.get_input_stream.read)
+        # The block closes the stream: Windows can't delete a zip still open
+        entry.get_input_stream { |stream| File.binwrite(target, stream.read) }
       end
     end
     File.rename(staging, File.join(version_dir, EXPORTER_DIR))

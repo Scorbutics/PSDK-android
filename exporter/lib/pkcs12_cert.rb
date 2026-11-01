@@ -76,7 +76,7 @@ module Pkcs12Cert
               'The APK must be signed by apksigner (or jarsigner) before its cert can ' \
               'be extracted. Build a signed APK first.'
       end
-      pkcs7_data = rsa_entry.get_input_stream.read
+      pkcs7_data = rsa_entry.get_input_stream(&:read)
 
       begin
         pkcs7 = OpenSSL::PKCS7.new(pkcs7_data)
