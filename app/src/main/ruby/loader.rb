@@ -11,8 +11,8 @@
 # Reads project metadata / icon / font from <pwd>/loader_assets/ —
 # files extract_loader_assets.rb wrote during archive validation. That
 # means this script has zero archive dependency: no PhysFS, no
-# ArchiveMount, no EpsaStream. The mount is owned by check_engine.rb
-# on the compile side.
+# ArchiveMount, no EpsaStream. The compile mounts the archive on its own
+# side (check_engine.rb).
 #
 # Lifecycle:
 #   1. Loader::Splash.new + show! + run_intro.

@@ -53,8 +53,9 @@ puts "physfs gem is valid (write_dir=#{write_dir_value.inspect}, shim_installed=
 # Mount the encrypted .epsa archive at the PhysFS root. compile.rb,
 # copy_saves.rb, and backup_saves.rb all assume a live mount — pulling
 # the mount into the first compile step keeps that contract enforced in
-# one place. ArchiveMount.mount! is idempotent (probes Data/Studio/psdk.dat
-# before mounting), so re-runs / retries in the same interpreter are safe.
+# one place. ArchiveMount.mount! is idempotent (a script mounting twice
+# holds the mount once), so re-runs / retries in the same interpreter are
+# safe.
 puts "Mounting encrypted archive"
 ArchiveMount.mount!
 raise "Archive mount did not produce a usable VFS" unless ArchiveMount.mounted?

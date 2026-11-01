@@ -40,8 +40,7 @@ TARGET_VERSION   = File.join(TARGET_DIR, 'extract_version').freeze
 EXTRACT_VERSION  = '2'.freeze
 
 # The PhysFS state is process-wide: a compile started meanwhile (the game icon
-# tapped during the validation) may have mounted the archive already
-mounted_here = !ArchiveMount.mounted?
+# tapped during the validation) shares the mount (ArchiveMount)
 ArchiveMount.mount!
 
 def pick_font_source
@@ -88,48 +87,47 @@ def detect_icon_color(png_data)
   [rs[mid], gs[mid], bs[mid]]
 end
 
-font_src = pick_font_source
-compiled = GameContent.compiled_release?(PhysFS)
-if compiled
-  GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME))
-  infos = GameContent.compiled_infos(PhysFS)
-  raise "#{GameContent::COMPILED_INFOS} missing from #{GameContent::COMPILED_CONFIGS}" unless infos
-  infos_json = JSON.generate(infos)
-  icon_src = 'studio_icon.png' if PhysFS.exist?('studio_icon.png')
-  icon_bytes = icon_src ? PhysFS.read(icon_src) : GameContent.compiled_icon(PhysFS)
-  raise "#{GameContent::COMPILED_ICON} icon missing from #{GameContent::COMPILED_ICONS.join(', ')}" unless icon_bytes
-  icon_src ||= GameContent::COMPILED_ICONS.join('|')
-else
-  raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
-  icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
-  raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
-  infos_json = PhysFS.read(INFOS_CONFIG_SRC)
-  icon_bytes = PhysFS.read(icon_src)
+begin
+  font_src = pick_font_source
+  compiled = GameContent.compiled_release?(PhysFS)
+  if compiled
+    GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME))
+    infos = GameContent.compiled_infos(PhysFS)
+    raise "#{GameContent::COMPILED_INFOS} missing from #{GameContent::COMPILED_CONFIGS}" unless infos
+    infos_json = JSON.generate(infos)
+    icon_src = 'studio_icon.png' if PhysFS.exist?('studio_icon.png')
+    icon_bytes = icon_src ? PhysFS.read(icon_src) : GameContent.compiled_icon(PhysFS)
+    raise "#{GameContent::COMPILED_ICON} icon missing from #{GameContent::COMPILED_ICONS.join(', ')}" unless icon_bytes
+    icon_src ||= GameContent::COMPILED_ICONS.join('|')
+  else
+    raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
+    icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
+    raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
+    infos_json = PhysFS.read(INFOS_CONFIG_SRC)
+    icon_bytes = PhysFS.read(icon_src)
+  end
+
+  FileUtils.mkdir_p(TARGET_DIR)
+  File.binwrite(TARGET_INFOS, infos_json)
+  File.binwrite(TARGET_ICON,  icon_bytes)
+  File.binwrite(TARGET_FONT,  PhysFS.read(font_src))
+  # Removed otherwise: the directory may hold a previous import's marker
+  compiled ? File.write(TARGET_COMPILED, '') : FileUtils.rm_f(TARGET_COMPILED)
+  File.write(TARGET_VERSION, EXTRACT_VERSION)
+
+  # Best-effort: an icon that decodes to no opaque pixels (all-transparent
+  # PNG, or a decode failure) simply leaves icon_color.json absent —
+  # loader.rb falls back to its default indigo gradient in that case.
+  icon_color = detect_icon_color(icon_bytes)
+  if icon_color
+    File.write(TARGET_COLOR, JSON.generate(r: icon_color[0], g: icon_color[1], b: icon_color[2]))
+  end
+
+  puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
+       " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
+ensure
+  # Released even on a failure: the archive stays mounted while a compile
+  # running meanwhile holds it (it would lose its whole VFS: LoadError on
+  # ./Game.rb), else it is unmounted.
+  ArchiveMount.unmount!
 end
-
-FileUtils.mkdir_p(TARGET_DIR)
-File.binwrite(TARGET_INFOS, infos_json)
-File.binwrite(TARGET_ICON,  icon_bytes)
-File.binwrite(TARGET_FONT,  PhysFS.read(font_src))
-# Removed otherwise: the directory may hold a previous import's marker
-compiled ? File.write(TARGET_COMPILED, '') : FileUtils.rm_f(TARGET_COMPILED)
-File.write(TARGET_VERSION, EXTRACT_VERSION)
-
-# Best-effort: an icon that decodes to no opaque pixels (all-transparent
-# PNG, or a decode failure) simply leaves icon_color.json absent —
-# loader.rb falls back to its default indigo gradient in that case.
-icon_color = detect_icon_color(icon_bytes)
-if icon_color
-  File.write(TARGET_COLOR, JSON.generate(r: icon_color[0], g: icon_color[1], b: icon_color[2]))
-end
-
-puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
-     " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
-
-# Unmount so this validation-time mount does not leak into the compile
-# interpreter, which mounts again from check_engine.rb. The PhysFS state
-# is process-wide (statically linked Init_physfs), not per-interpreter,
-# so without this the compile-side mount would stack a second copy. A mount
-# made by a compile running meanwhile stays: it would lose its whole VFS
-# (LoadError on ./Game.rb).
-ArchiveMount.unmount! if mounted_here
