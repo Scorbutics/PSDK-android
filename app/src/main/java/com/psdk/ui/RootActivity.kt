@@ -11,6 +11,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.psdk.R
 import com.psdk.ruby.vm.PsdkInterpreter
+import com.scorbutics.litergss.LiteRgssSurfaceView
 import com.scorbutics.litergss.NativeSurface
 import com.scorbutics.rubyvm.HostEvent
 import com.scorbutics.rubyvm.HostEventListener
@@ -150,7 +151,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         // A new activity in a process that already showed a splash: what
         // that splash was shown is not for this one. setLoaderState clears
         // too, but onSurfaceReady's fallback start doesn't go through it.
-        HostMessages.clearLoader(this)
+        HostMessages.clearLoader()
 
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
@@ -298,7 +299,7 @@ class RootActivity : AppCompatActivity(), LoaderHost {
             currentLoaderState = state
             prepareAssetsFor(state)
             // What the previous state's splash showed is not for the new one
-            HostMessages.clearLoader(this)
+            HostMessages.clearLoader()
             startLoaderForCurrentState()
         }
     }

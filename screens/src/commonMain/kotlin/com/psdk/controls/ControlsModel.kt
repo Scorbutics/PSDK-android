@@ -3,6 +3,9 @@ package com.psdk.controls
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.scorbutics.litergss.overlay.ActionLayout
+import com.scorbutics.litergss.overlay.PlayerButton
+import com.scorbutics.litergss.overlay.PlayerLayout
 
 /** The game's folder, where the player's layout file and its images are. */
 interface ControlsStore {

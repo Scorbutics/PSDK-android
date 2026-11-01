@@ -130,6 +130,7 @@ android {
 
 ### Runtime
 - **[`rgss-runtime-android`](https://github.com/Scorbutics/litergss-everywhere)**: Bundles all native libraries (SFML, Ruby VM, OpenAL, audio codecs, FreeType, etc.) — published to [GitHub Packages](https://github.com/Scorbutics/litergss-everywhere/packages)
+- **[`litergss-host`](https://github.com/Scorbutics/litergss-everywhere)**: The runtime's Android host (the game's surface view, input and soft keyboard bridges, messages to the scripts) and the touch overlay's layout model, published next to it with the same version
 
 ### Android Libraries (Kotlin/Java)
 - **AndroidX Room**: Database persistence (v2.6.1)

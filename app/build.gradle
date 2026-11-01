@@ -2,7 +2,6 @@
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
-    id 'org.jetbrains.kotlin.plugin.serialization'
     id 'com.google.devtools.ksp' version '2.3.6'
 }
 
@@ -113,7 +112,6 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.zip4j)
     implementation(libs.legacy)
-    implementation(libs.kotlinx.serialization)
     implementation libs.kotlin.stdlib
 
     implementation project(':screens')
@@ -121,5 +119,6 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
 
     // rgss-runtime is published once per Ruby variant: <version>-ruby<variant>.
-    implementation "com.scorbutics.rubyvm:rgss-runtime-android:${libs.versions.rgss.runtime.android.get()}-ruby${rubyVariant}"
+    implementation "com.scorbutics.rubyvm:rgss-runtime-android:${libs.versions.litergss.get()}-ruby${rubyVariant}"
+    implementation libs.litergss.host
 }

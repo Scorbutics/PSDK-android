@@ -18,7 +18,6 @@ buildscript {
 }
 
 plugins {
-    id 'org.jetbrains.kotlin.plugin.serialization' version "$kotlin_version" apply false
     id 'org.jetbrains.kotlin.plugin.compose' version "$kotlin_version" apply false
     id 'org.jetbrains.compose' version "1.10.3" apply false
 }

@@ -7,9 +7,11 @@ material = "1.7.0"
 constraintlayout = "2.1.4"
 legacy = "1.0.0"
 zip4j = "2.11.5"
-kotlinx-serialization = "1.7.0"
-# Base version; app/build.gradle appends the -ruby<variant> suffix.
-rgss-runtime-android = "1.8.0"
+# litergss-everywhere's release: rgss-runtime-android (app/build.gradle
+# appends the -ruby<variant> suffix) and litergss-host, its Android host and
+# layout model (one artifact for every Ruby variant). They go together: the
+# runtime's natives are litergss-host's NativeSurface.
+litergss = "1.9.0"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -20,4 +22,4 @@ constraintlayout = { module = "androidx.constraintlayout:constraintlayout", vers
 legacy = { module = "androidx.legacy:legacy-support-v4", version.ref = "legacy" }
 bcprov-jdk15on = { module = "org.bouncycastle:bcprov-jdk15on", version.ref = "bcprov-jdk15on" }
 zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
-kotlinx-serialization = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+litergss-host = { module = "com.scorbutics.litergss:litergss-host", version.ref = "litergss" }

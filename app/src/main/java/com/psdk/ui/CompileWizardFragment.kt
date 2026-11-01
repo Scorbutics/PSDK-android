@@ -22,6 +22,7 @@ import com.psdk.compilation.ArchiveValidator
 import com.psdk.compilation.CompilationEngine
 import com.psdk.ui.wizard.CompileDoneFragment
 import com.psdk.ui.wizard.CompileProgressFragment
+import com.scorbutics.litergss.LiteRgssSurfaceView
 import java.io.File
 
 /**
