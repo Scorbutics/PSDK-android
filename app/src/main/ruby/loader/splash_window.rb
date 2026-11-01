@@ -23,7 +23,6 @@ module Loader
     def initialize
       @width, @height = compute_logical_size
       @closed = false
-      @has_focus = true
       @first_pump = true
       # Touch events arrive in surface-pixel coordinates; the icon is
       # laid out in logical canvas units. The surface can change size
@@ -62,18 +61,6 @@ module Loader
         @closed = true
         next true
       end
-      # PSDK's Android pause-resume strategy: flip polling so the next
-      # event pump blocks in waitEvent instead of busy-looping with
-      # pollEvent. The @has_focus flag is what `tick` reads to skip
-      # drawing entirely while the surface is gone.
-      @window.on_lost_focus = proc do
-        @has_focus = false
-        @window.polling = false if @window
-      end
-      @window.on_gained_focus = proc do
-        @has_focus = true
-        @window.polling = true if @window
-      end
       # Keeps taps on the icon after the surface is resized; the canvas
       # itself is rebuilt by RootActivity restarting the loader.
       @window.on_resized = proc do |surface_w, surface_h|
@@ -100,24 +87,8 @@ module Loader
       @closed || @window.nil?
     end
 
-    def has_focus?
-      @has_focus
-    end
-
-    # When the activity is paused (phone locked / app backgrounded), the
-    # GL surface gets destroyed under us. `window.update` draws BEFORE
-    # processing events (see DisplayWindowInput.cpp:213), so once focus
-    # is lost we route through `update_only_input` instead — that path
-    # skips the draw and blocks in waitEvent (because on_lost_focus
-    # flipped polling=false) until focus comes back. Prevents the
-    # SIGSEGV from SFML touching a dead EGLSurface.
     def update
       @window.update
-      pumped
-    end
-
-    def update_only_input
-      @window.update_only_input
       pumped
     end
 

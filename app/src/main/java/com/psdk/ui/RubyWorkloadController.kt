@@ -123,8 +123,8 @@ class RubyWorkloadController(
 
     /**
      * Notify the controller that the GL surface was detached (activity
-     * hidden). A running workload keeps running — SFML handles the
-     * detach/attach cycle itself — but new launches are held until the
+     * hidden). A running workload pauses in the runtime until the next
+     * attach (or a close request), and new launches are held until the
      * next [onSurfaceReady]. A script that constructs its DisplayWindow
      * while no surface is attached renders nothing (black screen), e.g.
      * the loader restarted from the game's activity result, which
@@ -239,8 +239,8 @@ class RubyWorkloadController(
      * while the script hasn't created its window yet. So for the splash,
      * first drop a marker file: it checks it before creating the window
      * and while it runs, and on its first event pump ignores a Closed the
-     * marker doesn't back (loader/util.rb LOADER_STOP_PATH). requestClose still wakes a splash
-     * blocked in waitEvent without focus. Loader only: the `:game` process
+     * marker doesn't back (loader/util.rb LOADER_STOP_PATH). requestClose also wakes a splash
+     * the runtime paused in the background. Loader only: the `:game` process
      * shares the data dir, and a marker written at game shutdown could land
      * after the shell already cleared it for the restarted splash.
      */

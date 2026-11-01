@@ -85,18 +85,16 @@ module Loader
     def tick
       return false if @window.closed?
       return false if (@clock.frame % LOADER_STOP_POLL_INTERVAL_F).zero? && loader_stop_requested?
-      if @window.has_focus?
-        @clock.tick!
-        m = @clock.fade_out_multiplier
-        @layers.each { |l| l.animate(@clock, @state, m) }
-        @host_messages.poll
-        @window.update
-        unless @state.first_frame_signaled
-          @state.first_frame_signaled = true
-          loader_emit READY_EVENT
-        end
-      else
-        @window.update_only_input
+      @clock.tick!
+      m = @clock.fade_out_multiplier
+      @layers.each { |l| l.animate(@clock, @state, m) }
+      @host_messages.poll
+      # In the background, the runtime pauses this update until the
+      # surface is back (or a close request comes)
+      @window.update
+      unless @state.first_frame_signaled
+        @state.first_frame_signaled = true
+        loader_emit READY_EVENT
       end
       true
     end
