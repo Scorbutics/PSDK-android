@@ -31,7 +31,7 @@ class ControlsActivity : ComponentActivity() {
         const val EXTRA_EXECUTION_LOCATION = "EXECUTION_LOCATION"
         private const val EXTRA_LOGS = "LOGS"
 
-        /** @param logs opens the game's logs, for a developer (debug mode): a link to it */
+        /** @param logs opens the game's logs, from a running game: a link to it */
         fun intent(context: Context, executionLocation: String, logs: Intent? = null): Intent =
             Intent(context, ControlsActivity::class.java)
                 .putExtra(EXTRA_EXECUTION_LOCATION, executionLocation)

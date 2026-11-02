@@ -73,8 +73,9 @@ if ENV['RGSS_REMOTE_EVAL_TOKEN'] && !ENV['RGSS_REMOTE_EVAL_TOKEN'].to_s.empty?
   end
 end
 
+# No log_path: VMLogger writes to its pipe, not to a file, and GameLogs.outputWriter
+# keeps what comes out of it in the file SafeRunner would truncate.
 SafeRunner.run(
-  log_path: ENV['RGSS_LOG_FILE'],
   error_log_path: ENV['RGSS_ERROR_LOG_FILE']
 ) do
   execution_location = ENV['RGSS_EXECUTION_LOCATION']

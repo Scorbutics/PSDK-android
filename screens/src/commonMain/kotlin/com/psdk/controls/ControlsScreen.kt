@@ -62,7 +62,7 @@ import kotlin.math.roundToInt
  * The player's Controls: the gamepad's size, opacity and A / B order, the
  * player's own buttons, and the way back to the game's controls. Places are
  * changed in game (the gamepad's tools button, Edit controls).
- * @param onLogs the game's logs, for a developer only (debug mode): null hides them
+ * @param onLogs the game's logs, opened in game: null hides them
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +93,7 @@ fun ControlsScreen(model: ControlsModel, onClose: () -> Unit, onLogs: (() -> Uni
                 Reset(model)
                 onLogs?.let {
                     HorizontalDivider()
-                    Section("Developer")
+                    Section("Logs")
                     OutlinedButton(onClick = it) { Text("Game logs") }
                 }
             }

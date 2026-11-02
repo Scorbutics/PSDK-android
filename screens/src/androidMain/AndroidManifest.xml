@@ -6,9 +6,8 @@
         <activity android:name="com.psdk.controls.ControlsActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.NoActionBar" />
-        <!-- Logs: a developer's (the project's page, a compile's result, in
-             game in debug mode through Controls), and a player's once a game
-             stopped on an error. -->
+        <!-- Logs: the project's page, a compile's result, in game through
+             Controls, and once a game stopped on an error. -->
         <activity android:name="com.psdk.logs.LogsActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.NoActionBar" />

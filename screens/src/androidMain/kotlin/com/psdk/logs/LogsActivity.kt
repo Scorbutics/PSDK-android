@@ -20,8 +20,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * A developer's logs (and a player's, once a game stopped on an error): the
- * files of [intent], one tab each, read whenever the screen shows. A game
+ * A game's or a compile's logs: the files of [intent], one tab each, read
+ * whenever the screen shows. A game
  * behind it lost its surface and waits for it: what it may still write
  * shows once the screen shows again.
  */

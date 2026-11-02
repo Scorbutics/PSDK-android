@@ -33,7 +33,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
 
 /**
- * A developer's logs (the game's output, its Error.log, a compile's): one
+ * A game's or a compile's logs (its output, its Error.log): one
  * tab each, shown from the end of an output, an error report's start.
  */
 @OptIn(ExperimentalMaterial3Api::class)

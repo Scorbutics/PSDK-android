@@ -61,6 +61,8 @@ class RubyWorkloadController(
     private val onWorkloadCompleted: (RubyWorkload, Int) -> Unit = { _, _ -> },
     /** The host events (VMHost.emit) of the workloads' scripts */
     private val hostEventListener: HostEventListener? = null,
+    /** The output of the workloads' scripts */
+    private val logListener: LogListener = NO_LOGS,
 ) {
 
     private val lock = Any()
@@ -284,7 +286,7 @@ class RubyWorkloadController(
         // thread (rgss-worker-N) survive every subsequent workload
         // swap — only Activity.onDestroy via [shutdown] tears it down.
         if (persistentInterpreter == null) {
-            persistentInterpreter = PsdkInterpreter.create(context, NO_LOGS, onError, hostEventListener)
+            persistentInterpreter = PsdkInterpreter.create(context, logListener, onError, hostEventListener)
         }
         currentWorkload = workload
 
@@ -320,8 +322,8 @@ class RubyWorkloadController(
 
         private const val TAG = "RubyWorkloadCtrl"
 
-        /** The workloads talk to their hosts through [hostEventListener], not logs */
-        private val NO_LOGS = object : LogListener {
+        /** The loader talks to its host through [hostEventListener], not logs */
+        val NO_LOGS = object : LogListener {
             override fun onLogMessage(logMessage: LogMessage) {}
         }
     }

@@ -166,6 +166,10 @@ The player's own layout goes on top of the game's, setting by setting: the in-ga
 
 In the background, the runtime pauses the game and its sound by itself: the scripts handle nothing for it.
 
+### Game Logs
+
+Any game, in any mode, shows its output and its `Error.log` in game: tools button → Settings → Logs → Game logs. The output is kept in `last_stdout.log`, beside the compiled game.
+
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.

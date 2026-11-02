@@ -131,6 +131,7 @@ class GameActivity : AppCompatActivity() {
         workloadController = RubyWorkloadController(
             context = this,
             assets = assets,
+            logListener = intent.getStringExtra(EXTRA_EXECUTION_LOCATION)?.let(GameLogs::outputWriter) ?: RubyWorkloadController.NO_LOGS,
             onError = { e -> android.util.Log.e(TAG, "workload error", e) },
             onWorkloadCompleted = { workload, exitCode ->
                 android.util.Log.i(TAG, "workload ${workload.name} exited (code=$exitCode)")
@@ -275,12 +276,11 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
-     * RGSS_LOG_FILE, RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_REMOTE_*).
+     * RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_REMOTE_*).
      * Process-local, which is why it runs here and not in the shell process.
      */
     private fun configureGameEnv(executionLocation: String, mode: GameMode) {
         android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
-        android.system.Os.setenv("RGSS_LOG_FILE", GameLogs.output(executionLocation).path, true)
         android.system.Os.setenv("RGSS_ERROR_LOG_FILE", GameLogs.errors(executionLocation, mode).path, true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
 
@@ -305,11 +305,8 @@ class GameActivity : AppCompatActivity() {
     private fun openControls() {
         if (isFinishing || isDestroyed || controlsOpen) return
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION) ?: return
-        // A developer's game (debug mode) gets a link to its logs
         val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
-        val logs = if (mode == GameMode.DEBUG_UNCOMPILED) {
-            GameLogs.intent(this, executionLocation, GameLogs.errors(executionLocation, mode))
-        } else null
+        val logs = GameLogs.intent(this, executionLocation, GameLogs.errors(executionLocation, mode))
         try {
             controlsScreen.launch(ControlsActivity.intent(this, executionLocation, logs))
             controlsOpen = true
