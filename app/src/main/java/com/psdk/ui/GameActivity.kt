@@ -148,6 +148,7 @@ class GameActivity : AppCompatActivity() {
                         hideGameStartOverlay()
                     }
                     CONTROLS_EVENT -> runOnUiThread { openControls() }
+                    SCRIPT_ERROR_EVENT -> runOnUiThread { noticeScriptError(event.payload) }
                 }
             },
         )
@@ -381,6 +382,25 @@ class GameActivity : AppCompatActivity() {
         ).also { it.show() }
     }
 
+    /**
+     * A PSDK script error the game may survive (an event's script): tell
+     * the player where its log is. Unless the error ends the game, which
+     * finishes this activity within [SCRIPT_ERROR_NOTICE_DELAY_MS] and gets
+     * reported by the caller instead. UI thread only.
+     */
+    private fun noticeScriptError(summary: String) {
+        android.util.Log.w(TAG, "script error: $summary")
+        glSurface.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            // Android shows two lines of a toast: the way to the log first
+            android.widget.Toast.makeText(
+                this,
+                "Script error, see tools → Settings → Logs\n$summary",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }, SCRIPT_ERROR_NOTICE_DELAY_MS)
+    }
+
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (::inputForwarder.isInitialized && inputForwarder.handleMotionEvent(event)) return true
         return super.dispatchGenericMotionEvent(event)
@@ -401,8 +421,21 @@ class GameActivity : AppCompatActivity() {
         private const val CONTROLS_EVENT = "overlay.settings"
         private const val CONTROLS_RELOAD_MESSAGE = "overlay.reload"
 
-        /** start.rb's helper modules: TouchLayouts loads the gamepad's layout files. */
-        private val START_PRELUDES = listOf("lib/touch_layouts.rb")
+        /** ScriptErrors (lib/script_errors.rb): a PSDK script error, as "Type: message". */
+        private const val SCRIPT_ERROR_EVENT = "game.script_error"
+
+        /**
+         * After a script error, how long to wait before telling the player:
+         * an error ending the game finishes this activity first, and the
+         * caller reports it.
+         */
+        private const val SCRIPT_ERROR_NOTICE_DELAY_MS = 1_000L
+
+        /**
+         * start.rb's helper modules: TouchLayouts loads the gamepad's layout
+         * files, ScriptErrors replaces PSDK's error window.
+         */
+        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb")
 
         /**
          * DEBUG_UNCOMPILED mode's: start.rb's debug branch also needs

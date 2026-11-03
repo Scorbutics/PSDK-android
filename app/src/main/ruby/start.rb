@@ -234,6 +234,14 @@ SafeRunner.run(
     end
   end
 
+  # PSDK's error window can't be closed on Android: its errors go to the
+  # app instead (lib/script_errors.rb).
+  if defined?(ScriptErrors)
+    ScriptErrors.install
+  else
+    VMLogger.error '[start.rb] ScriptErrors not loaded: PSDK script errors open their window'
+  end
+
   VMLogger.info "[start.rb] Loading Game.rb..."
   # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
   # event constants on every run; Ruby would otherwise spam "already

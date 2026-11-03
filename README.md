@@ -170,6 +170,8 @@ In the background, the runtime pauses the game and its sound by itself: the scri
 
 Any game, in any mode, shows its output and its `Error.log` in game: tools button → Settings → Logs → Game logs. The output is kept in `last_stdout.log`, beside the compiled game.
 
+A script error never opens PSDK's error window, which a phone can't close ([`lib/script_errors.rb`](app/src/main/ruby/lib/script_errors.rb), any PSDK version): an error ending the game brings the app back with its message and the `Error.log` (Details), an error the game survives (an event's script) shows a notice pointing to the logs.
+
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.
