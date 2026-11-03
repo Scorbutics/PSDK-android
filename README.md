@@ -156,7 +156,7 @@ Either one may hold the **project sources** (compiled on the device on first lau
 
 ### Exporting a Game
 
-[`exporter/`](exporter/README.md) builds a game's APK from a base APK of a release, or an archive to import. Each release attaches it as `psdk-android-exporter-<version>.zip`: use the one of the release you build from. It needs Ruby and the `rubyzip` gem only.
+[`exporter/`](exporter/README.md) builds a game's APK from a base APK of a release (the latest one's, downloaded and cached, when none is given), or an archive to import. Each release attaches it as `psdk-android-exporter-<version>.zip`: use the one of the release you build from. It needs Ruby and the `rubyzip` gem only.
 
 ### Touch Controls
 

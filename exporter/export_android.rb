@@ -2,11 +2,14 @@
 # archive. The extension of --output picks what is built:
 #
 #   .apk   Full APK (the default, as <name>.apk):
-#            ruby export_android.rb [<name>] --apk PSDK-base.apk [options]
+#            ruby export_android.rb [<name>] [--apk PSDK-base.apk] [options]
 #          Builds, signs, and outputs a complete .apk from the base PSDK APK
 #          template. The game archive is bundled inside, encrypted with a key
 #          derived from the keystore's signing certificate (or plain with
-#          --archive psa).
+#          --archive psa). Without --apk, the base APK is the release APK of
+#          the latest PSDK-android release, downloaded once into
+#          ~/.psdk/android-apk/ (lib/base_apk.rb); PSDK_ANDROID_RELEASE=<tag>
+#          picks another release.
 #
 #   .epsa  Encrypted archive only:
 #            ruby export_android.rb --apk  player.apk -o mygame.epsa
@@ -67,8 +70,9 @@
 #   without --apk gives an unencrypted archive, for testing.
 #
 #   Full APK export (no Java / Android SDK needed either):
-#     -o <out>/<Title>.apk --apk <PSDK-base.apk> -k <project keystore dir>
+#     -o <out>/<Title>.apk [--apk <PSDK-base.apk>] -k <project keystore dir>
 #       [--package <id>] [--icon <png>] [--debug-mode] [--archive psa]
+#   Without --apk, the latest release's base APK is downloaded (see above).
 #   -k: a project-relative directory, so the generated debug.p12 travels with
 #   the project (it holds a private key: keep it out of public repositories).
 #   Pass the keystore password as PSDK_KS_PASS in the child's environment,
@@ -88,6 +92,7 @@ require 'json'
 require 'zlib'
 require 'openssl'
 require 'optparse'
+require 'rbconfig'
 require 'tmpdir'
 require 'fileutils'
 
@@ -96,6 +101,7 @@ require_relative 'lib/epsa_kdf'
 require_relative 'lib/epsa_writer'
 require_relative 'lib/pkcs12_cert'
 require_relative 'lib/apk_export'
+require_relative 'lib/base_apk'
 
 # The release this exporter comes with (VERSION, written into the release
 # zip), or "dev" from a checkout.
@@ -232,7 +238,9 @@ parser = OptionParser.new do |o|
   o.separator '(plain archive only).'
   o.separator ''
   o.on('-o', '--output PATH', 'Output .apk, .epsa or .psa (default: <name>.apk)') { |v| opts[:output] = v }
-  o.on('--apk PATH', 'APK: the base PSDK APK template.',
+  o.on('--apk PATH', 'APK: the base PSDK APK template. Default: the release APK of the',
+       'latest PSDK-android release (or of $PSDK_ANDROID_RELEASE), downloaded',
+       'once into ~/.psdk/android-apk/',
        '.epsa: the player APK, whose signing cert keys the archive') { |v| opts[:apk] = v }
   o.on('--cert PATH', ".epsa: the player APK's public signing cert (PEM/DER), instead of --apk") { |v| opts[:cert] = v }
   o.on('--compiled', 'Pack the desktop compile output (Release/, from Studio\'s "compile"',
@@ -319,11 +327,18 @@ abort '--compiled: missing Release/Game.yarb (compile the project first)' \
 abort 'Missing Game.rb: launch the project once from Pokemon Studio (it writes Game.rb), or export with --compiled' \
   if !compiled_mode && !File.file?('Game.rb')
 
+# Ruby that compiled Release/Game.yarb: YARB magic, then major and minor (u32).
+if compiled_mode
+  yarb = File.binread('Release/Game.yarb', 64)
+  abort 'Release/Game.yarb is not Ruby bytecode' unless yarb.start_with?('YARB')
+  yarb_ruby = yarb.byteslice(4, 8).unpack('L<L<').join('.')
+  yarb_platform = yarb.byteslice(36, 28)[/\A[^\0]*/]
+end
+
 if apk_mode
   plain_mode = opts[:archive] == 'psa'
   base_apk_path = opts[:apk]
-  abort 'Missing --apk <path>: path to the base PSDK APK template' unless base_apk_path
-  abort "Base APK not found: #{base_apk_path}" unless File.exist?(base_apk_path)
+  abort "Base APK not found: #{base_apk_path}" if base_apk_path && !File.exist?(base_apk_path)
   abort "Icon not found: #{opts[:icon]}" if opts[:icon] && !File.exist?(opts[:icon])
   abort no_name_message unless app_name
   safe_name = app_name.downcase.gsub(/[^a-z0-9]/, '')
@@ -345,6 +360,24 @@ else
     abort "Cert file not found: #{cert_path}" if cert_path && !File.exist?(cert_path)
     abort "APK file not found: #{base_apk_path}" if base_apk_path && !File.exist?(base_apk_path)
   end
+end
+
+# No --apk: the release APK of the latest PSDK-android release. Its Ruby:
+# the one that compiled the release (--compiled), whose bytecode only loads on
+# it; else the one running the export, or the default one (project sources
+# compile on the device with any of them).
+if apk_mode && !base_apk_path
+  rubies = compiled_mode ? [yarb_ruby] : [RbConfig::CONFIG.values_at('MAJOR', 'MINOR').join('.'), BaseApk::DEFAULT_RUBY].uniq
+  release_tag = ENV['PSDK_ANDROID_RELEASE']
+  begin
+    base_apk_path, base_apk_release = BaseApk.fetch(rubies, tag: release_tag && !release_tag.empty? ? release_tag : nil)
+  rescue BaseApk::Error => e
+    abort e.message
+  end
+  # A release's exporter writes the archive format its app reads.
+  warn "  The base APK is #{base_apk_release}'s, the exporter #{EXPORTER_VERSION}'s: use the exporter of " \
+       "#{base_apk_release} (#{BaseApk::RELEASES_URL}), or the project plugin plugins/export_android.rb" \
+    unless EXPORTER_VERSION == 'dev' || EXPORTER_VERSION == base_apk_release
 end
 
 # ---------------------------------------------------------------------------
@@ -390,7 +423,7 @@ puts "  Archive:     #{plain_mode ? 'plain .psa' : 'encrypted .epsa'}, #{compile
 if apk_mode
   puts "  App name:    #{app_name}"
   puts "  Package ID:  #{package_id}"
-  puts "  Base APK:    #{base_apk_path}"
+  puts "  Base APK:    #{base_apk_path}#{" (PSDK-android #{base_apk_release})" if base_apk_release}"
   puts "  Icon:        #{icon_path ? "#{icon_path}#{" (#{icon_source})" if icon_source}" : '(default)'}"
   puts "  Launch mode: #{debug_mode ? 'debug_uncompiled (--debug-mode)' : 'release'}"
 elsif !plain_mode
@@ -447,12 +480,7 @@ end
 puts "  Signing cert: #{signing_cert_der.bytesize} DER bytes loaded" if signing_cert_der
 puts ''
 
-# Ruby that compiled Release/Game.yarb: YARB magic, then major and minor (u32).
 if compiled_mode
-  yarb = File.binread('Release/Game.yarb', 64)
-  abort 'Release/Game.yarb is not Ruby bytecode' unless yarb.start_with?('YARB')
-  yarb_ruby = yarb.byteslice(4, 8).unpack('L<L<').join('.')
-  yarb_platform = yarb.byteslice(36, 28)[/\A[^\0]*/]
   puts "  Bytecode:    Ruby #{yarb_ruby} (#{yarb_platform}): plays on the PSDK-android-ruby#{yarb_ruby} app only"
   puts ''
 end

@@ -4,9 +4,11 @@
 # ~/.psdk/android-exporter/, with the same arguments: callers (Pokemon
 # Studio, makers) run it as they ran export_android.rb.
 #
-# An APK export without --apk also gets the base APK of that release, for
-# the Ruby running this file (3.0, 3.2 or 3.3): the exporter and the APK it
-# edits always come from the same release.
+# An APK export without --apk gets the base APK of that release: the
+# exporter downloads it itself (when it has lib/base_apk.rb), with the same
+# PSDK_ANDROID_RELEASE. For an older exporter, this file downloads it, for the
+# Ruby running this file (3.0, 3.2 or 3.3). Either way, the exporter and the
+# APK it edits come from the same release.
 #
 # Offline, or when GitHub doesn't answer, it runs the newest exporter
 # already downloaded.
@@ -56,7 +58,8 @@ module AndroidExporterPlugin
       remove_other_versions(tag) unless ENV['PSDK_ANDROID_RELEASE']
     end
 
-    argv += ['--apk', base_apk(release, version_dir)] if apk_export_without_base?(argv)
+    downloads_base_apk = File.file?(File.join(version_dir, EXPORTER_DIR, 'lib', 'base_apk.rb'))
+    argv += ['--apk', base_apk(release, version_dir)] if !downloads_base_apk && apk_export_without_base?(argv)
     [exporter, argv]
   end
 
@@ -104,7 +107,8 @@ module AndroidExporterPlugin
     File.delete(zip_path)
   end
 
-  # The base APK of the release for this Ruby, downloaded once.
+  # The base APK of the release for this Ruby, downloaded once: for exporters
+  # without lib/base_apk.rb, which don't download it themselves.
   def base_apk(release, version_dir)
     ruby = RbConfig::CONFIG.values_at('MAJOR', 'MINOR').join('.')
     name = "PSDK-android-ruby#{ruby}-release.apk"
