@@ -3,8 +3,11 @@
     <application>
         <!-- Opened over the game (its tools menu's Settings) and from a
              project's page. The game process keeps running under it. -->
+        <!-- configChanges: a rotation keeps its state (a saves file picked,
+             an import running), Compose lays it out again. -->
         <activity android:name="com.psdk.controls.ControlsActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:theme="@android:style/Theme.Material.NoActionBar" />
         <!-- Logs: the project's page, a compile's result, in game through
              Controls, and once a game stopped on an error. -->

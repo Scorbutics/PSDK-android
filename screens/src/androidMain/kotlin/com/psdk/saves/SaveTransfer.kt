@@ -104,16 +104,21 @@ object SaveTransfer {
 
     /**
      * Replaces the saves of [root] with those of [input]; the saves in place
-     * move to [backupRoot]/<date>/ first. Read whole before anything moves.
-     * Leaves the marker [takeImported] takes.
+     * move to [backupRoot]/<date>/ first. Read whole before anything moves;
+     * a move that fails puts everything back. Leaves the marker
+     * [takeImported] takes, before the first move: a game running on the
+     * old saves closes, whatever happens to this screen meanwhile. One
+     * import at a time per process.
      */
     fun import(input: InputStream, root: File, backupRoot: File, now: Date = Date()): Imported {
+        if (!importing.compareAndSet(false, true)) throw Error("An import is already running")
         val staging = File(root, STAGING_DIR)
-        staging.deleteRecursively()
         try {
-            val saves = mutableListOf<String>()
+            staging.deleteRecursively()
+            val saves = linkedSetOf<String>()
             readZip(input) { name, zip ->
-                if (!isTransferable(name)) return@readZip
+                // A name given twice: the first one
+                if (!isTransferable(name) || name in saves) return@readZip
                 val target = File(staging, name)
                 target.parentFile?.mkdirs()
                 target.writeBytes(zip.readLimited())
@@ -122,15 +127,36 @@ object SaveTransfer {
             if (saves.isEmpty()) throw Error("This file holds no saves of a PSDK game (a Saves folder)")
 
             val current = files(root)
-            val backup = if (current.isEmpty()) null else File(backupRoot, stamp(now))
-            for (path in current) move(File(root, path), File(backup!!, path))
-            for (path in saves) move(File(staging, path), File(root, path))
-            File(root, IMPORTED_MARKER).writeText(now.time.toString())
-            return Imported(saves, backup)
+            val backup = if (current.isEmpty()) null else freeDir(backupRoot, stamp(now))
+            val marker = File(root, IMPORTED_MARKER)
+            marker.writeText(now.time.toString())
+            val backedUp = mutableListOf<String>()
+            val placed = mutableListOf<String>()
+            try {
+                for (path in current) move(File(root, path), File(backup!!, path)).also { backedUp += path }
+                for (path in saves) move(File(staging, path), File(root, path)).also { placed += path }
+            } catch (e: IOException) {
+                // Back as before: the imported saves out, the saves in place back
+                val restored = placed.all { File(root, it).delete() } &&
+                    backedUp.all { File(backup!!, it).renameTo(File(root, it)) }
+                if (restored) marker.delete()
+                throw Error(if (restored) "Saves not imported (${e.message}): nothing changed"
+                    else "Saves not imported (${e.message}): your previous saves are in ${backup?.name}", e)
+            }
+            return Imported(saves.toList(), backup)
         } finally {
             staging.deleteRecursively()
+            importing.set(false)
         }
     }
+
+    private val importing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private val LEGACY_NAMES = runCatching { java.nio.charset.Charset.forName("IBM437") }.getOrDefault(Charsets.ISO_8859_1)
+
+    /** [root]/[name], or [name]-2, -3... when taken: never into another backup */
+    private fun freeDir(root: File, name: String): File =
+        generateSequence(1) { it + 1 }.map { File(root, if (it == 1) name else "$name-$it") }.first { !it.exists() }
 
     /** Whether saves were imported into [root] since the last call: a game running on the old ones must stop */
     fun takeImported(root: File): Boolean = File(root, IMPORTED_MARKER).delete()
@@ -150,7 +176,8 @@ object SaveTransfer {
 
     private fun readZip(input: InputStream, onEntry: (String, ZipInputStream) -> Unit) {
         try {
-            ZipInputStream(input).use { zip ->
+            // Names without the UTF-8 flag: IBM437, as the ZIP spec has it (and the Ruby side)
+            ZipInputStream(input, LEGACY_NAMES).use { zip ->
                 var entry = zip.nextEntry ?: throw Error("This file is not a saves file (an empty or not a ZIP file)")
                 while (true) {
                     if (!entry.isDirectory) onEntry(entry.name, zip)
@@ -160,6 +187,9 @@ object SaveTransfer {
         } catch (e: ZipException) {
             // Damaged, or a name that would write outside (Android 14+ rejects ../ names)
             throw Error("This file is not a saves file: ${e.message}", e)
+        } catch (e: IllegalArgumentException) {
+            // A name neither UTF-8 nor flagged otherwise (Windows Explorer: its code page)
+            throw Error("This file is not a saves file: a name can't be read (${e.message})", e)
         }
     }
 

@@ -156,6 +156,61 @@ class SaveTransferTest {
     }
 
     @Test
+    fun aNameGivenTwiceIsTheFirstOne() {
+        val target = File(dir, "target")
+        // ZipOutputStream refuses a name twice: a name of the same length, patched
+        val data = zip("Saves/Pokemon_Party" to "first", "Saves/Pokemon_PartX" to "second")
+        val text = String(data, Charsets.ISO_8859_1).replace("Saves/Pokemon_PartX", "Saves/Pokemon_Party")
+        val imported = SaveTransfer.import(ByteArrayInputStream(text.toByteArray(Charsets.ISO_8859_1)), target, File(dir, "b"), now)
+        assertEquals(listOf("Saves/Pokemon_Party"), imported.saves)
+        assertEquals("first", File(target, "Saves/Pokemon_Party").readText())
+    }
+
+    @Test
+    fun twoImportsInTheSameSecondKeepBothBackups() {
+        val backupRoot = File(dir, "SavesBackup")
+        val first = SaveTransfer.import(ByteArrayInputStream(zip("Saves/Pokemon_Party" to "1")), game, backupRoot, now)
+        val second = SaveTransfer.import(ByteArrayInputStream(zip("Saves/Pokemon_Party" to "2")), game, backupRoot, now)
+        assertEquals("20261104-${first.backup!!.name.substringAfter('-')}", first.backup!!.name)
+        assertEquals("${first.backup!!.name}-2", second.backup!!.name)
+        assertEquals("second", File(first.backup, "Saves/Pokemon_Party-2").readText())
+        assertEquals("1", File(second.backup, "Saves/Pokemon_Party").readText())
+    }
+
+    /** A move that fails (a folder where a save goes): everything back as before, no marker */
+    @Test
+    fun aFailedImportPutsEverythingBack() {
+        val target = File(dir, "target")
+        write(target, "Saves/Pokemon_Party/x" to "a folder's file".toByteArray(), "Saves/Pokemon_Party-1" to "mine".toByteArray())
+        val before = tree(target)
+        assertFailsWith<SaveTransfer.Error> {
+            SaveTransfer.import(
+                ByteArrayInputStream(zip("Saves/A" to "a", "Saves/Pokemon_Party" to "theirs")),
+                target, File(dir, "SavesBackup"), now,
+            )
+        }
+        assertEquals(before, tree(target))
+        assertFalse(SaveTransfer.takeImported(target))
+        // And the next one runs: the failed one let go of its lock
+        SaveTransfer.import(ByteArrayInputStream(zip("Saves/A" to "a")), File(dir, "other"), File(dir, "b"), now)
+    }
+
+    /** Windows Explorer: names in its code page, no UTF-8 flag */
+    @Test
+    fun namesWithoutTheUtf8FlagAreRead() {
+        val data = ByteArrayOutputStream().also { out ->
+            ZipOutputStream(out, java.nio.charset.Charset.forName("IBM437")).use { zip ->
+                for (name in listOf("Saves/Pokemon_Party", "Notes é.txt")) {
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(name.toByteArray())
+                    zip.closeEntry()
+                }
+            }
+        }.toByteArray()
+        assertEquals(listOf("Saves/Pokemon_Party"), SaveTransfer.inspect(ByteArrayInputStream(data)).saves)
+    }
+
+    @Test
     fun aNewerFormatIsRefused() {
         val data = zip("psdk_saves.json" to "{\"format\": 2}", "Saves/Pokemon_Party" to "x")
         assertFailsWith<SaveTransfer.Error> { SaveTransfer.inspect(ByteArrayInputStream(data)) }

@@ -196,6 +196,46 @@ class SaveTransferTest < Minitest::Test
     assert_raises(SaveTransfer::Error) { SaveTransfer.inspect_file(file) }
   end
 
+  def zip_of(file, entries)
+    Zip::OutputStream.open(file) do |zip|
+      entries.each do |name, data|
+        zip.put_next_entry(name)
+        zip.write data
+      end
+    end
+    file
+  end
+
+  def test_a_name_given_twice_is_the_first_one
+    file = File.join(@dir, 'twice.zip')
+    File.open(file, 'wb') { |io| SaveTransfer::Zip.write(io, [%w[Saves/Pokemon_Party first], %w[Saves/Pokemon_Party second]], NOW) }
+    target = File.join(@dir, 'target')
+    saves, = SaveTransfer.import(file, target)
+    assert_equal %w[Saves/Pokemon_Party], saves
+    assert_equal 'first', File.read(File.join(target, 'Saves/Pokemon_Party'))
+  end
+
+  def test_two_imports_in_the_same_second_keep_both_backups
+    backup_root = File.join(@dir, 'SavesBackup')
+    _, first = SaveTransfer.import(zip_of(File.join(@dir, '1.zip'), [%w[Saves/Pokemon_Party 1]]), @game, backup_root: backup_root, now: NOW)
+    _, second = SaveTransfer.import(zip_of(File.join(@dir, '2.zip'), [%w[Saves/Pokemon_Party 2]]), @game, backup_root: backup_root, now: NOW)
+    assert_equal File.join(backup_root, '20261104-123000'), first
+    assert_equal File.join(backup_root, '20261104-123000-2'), second
+    assert_equal 'second', File.read(File.join(first, 'Saves/Pokemon_Party-2'))
+    assert_equal '1', File.read(File.join(second, 'Saves/Pokemon_Party'))
+  end
+
+  # A move that fails (a folder where a save goes): everything back as before
+  def test_a_failed_import_puts_everything_back
+    target = File.join(@dir, 'target')
+    write(target, 'Saves/Pokemon_Party/x' => "a folder's file", 'Saves/Pokemon_Party-1' => 'mine')
+    before = read_tree(target)
+    file = zip_of(File.join(@dir, 'f.zip'), [%w[Saves/A a], %w[Saves/Pokemon_Party theirs]])
+    error = assert_raises(SaveTransfer::Error) { SaveTransfer.import(file, target, backup_root: File.join(@dir, 'b')) }
+    assert_match(/nothing changed/, error.message)
+    assert_equal before, read_tree(target)
+  end
+
   def test_a_newer_format_is_refused
     file = File.join(@dir, 'future.zip')
     Zip::File.open(file, create: true) do |zip|

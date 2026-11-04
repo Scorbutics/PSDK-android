@@ -72,7 +72,16 @@ class ControlsActivity : ComponentActivity() {
                 )
             }
         }
-        setContent { ControlsScreen(model, onClose = ::finish, onLogs = onLogs, saves = savesSection) }
+        setContent { ControlsScreen(model, onClose = ::close, onLogs = onLogs, saves = savesSection) }
+        // Not closed half-way through the saves: an import under a running
+        // game must be done (its marker written) before the game hears back
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = close()
+        })
+    }
+
+    private fun close() {
+        if (savesModel?.busy != true) finish()
     }
 
     /** The file picker, once there are saves to write: it creates the file */
@@ -105,10 +114,11 @@ class ControlsActivity : ComponentActivity() {
         val uri = pendingImport ?: return
         pendingImport = null
         savesModel?.pending = null
+        val resolver = applicationContext.contentResolver
         work { saves, model ->
-            // Not cancelled half-way by the screen closing: the saves move as a whole
+            // Not cancelled half-way by the screen going away: the saves move as a whole
             val imported = withContext(NonCancellable) {
-                contentResolver.openInputStream(uri)?.use { SaveTransfer.import(it, saves.root, saves.backup) }
+                resolver.openInputStream(uri)?.use { SaveTransfer.import(it, saves.root, saves.backup) }
             } ?: throw SaveTransfer.Error("The file can't be read")
             model.imported = model.gameRunning
             model.message = buildString {
@@ -131,6 +141,10 @@ class ControlsActivity : ComponentActivity() {
                 model.message = e.message ?: "The saves file can't be used"
             } catch (e: SecurityException) {
                 model.message = "The file can't be opened"
+            } catch (e: RuntimeException) {
+                // A provider's own failure: a message, not the app gone
+                android.util.Log.e("ControlsActivity", "saves file", e)
+                model.message = "The saves file can't be used (${e.javaClass.simpleName})"
             } finally {
                 model.busy = false
             }

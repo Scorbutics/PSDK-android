@@ -155,7 +155,8 @@ module SaveTransfer
   end
 
   # Replaces the saves of [root] with those of the saves file [input]; the
-  # saves in place go to [backup_root]/<date>/. Returns [saves imported,
+  # saves in place go to [backup_root]/<date>/. Read whole before anything
+  # moves; a move that fails puts everything back. Returns [saves imported,
   # backup folder or nil].
   def import(input, root, backup_root: File.join(root, BACKUP_DIR), now: Time.now)
     staging = File.join(root, STAGING_DIR)
@@ -163,7 +164,8 @@ module SaveTransfer
     saves = []
     File.open(input, 'rb') do |io|
       Zip.entries(io).each do |entry|
-        next unless transferable?(entry.name)
+        # A name given twice: the first one
+        next if !transferable?(entry.name) || saves.include?(entry.name)
 
         target = File.join(staging, entry.name)
         FileUtils.mkdir_p(File.dirname(target))
@@ -173,25 +175,40 @@ module SaveTransfer
     end
     raise Error, "#{input} holds no PSDK saves (a Saves folder)" if saves.empty?
 
-    # Whole or not at all: read entirely before the saves in place move
     current = files(root)
-    backup = nil
-    unless current.empty?
-      backup = File.join(backup_root, now.strftime('%Y%m%d-%H%M%S'))
+    backup = current.empty? ? nil : free_dir(backup_root, now.strftime('%Y%m%d-%H%M%S'))
+    backed_up = []
+    placed = []
+    begin
       current.each do |path|
-        FileUtils.mkdir_p(File.dirname(File.join(backup, path)))
-        File.rename(File.join(root, path), File.join(backup, path))
+        move(File.join(root, path), File.join(backup, path))
+        backed_up << path
       end
-    end
-    saves.each do |path|
-      FileUtils.mkdir_p(File.dirname(File.join(root, path)))
-      File.rename(File.join(staging, path), File.join(root, path))
+      saves.each do |path|
+        move(File.join(staging, path), File.join(root, path))
+        placed << path
+      end
+    rescue SystemCallError => e
+      # Back as before: the imported saves out, the saves in place back
+      placed.each { |path| FileUtils.rm_f(File.join(root, path)) }
+      backed_up.each { |path| move(File.join(backup, path), File.join(root, path)) }
+      raise Error, "Saves not imported (#{e.message}): nothing changed"
     end
     [saves, backup]
   rescue Zip::FormatError => e
     raise Error, "#{input} is not a saves file: #{e.message}"
   ensure
     FileUtils.rm_rf(staging) if staging
+  end
+
+  def move(from, to)
+    FileUtils.mkdir_p(File.dirname(to))
+    File.rename(from, to)
+  end
+
+  # [root]/[name], or [name]-2, -3... when taken: never into another backup
+  def free_dir(root, name)
+    (1..).lazy.map { |n| File.join(root, n == 1 ? name : "#{name}-#{n}") }.find { |dir| !File.exist?(dir) }
   end
 
   def parse_manifest(data)

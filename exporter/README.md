@@ -102,8 +102,10 @@ read from it. An import replaces the saves: those in place move first into
 `lib/save_transfer.rb` needs nothing but Ruby's standard library, so a game can
 ship it for its desktop players, who run it with any Ruby from the game's folder
 (`ruby save_transfer.rb export|import <file>`), or, in an uncompiled project, as
-a plugin: `Game.rb --util=save_transfer import <file>`. Without it, unzipping a
-saves file into the game's folder does the same, the backup aside.
+a plugin: `Game.rb --util=save_transfer import <file>`. Without it, a saves file
+unzipped into the game's folder overwrites the saves it holds, but leaves the
+others in place (other save slots), keeps no backup, and adds its
+`psdk_saves.json` and `README.txt` there.
 
 ## Layout
 
