@@ -243,13 +243,15 @@ SafeRunner.run(
   end
 
   VMLogger.info "[start.rb] Loading Game.rb..."
-  # PSDK's project scripts reopen Interpreter and reassign in-game trainer /
-  # event constants on every run; Ruby would otherwise spam "already
-  # initialized constant" warnings to stderr for every one. $VERBOSE=nil
-  # silences those warnings for the require block only and is restored on
-  # the way out, even if require raises. Same pattern compile.rb uses.
-  old_verbose = $VERBOSE
-  $VERBOSE = nil
+  # The game's warnings: none from a release base APK, all but PSDK's
+  # constant reassignments from a debug one (lib/game_warnings.rb). Restored
+  # on the way out, even if require raises.
+  old_verbose = if defined?(GameWarnings)
+                  GameWarnings.install
+                else
+                  VMLogger.error '[start.rb] GameWarnings not loaded: the game runs without warnings'
+                  $VERBOSE.tap { $VERBOSE = nil }
+                end
   begin
     catch(:__psdk_game_exit) { require './Game.rb' }
     VMLogger.info "[start.rb] Game.rb finished normally"

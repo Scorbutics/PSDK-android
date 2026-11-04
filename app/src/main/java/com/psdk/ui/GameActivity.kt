@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.EditText
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import com.psdk.BuildConfig
 import com.psdk.R
 import com.psdk.controls.ControlsActivity
 import com.psdk.ruby.vm.PsdkInterpreter
@@ -277,13 +278,15 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
-     * RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_REMOTE_*).
+     * RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_APP_DEBUG, RGSS_REMOTE_*).
      * Process-local, which is why it runs here and not in the shell process.
      */
     private fun configureGameEnv(executionLocation: String, mode: GameMode) {
         android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
         android.system.Os.setenv("RGSS_ERROR_LOG_FILE", GameLogs.errors(executionLocation, mode).path, true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
+        // lib/game_warnings.rb: a debug base APK keeps the game's warnings
+        android.system.Os.setenv("RGSS_APP_DEBUG", if (BuildConfig.DEBUG) "1" else "0", true)
 
         try {
             FileWriter(GameLogs.output(executionLocation), false).flush()
@@ -433,9 +436,10 @@ class GameActivity : AppCompatActivity() {
 
         /**
          * start.rb's helper modules: TouchLayouts loads the gamepad's layout
-         * files, ScriptErrors replaces PSDK's error window.
+         * files, ScriptErrors replaces PSDK's error window, GameWarnings sets
+         * the game's warnings by base APK.
          */
-        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb")
+        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb", "lib/game_warnings.rb")
 
         /**
          * DEBUG_UNCOMPILED mode's: start.rb's debug branch also needs
