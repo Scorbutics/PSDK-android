@@ -81,7 +81,8 @@ class ControlsActivity : ComponentActivity() {
     }
 
     private fun close() {
-        if (savesModel?.busy != true) finish()
+        // isImporting: one started by this screen before it was recreated
+        if (savesModel?.busy != true && !SaveTransfer.isImporting) finish()
     }
 
     /** The file picker, once there are saves to write: it creates the file */

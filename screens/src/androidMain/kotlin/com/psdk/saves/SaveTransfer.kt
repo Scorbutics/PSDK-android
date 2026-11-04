@@ -129,6 +129,8 @@ object SaveTransfer {
             val current = files(root)
             val backup = if (current.isEmpty()) null else freeDir(backupRoot, stamp(now))
             val marker = File(root, IMPORTED_MARKER)
+            // An earlier import's, not taken yet: a rollback leaves it
+            val markedBefore = marker.exists()
             marker.writeText(now.time.toString())
             val backedUp = mutableListOf<String>()
             val placed = mutableListOf<String>()
@@ -137,9 +139,11 @@ object SaveTransfer {
                 for (path in saves) move(File(staging, path), File(root, path)).also { placed += path }
             } catch (e: IOException) {
                 // Back as before: the imported saves out, the saves in place back
-                val restored = placed.all { File(root, it).delete() } &&
-                    backedUp.all { File(backup!!, it).renameTo(File(root, it)) }
-                if (restored) marker.delete()
+                // Every file tried, whatever failed before
+                val removed = placed.map { File(root, it).delete() }.all { it }
+                val back = backedUp.map { File(backup!!, it).renameTo(File(root, it)) }.all { it }
+                val restored = removed && back
+                if (restored && !markedBefore) marker.delete()
                 throw Error(if (restored) "Saves not imported (${e.message}): nothing changed"
                     else "Saves not imported (${e.message}): your previous saves are in ${backup?.name}", e)
             }
@@ -151,6 +155,9 @@ object SaveTransfer {
     }
 
     private val importing = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** An import runs in this process: a screen recreated meanwhile must not let the game go on */
+    val isImporting: Boolean get() = importing.get()
 
     private val LEGACY_NAMES = runCatching { java.nio.charset.Charset.forName("IBM437") }.getOrDefault(Charsets.ISO_8859_1)
 

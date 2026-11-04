@@ -7,7 +7,7 @@
              an import running), Compose lays it out again. -->
         <activity android:name="com.psdk.controls.ControlsActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@android:style/Theme.Material.NoActionBar" />
         <!-- Logs: the project's page, a compile's result, in game through
              Controls, and once a game stopped on an error. -->

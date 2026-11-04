@@ -81,6 +81,8 @@ module SaveTransfer
 
   # Relative, inside its root, nothing a filesystem reads otherwise
   def safe?(path)
+    # A name that isn't UTF-8 (in a saves file, on disk): no save of PSDK's
+    return false unless path.valid_encoding? && path.encoding == Encoding::UTF_8
     return false if path.empty? || path.start_with?('/') || path.end_with?('/')
     return false if path.include?('\\') || path.include?("\0") || path.include?(':')
 
@@ -189,16 +191,27 @@ module SaveTransfer
         placed << path
       end
     rescue SystemCallError => e
-      # Back as before: the imported saves out, the saves in place back
-      placed.each { |path| FileUtils.rm_f(File.join(root, path)) }
-      backed_up.each { |path| move(File.join(backup, path), File.join(root, path)) }
-      raise Error, "Saves not imported (#{e.message}): nothing changed"
+      # Back as before: the imported saves out, the saves in place back,
+      # every file tried whatever failed before
+      restored = placed.map { |path| attempt { FileUtils.rm_f(File.join(root, path)) } }.all?
+      restored = backed_up.map { |path| attempt { move(File.join(backup, path), File.join(root, path)) } }.all? && restored
+      raise Error, "Saves not imported (#{e.message}): nothing changed" if restored
+
+      raise Error, "Saves not imported (#{e.message}): the saves in place before are in #{backup}"
     end
     [saves, backup]
   rescue Zip::FormatError => e
     raise Error, "#{input} is not a saves file: #{e.message}"
   ensure
     FileUtils.rm_rf(staging) if staging
+  end
+
+  # Whether [block] ran without a filesystem error
+  def attempt
+    yield
+    true
+  rescue SystemCallError
+    false
   end
 
   def move(from, to)
@@ -331,7 +344,8 @@ module SaveTransfer
         raise FormatError, 'encrypted entries are not supported' if flags & 1 == 1
 
         name.force_encoding(flags & UTF8_FLAG == 0 ? Encoding::IBM437 : Encoding::UTF_8)
-        name = name.encode(Encoding::UTF_8) rescue name.b
+        # Flagged UTF-8 but isn't: left invalid, so never a save (safe?)
+        name = name.encode(Encoding::UTF_8) if name.valid_encoding?
         Entry.new(name, method, crc, csize, usize, offset)
       end
     end

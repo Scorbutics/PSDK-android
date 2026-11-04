@@ -195,6 +195,19 @@ class SaveTransferTest {
         SaveTransfer.import(ByteArrayInputStream(zip("Saves/A" to "a")), File(dir, "other"), File(dir, "b"), now)
     }
 
+    /** A failed import after an earlier one not taken yet: the earlier one's marker stays */
+    @Test
+    fun aFailedImportLeavesAnEarlierMarker() {
+        val target = File(dir, "target")
+        SaveTransfer.import(ByteArrayInputStream(zip("Saves/A" to "a")), target, File(dir, "b"), now)
+        File(target, "Saves/Pokemon_Party").mkdirs()
+        assertFailsWith<SaveTransfer.Error> {
+            SaveTransfer.import(ByteArrayInputStream(zip("Saves/Pokemon_Party" to "x")), target, File(dir, "b"), now)
+        }
+        assertTrue(SaveTransfer.takeImported(target))
+        assertFalse(SaveTransfer.isImporting)
+    }
+
     /** Windows Explorer: names in its code page, no UTF-8 flag */
     @Test
     fun namesWithoutTheUtf8FlagAreRead() {
