@@ -78,7 +78,7 @@ jobs:
         run: |
           build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           export APKSIGNER="$build_tools/apksigner" ZIPALIGN="$build_tools/zipalign"
-          for test in app/src/test/ruby/test_*.rb exporter/test/test_epsa_kdf.rb exporter/test/test_base_apk.rb; do
+          for test in app/src/test/ruby/test_*.rb exporter/test/test_epsa_kdf.rb exporter/test/test_base_apk.rb exporter/test/test_save_transfer.rb; do
             echo "::group::$test"
             ruby "$test"
             echo "::endgroup::"
