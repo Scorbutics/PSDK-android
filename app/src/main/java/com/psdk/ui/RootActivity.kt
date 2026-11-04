@@ -57,9 +57,10 @@ class RootActivity : AppCompatActivity(), LoaderHost {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val exitCode = result.data?.getIntExtra(GameActivity.RESULT_EXIT_CODE, -1)
-        android.util.Log.i(TAG, "game activity returned (result=${result.resultCode}, exit=$exitCode)")
+        val reported = result.data?.getBooleanExtra(GameActivity.RESULT_REPORTED, false) == true
+        android.util.Log.i(TAG, "game activity returned (result=${result.resultCode}, exit=$exitCode, reported=$reported)")
         gameLaunchInFlight = false
-        reportAbnormalGameExit(result.resultCode, exitCode)
+        if (!reported) reportAbnormalGameExit(result.resultCode, exitCode)
         startLoaderForCurrentState()
     }
 
@@ -377,58 +378,15 @@ class RootActivity : AppCompatActivity(), LoaderHost {
      * The game ending by itself returns RESULT_OK with exit code 0. A Ruby
      * error that unwound returns a non-zero code; a crash kills the `:game`
      * process before it can set a result. Either way, tell the user why
-     * instead of silently landing back on the splash: PSDK writes the
-     * reason to Error.log in the game's working directory (Release/ for
-     * release builds, the execution location for debug).
+     * instead of silently landing back on the splash (GameExitReport).
      */
     private fun reportAbnormalGameExit(resultCode: Int, exitCode: Int?) {
         val crashed = resultCode != RESULT_OK
         if (!crashed && (exitCode == null || exitCode == 0)) return
         val location = gameExecutionLocation ?: return
-
-        // 2 s slack: file mtimes can be coarser than the clock.
-        val errorLog = GameLogs.lastErrors(location)?.takeIf { it.lastModified() >= gameStartedAtMs - 2_000 }
-        val details = errorLog?.let { runCatching { it.readText() }.getOrNull() }?.takeIf { it.isNotBlank() }
-        val summary = details?.let(::summarizeErrorLog)
-            ?: if (crashed) "The game closed unexpectedly and did not write an error report."
-               else "The game stopped with an error (exit code $exitCode)."
-
-        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.Theme_Psdk_Dialog)
-            .setTitle("The game stopped")
-            .setMessage(summary)
-            .setPositiveButton(android.R.string.ok, null)
-        if (errorLog != null && details != null) {
-            dialog.setNeutralButton("Details") { _, _ -> startActivity(GameLogs.intent(this, location, errorLog, errorsFirst = true)) }
-        }
-        dialog.show()
-    }
-
-    /**
-     * "Type: message" from a PSDK Error.log. Handles both layouts PSDK
-     * writes: "Error type : X" / "Error message : Y" on one line each, and
-     * the in-game report with "Message :" followed by the text on the next
-     * line. Falls back to the first meaningful lines.
-     */
-    private fun summarizeErrorLog(log: String): String {
-        val lines = log.lines()
-        var type: String? = null
-        var message: String? = null
-        val field = Regex("""^\s*(?:Error\s+)?(type|message)\s*:\s*(.*)$""", RegexOption.IGNORE_CASE)
-        lines.forEachIndexed { i, line ->
-            val m = field.find(line) ?: return@forEachIndexed
-            val value = m.groupValues[2].trim().ifEmpty {
-                lines.drop(i + 1).firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-            }
-            if (m.groupValues[1].equals("type", ignoreCase = true)) {
-                if (type == null) type = value
-            } else if (message == null) {
-                message = value
-            }
-        }
-        val summary = listOfNotNull(type, message).filter { it.isNotEmpty() }.joinToString(": ")
-        return summary.ifEmpty {
-            lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("=") }.take(4).joinToString("\n")
-        }.take(400)
+        // A classic game's crash marker: reported here, not again at the next launch
+        GameExitReport.clearRunning(location)
+        GameExitReport.show(this, location, gameStartedAtMs, crashed, exitCode)
     }
 
     /** Last system bar insets, in window pixels. UI thread only. */

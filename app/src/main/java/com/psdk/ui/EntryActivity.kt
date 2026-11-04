@@ -33,8 +33,21 @@ class EntryActivity : AppCompatActivity() {
             AppModeDetector.AppMode.SUPER_USER -> RootActivity.hubIntent(this)
         } ?: return
 
-        startActivity(target)
-        finish()
+        // A classic game that crashed last time (GameExitReport's marker):
+        // say so before starting it again (OK); the Logs screen instead
+        // (Details), or nothing (Back)
+        val crashedAt = if (mode == AppModeDetector.AppMode.CLASSIC_USER) {
+            GameExitReport.takeCrash(applicationInfo.dataDir)
+        } else null
+        if (crashedAt == null) {
+            startActivity(target)
+            finish()
+            return
+        }
+        GameExitReport.show(this, applicationInfo.dataDir, crashedAt, crashed = true, exitCode = null) { choice ->
+            if (choice == GameExitReport.Choice.OK) startActivity(target)
+            finish()
+        }
     }
 
     /**

@@ -98,6 +98,15 @@ class GameActivity : AppCompatActivity() {
     /** Settings tapped again before the screen showed: one screen only. */
     private var controlsOpen = false
 
+    /** The game's execution location, null when the intent had none */
+    private var executionLocation: String? = null
+
+    /** GameExitReport: an Error.log older than this is another session's */
+    private val startedAtMs = System.currentTimeMillis()
+
+    /** The game ended: a script error's notice no longer applies (endSession) */
+    private var sessionEnded = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Fresh process: redo the process-wide native setup EntryActivity
@@ -136,10 +145,7 @@ class GameActivity : AppCompatActivity() {
             onError = { e -> android.util.Log.e(TAG, "workload error", e) },
             onWorkloadCompleted = { workload, exitCode ->
                 android.util.Log.i(TAG, "workload ${workload.name} exited (code=$exitCode)")
-                runOnUiThread {
-                    setResult(Activity.RESULT_OK, Intent().putExtra(RESULT_EXIT_CODE, exitCode))
-                    finish()
-                }
+                runOnUiThread { endSession(exitCode) }
             },
             // start.rb emits game.ready once PSDK's first LiteRGSS::DisplayWindow.new returns
             hostEventListener = HostEventListener { event ->
@@ -157,6 +163,7 @@ class GameActivity : AppCompatActivity() {
         isClassicMode = intent.getBooleanExtra(EXTRA_CLASSIC_MODE, false)
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION)
             ?: return finish()
+        this.executionLocation = executionLocation
         val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
         configureGameEnv(executionLocation, mode)
         showGameStartOverlay(executionLocation)
@@ -183,6 +190,40 @@ class GameActivity : AppCompatActivity() {
                 workloadController.start(workload)
             }
         }, "psdk-game-workload").start()
+    }
+
+    /**
+     * The game ended. The hub reports an abnormal end (its result); a
+     * classic game has none behind it: it reports an error that ended the
+     * game itself, before closing (GameExitReport).
+     */
+    private fun endSession(exitCode: Int) {
+        sessionEnded = true
+        val close = { reported: Boolean ->
+            setResult(Activity.RESULT_OK, Intent().putExtra(RESULT_EXIT_CODE, exitCode).putExtra(RESULT_REPORTED, reported))
+            finish()
+        }
+        val location = executionLocation
+        if (!isClassicMode || exitCode == 0 || location == null || isFinishing || isDestroyed) return close(false)
+
+        // Reported now, not as a crash at the next launch, nor again by the
+        // caller (the wizard, on a classic game's first start)
+        GameExitReport.clearRunning(location)
+        GameExitReport.show(this, location, startedAtMs, crashed = false, exitCode = exitCode) { _ -> close(true) }
+    }
+
+    // A classic game holds GameExitReport's crash marker while in the
+    // foreground: dying there (a native crash) gets reported at the next
+    // launch; in the background, Android or the player may kill it.
+    override fun onStart() {
+        super.onStart()
+        // Not once the game ended: its error is reported already
+        if (isClassicMode && !sessionEnded) executionLocation?.let(GameExitReport::markRunning)
+    }
+
+    override fun onStop() {
+        executionLocation?.let(GameExitReport::clearRunning)
+        super.onStop()
     }
 
     /**
@@ -387,14 +428,14 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * A PSDK script error the game may survive (an event's script): tell
-     * the player where its log is. Unless the error ends the game, which
-     * finishes this activity within [SCRIPT_ERROR_NOTICE_DELAY_MS] and gets
-     * reported by the caller instead. UI thread only.
+     * the player where its log is. Unless the error ends the game within
+     * [SCRIPT_ERROR_NOTICE_DELAY_MS], which gets reported instead: by the
+     * caller, or by [endSession] in classic mode. UI thread only.
      */
     private fun noticeScriptError(summary: String) {
         android.util.Log.w(TAG, "script error: $summary")
         glSurface.postDelayed({
-            if (isFinishing || isDestroyed) return@postDelayed
+            if (isFinishing || isDestroyed || sessionEnded) return@postDelayed
             // Android shows two lines of a toast: the way to the log first
             android.widget.Toast.makeText(
                 this,
@@ -419,6 +460,8 @@ class GameActivity : AppCompatActivity() {
 
         /** Result extra: the start.rb workload's exit code. */
         const val RESULT_EXIT_CODE = "EXIT_CODE"
+        /** The game already told the player why it stopped (classic mode, [endSession]) */
+        const val RESULT_REPORTED = "REPORTED"
 
         /** TouchLayouts (lib/touch_layouts.rb): SETTINGS_EVENT and RELOAD_MESSAGE. */
         private const val CONTROLS_EVENT = "overlay.settings"

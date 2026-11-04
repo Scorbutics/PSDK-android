@@ -17,9 +17,11 @@
         android:hardwareAccelerated="true"
         android:theme="@style/Theme.Psdk">
 
-        <!-- Entry point router -->
+        <!-- Entry point router. configChanges: a recreation while it reports
+             a classic game's crash (GameExitReport) would lose that report. -->
         <activity android:name=".ui.EntryActivity"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
