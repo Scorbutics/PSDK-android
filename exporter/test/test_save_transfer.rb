@@ -239,10 +239,12 @@ class SaveTransferTest < Minitest::Test
   def test_a_name_flagged_utf8_that_is_not
     file = File.join(@dir, 'bad-name.zip')
     File.open(file, 'wb') { |io| SaveTransfer::Zip.write(io, [['Saves/Pokemon_Party', 'save'], ["Saves/\xff\xfe".dup.force_encoding(Encoding::UTF_8), 'x']], NOW) }
-    assert_equal %w[Saves/Pokemon_Party], SaveTransfer.inspect_file(file)['saves']
+    # Refused as the app refuses it (ZipInputStream can't skip the entry)
+    assert_raises(SaveTransfer::Error) { SaveTransfer.inspect_file(file) }
     target = File.join(@dir, 'target')
-    SaveTransfer.import(file, target)
-    assert_equal({ 'Saves/Pokemon_Party' => 'save' }, read_tree(target))
+    write(target, 'Saves/Pokemon_Party' => 'mine')
+    assert_raises(SaveTransfer::Error) { SaveTransfer.import(file, target) }
+    assert_equal({ 'Saves/Pokemon_Party' => 'mine' }, read_tree(target))
   end
 
   def test_a_newer_format_is_refused

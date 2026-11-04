@@ -344,8 +344,10 @@ module SaveTransfer
         raise FormatError, 'encrypted entries are not supported' if flags & 1 == 1
 
         name.force_encoding(flags & UTF8_FLAG == 0 ? Encoding::IBM437 : Encoding::UTF_8)
-        # Flagged UTF-8 but isn't: left invalid, so never a save (safe?)
-        name = name.encode(Encoding::UTF_8) if name.valid_encoding?
+        # Flagged UTF-8 but isn't: refused, as the app's ZipInputStream does
+        raise FormatError, 'a name is not UTF-8' unless name.valid_encoding?
+
+        name = name.encode(Encoding::UTF_8)
         Entry.new(name, method, crc, csize, usize, offset)
       end
     end

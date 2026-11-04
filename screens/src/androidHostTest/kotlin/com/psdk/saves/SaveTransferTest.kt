@@ -223,6 +223,20 @@ class SaveTransferTest {
         assertEquals(listOf("Saves/Pokemon_Party"), SaveTransfer.inspect(ByteArrayInputStream(data)).saves)
     }
 
+    /** Flagged UTF-8 but isn't: refused, as the Ruby side refuses it */
+    @Test
+    fun aNameFlaggedUtf8ThatIsNotIsRefused() {
+        val data = zip("Saves/Pokemon_Party" to "save", "Saves/AB" to "x")
+        val text = String(data, Charsets.ISO_8859_1).replace("Saves/AB", "Saves/\u00ff\u00fe")
+        val target = File(dir, "target")
+        write(target, "Saves/Pokemon_Party" to "mine".toByteArray())
+        assertFailsWith<SaveTransfer.Error> { SaveTransfer.inspect(ByteArrayInputStream(text.toByteArray(Charsets.ISO_8859_1))) }
+        assertFailsWith<SaveTransfer.Error> {
+            SaveTransfer.import(ByteArrayInputStream(text.toByteArray(Charsets.ISO_8859_1)), target, File(dir, "b"), now)
+        }
+        assertEquals(mapOf("Saves/Pokemon_Party" to "mine"), tree(target))
+    }
+
     @Test
     fun aNewerFormatIsRefused() {
         val data = zip("psdk_saves.json" to "{\"format\": 2}", "Saves/Pokemon_Party" to "x")
