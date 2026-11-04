@@ -73,6 +73,10 @@ class ControlsModel(private val store: ControlsStore, private val labels: LabelR
         save { layout.withOpacity(value) }
     }
 
+    fun setGap(value: Double) {
+        save { layout.withGap(value) }
+    }
+
     fun setActionLayout(value: ActionLayout) {
         save { layout.withActionLayout(value) }
     }

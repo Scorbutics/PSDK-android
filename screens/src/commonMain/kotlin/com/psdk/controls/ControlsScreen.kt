@@ -59,9 +59,10 @@ import com.scorbutics.litergss.overlay.PlayerLayout
 import kotlin.math.roundToInt
 
 /**
- * The player's Controls: the gamepad's size, opacity and A / B order, the
- * player's own buttons, and the way back to the game's controls. Places are
- * changed in game (the gamepad's tools button, Edit controls).
+ * The player's Controls: the gamepad's size, opacity, button spacing and
+ * A / B order, the player's own buttons, and the way back to the game's
+ * controls. Places are changed in game (the gamepad's tools button, Edit
+ * controls).
  * @param onLogs the game's logs, opened in game: null hides them
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,6 +116,11 @@ private fun Gamepad(model: ControlsModel) {
     StepSlider(
         "Opacity", layout.opacity, PlayerLayout.OPACITIES, PlayerLayout.OPACITY_STEP,
         format = { "${(it * 100).roundToInt()}%" }, onDone = model::setOpacity,
+    )
+    // Of the buttons of each cross: the D-pad's and A, B, X, Y
+    StepSlider(
+        "Button spacing", layout.gap, PlayerLayout.GAPS, PlayerLayout.GAP_STEP,
+        format = { "${(it * 100).roundToInt()}%" }, onDone = model::setGap,
     )
     ChoiceRow(
         "A and B buttons", listOf(ActionLayout.NINTENDO to "A on the right", ActionLayout.XBOX to "A at the bottom"),

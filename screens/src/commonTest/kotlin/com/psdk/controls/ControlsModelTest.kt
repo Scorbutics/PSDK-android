@@ -52,6 +52,8 @@ class ControlsModelTest {
         val model = ControlsModel(store, labels)
         model.setOpacity(0.3)
         assertEquals(0.3, PlayerLayout.parse(store.file).opacity)
+        model.setGap(1.5)
+        assertEquals(1.5, PlayerLayout.parse(store.file).gap)
         model.saveButton(null, " RUN ", "LShift")
         assertEquals("RUN", store.images["touch_layout/player_1.png"]!!.decodeToString())
         assertEquals(listOf(PlayerButton("player_1", "RUN", "LShift")), PlayerLayout.parse(store.file).buttons)
