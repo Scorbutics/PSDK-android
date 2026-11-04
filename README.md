@@ -29,7 +29,7 @@ The project itself contains no native C++ code — all native code and the Ruby 
 ### Android SDK Requirements
 - **Compile SDK**: 34
 - **Min SDK**: 26 (Android 8.0)
-- **Target SDK**: 33
+- **Target SDK**: 35
 
 ## 🏗️ Project Structure
 
@@ -117,7 +117,7 @@ android {
     defaultConfig {
         applicationId "com.psdk.starter"
         minSdkVersion 26
-        targetSdkVersion 33
+        targetSdkVersion 35
         
         ndk {
             abiFilters += ["x86_64", "arm64-v8a"]
