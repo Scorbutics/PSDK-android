@@ -172,6 +172,10 @@ Any game, in any mode, shows its output and its `Error.log` in game: tools butto
 
 A script error never opens PSDK's error window, which a phone can't close ([`lib/script_errors.rb`](app/src/main/ruby/lib/script_errors.rb), any PSDK version): an error ending the game brings the app back with its message and the `Error.log` (Details), an error the game survives (an event's script) shows a notice pointing to the logs.
 
+### Moving Saves
+
+A game's saves go to and come from another device, a computer or a phone: tools button → Settings → Saves → Export saves / Import saves. The saves file is a ZIP the desktop reads and writes too, with the exporter (`--export-saves`, `--import-saves`) or `save_transfer.rb` on its own: see [exporter/README.md](exporter/README.md#saves). An import keeps the saves it replaces in `SavesBackup/`, and closes a running game.
+
 ### Adding Ruby Scripts
 
 Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as assets and loaded by the Ruby VM at runtime.

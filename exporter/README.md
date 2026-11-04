@@ -72,6 +72,39 @@ JKS keystore once with
 Keep the keystore safe: an APK signed with another key can't update the
 installed one.
 
+## Saves
+
+A game's saves move between desktop and Android as a saves file, a ZIP that
+both sides read and write ([`lib/save_transfer.rb`](lib/save_transfer.rb),
+the app's `SaveTransfer.kt`):
+
+```sh
+# From the project root (or a game's folder): this game's saves into a file
+ruby <exporter>/export_android.rb --export-saves              # <title>-saves-<date>.zip
+ruby <exporter>/export_android.rb --export-saves my-saves.zip
+# A saves file of the app (or of --export-saves) in place of this game's saves
+ruby <exporter>/export_android.rb --import-saves my-saves.zip
+```
+
+On Android: in game, tools button → Settings → Saves → Export saves / Import
+saves, through the system's file picker. An import closes a running game: it
+holds the old saves and would save over them.
+
+The saves are where PSDK writes them: the project's (or game's) folder, or
+`%APPDATA%/.<title>/` when that folder is read-only; `--save-root DIR` gives
+another. On Android: the game's `Release/` (debug mode: its own set). A saves
+file holds `Saves/` (but `Saves/input.json` / `input.yml`, a device's own keys,
+and `Saves/Telemetry/`), the `Global*.dat` files and `deleted_saves/`, with a
+`psdk_saves.json` manifest and a `README.txt` for the player. Nothing else is
+read from it. An import replaces the saves: those in place move first into
+`SavesBackup/<date>/`.
+
+`lib/save_transfer.rb` needs nothing but Ruby's standard library, so a game can
+ship it for its desktop players, who run it with any Ruby from the game's folder
+(`ruby save_transfer.rb export|import <file>`), or, in an uncompiled project, as
+a plugin: `Game.rb --util=save_transfer import <file>`. Without it, unzipping a
+saves file into the game's folder does the same, the backup aside.
+
 ## Layout
 
 | File | Role |
@@ -84,6 +117,7 @@ installed one.
 | `lib/apk_zip.rb`, `lib/apk_v2_signer.rb` | ZIP alignment, APK Signature Scheme v2 |
 | `lib/epsa_writer.rb`, `lib/epsa_kdf.rb` | `.epsa` encryption |
 | `lib/pkcs12_cert.rb`, `lib/apk_signing_block.rb` | Keystores and APK certificates |
+| `lib/save_transfer.rb` | Saves files, `--export-saves` / `--import-saves` (standard library only: it also runs alone) |
 | `lib/epsa_format.rb` | Points at the app's `app/src/main/ruby/lib/epsa_format.rb`, shared with its reader (a release zip carries the file itself) |
 
 ## Tests
@@ -91,6 +125,7 @@ installed one.
 ```sh
 ruby exporter/test/test_epsa_kdf.rb
 ruby exporter/test/test_base_apk.rb
+ruby exporter/test/test_save_transfer.rb
 BASE_APK=app/build/outputs/apk/debug/PSDK-android-ruby3.0-debug.apk \
   APKSIGNER=$ANDROID_HOME/build-tools/<version>/apksigner \
   ZIPALIGN=$ANDROID_HOME/build-tools/<version>/zipalign \

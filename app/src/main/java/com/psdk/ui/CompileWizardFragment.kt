@@ -178,7 +178,14 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                         true
                     }
                     R.id.action_controls -> {
-                        startActivity(com.psdk.controls.ControlsActivity.intent(requireContext(), executionLocation))
+                        // The saves of the mode picked (Release / Debug): each has its own
+                        startActivity(
+                            com.psdk.controls.ControlsActivity.intent(
+                                requireContext(), executionLocation,
+                                saveRoot = GameSaves.root(executionLocation, selectedMode),
+                                gameTitle = GameSaves.title(requireContext(), executionLocation, classicMode = false),
+                            )
+                        )
                         true
                     }
                     R.id.action_delete_project -> {

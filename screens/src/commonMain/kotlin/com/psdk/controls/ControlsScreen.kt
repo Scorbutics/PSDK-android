@@ -64,10 +64,16 @@ import kotlin.math.roundToInt
  * controls. Places are changed in game (the gamepad's tools button, Edit
  * controls).
  * @param onLogs the game's logs, opened in game: null hides them
+ * @param saves the game's Saves section (export / import): null hides it
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ControlsScreen(model: ControlsModel, onClose: () -> Unit, onLogs: (() -> Unit)? = null) {
+fun ControlsScreen(
+    model: ControlsModel,
+    onClose: () -> Unit,
+    onLogs: (() -> Unit)? = null,
+    saves: (@Composable () -> Unit)? = null,
+) {
     PsdkTheme {
         Scaffold(
             topBar = {
@@ -96,6 +102,10 @@ fun ControlsScreen(model: ControlsModel, onClose: () -> Unit, onLogs: (() -> Uni
                     HorizontalDivider()
                     Section("Logs")
                     OutlinedButton(onClick = it) { Text("Game logs") }
+                }
+                saves?.let {
+                    HorizontalDivider()
+                    it()
                 }
             }
         }

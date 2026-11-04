@@ -276,6 +276,18 @@ parser = OptionParser.new do |o|
   # first launch.
   o.on('--debug-mode', 'Debug-launch APK: Game.rb runs straight out of the bundled',
        'archive via PhysFS, skipping the on-device compile step') { opts[:debug_mode] = true }
+  o.separator ''
+  o.separator "Saves (moved between desktop and Android, as a saves file: lib/save_transfer.rb):"
+  o.on('--export-saves [FILE]', "Write this game's saves into FILE (default:",
+       '<title>-saves-<date>.zip), for the Android app (Settings > Saves > Import saves)') do |v|
+    opts[:saves] = [:export, v]
+  end
+  o.on('--import-saves FILE', "Replace this game's saves with those of FILE, exported by the",
+       'Android app or by --export-saves. The saves in place move into',
+       'SavesBackup/<date>/ first') { |v| opts[:saves] = [:import, v] }
+  o.on('--save-root DIR', "Where the game's saves are (default: where PSDK writes them: this",
+       'folder, or %APPDATA%/.<title>/ when it is read-only)') { |v| opts[:save_root] = v }
+  o.separator ''
   o.on('-h', '--help', 'Show this help') do
     puts o
     exit
@@ -288,6 +300,16 @@ rescue OptionParser::ParseError => e
   abort "#{e.message}\n\n#{parser}"
 end
 abort "Unexpected arguments: #{ARGV.drop(1).join(' ')}\n\n#{parser}" if ARGV.size > 1
+
+# --export-saves / --import-saves: the saves only, nothing is built
+if opts[:saves]
+  require_relative 'lib/save_transfer'
+  command, file = opts[:saves]
+  argv = [command.to_s, file].compact
+  argv += ['--save-root', opts[:save_root]] if opts[:save_root]
+  exit SaveTransfer.main(argv)
+end
+abort '--save-root only applies to --export-saves and --import-saves' if opts[:save_root]
 
 compiled_mode = opts[:compiled]
 debug_mode    = opts[:debug_mode]

@@ -12,6 +12,7 @@ import androidx.core.view.WindowCompat
 import com.psdk.BuildConfig
 import com.psdk.R
 import com.psdk.controls.ControlsActivity
+import com.psdk.saves.SaveTransfer
 import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RemoteListenerConfig
 import com.scorbutics.litergss.GameInputForwarder
@@ -92,6 +93,13 @@ class GameActivity : AppCompatActivity() {
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) {
         controlsOpen = false
+        // Saves imported (Controls > Saves): the game holds the old ones and
+        // would save over them. It closes; the player starts it again.
+        val location = executionLocation
+        if (location != null && !sessionEnded && SaveTransfer.takeImported(GameSaves.root(location, gameMode()))) {
+            android.util.Log.i(TAG, "saves imported under the game — closing it")
+            return@registerForActivityResult endSession(0)
+        }
         HostMessages.send(this, CONTROLS_RELOAD_MESSAGE)
     }
 
@@ -164,7 +172,9 @@ class GameActivity : AppCompatActivity() {
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION)
             ?: return finish()
         this.executionLocation = executionLocation
-        val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
+        val mode = gameMode()
+        // An import from the project's page, before this game: not one under it
+        SaveTransfer.takeImported(GameSaves.root(executionLocation, mode))
         configureGameEnv(executionLocation, mode)
         showGameStartOverlay(executionLocation)
         inputForwarder.start()
@@ -347,13 +357,22 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    private fun gameMode() = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
+
     private fun openControls() {
         if (isFinishing || isDestroyed || controlsOpen) return
         val executionLocation = intent.getStringExtra(EXTRA_EXECUTION_LOCATION) ?: return
-        val mode = GameMode.fromEnvValue(intent.getStringExtra(EXTRA_GAME_MODE))
+        val mode = gameMode()
         val logs = GameLogs.intent(this, executionLocation, GameLogs.errors(executionLocation, mode))
         try {
-            controlsScreen.launch(ControlsActivity.intent(this, executionLocation, logs))
+            controlsScreen.launch(
+                ControlsActivity.intent(
+                    this, executionLocation, logs,
+                    saveRoot = GameSaves.root(executionLocation, mode),
+                    gameTitle = GameSaves.title(this, executionLocation, isClassicMode),
+                    gameRunning = true,
+                )
+            )
             controlsOpen = true
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Controls screen not opened", e)
