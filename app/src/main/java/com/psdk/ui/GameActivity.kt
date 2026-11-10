@@ -499,9 +499,10 @@ class GameActivity : AppCompatActivity() {
         /**
          * start.rb's helper modules: TouchLayouts loads the gamepad's layout
          * files, ScriptErrors replaces PSDK's error window, GameWarnings sets
-         * the game's warnings by base APK.
+         * the game's warnings by base APK, PsdkGameArea centres the game on the
+         * window with LiteRGSS instead of PSDK's viewport offsets.
          */
-        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb", "lib/game_warnings.rb")
+        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb", "lib/game_warnings.rb", "lib/game_area.rb")
 
         /**
          * DEBUG_UNCOMPILED mode's: start.rb's debug branch also needs
