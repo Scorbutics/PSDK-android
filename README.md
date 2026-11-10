@@ -104,6 +104,8 @@ One APK embeds one Ruby minor version, because Pokémon Studio game bytecode onl
 
 Each release (tag `vX.Y.Z`) holds the debug and release APK of every variant: `PSDK-android-ruby<variant>-<debug|release>.apk`.
 
+The release APKs are signed with the project's key, so a release installs over the previous one: CI reads it from the repository's secrets (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`) and a tag fails without them. A local `assembleRelease` signs with the debug key unless `RELEASE_KEYSTORE_FILE` (and the two others) are set.
+
 ## 🔧 Configuration
 
 ### Gradle Configuration
