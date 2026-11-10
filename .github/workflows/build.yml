@@ -29,10 +29,31 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # The release APKs are signed with the project's key (app/build.gradle).
+      # A tag must have it: a release signed with a runner's random debug key
+      # installs over no other release. Pull requests from forks get no
+      # secrets: they build with the debug key.
+      - name: Release signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "::error::RELEASE_KEYSTORE_BASE64 is not set: the release would be signed with a random key"
+              exit 1
+            fi
+            echo "No release key: the release APK is signed with the debug key"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "RELEASE_KEYSTORE_FILE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+
       - name: Build APKs
         env:
           GITHUB_USERNAME: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         # The screens module's tests don't depend on the Ruby variant: run
         # them once, with the 3.0 build
         run: ./gradlew assembleDebug assembleRelease ${{ matrix.ruby_variant == '3.0' && ':screens:testAndroidHostTest' || '' }} -PrubyVariant=${{ matrix.ruby_variant }}
@@ -110,6 +131,22 @@ jobs:
         with:
           pattern: app-*-ruby*
           path: artifacts
+
+      # Every release APK carries the project's certificate, or the release
+      # would not install over the previous one (and its .epsa archives would
+      # not open on it)
+      - name: Check the release signing certificate
+        env:
+          RELEASE_CERT_SHA256: a6d98164e6e385296f7cd688e5a7b4d833a50600ed04b7088958cb5efa54938a
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          status=0
+          for apk in artifacts/app-release-*/*.apk; do
+            cert=$("$apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+            echo "$apk: $cert"
+            [ "$cert" = "$RELEASE_CERT_SHA256" ] || { echo "::error::$apk is not signed with the release key"; status=1; }
+          done
+          exit $status
 
       # The exporter that builds APKs from (and archives for) this release.
       - name: Package the exporter

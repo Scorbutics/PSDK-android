@@ -69,11 +69,30 @@ android {
         }
     }
 
+    // Releases ship with the project's own key: an update only installs over an
+    // APK signed with the same one, and .epsa archives are encrypted for it
+    // (exporter/lib/epsa_kdf.rb). CI decodes it from the repository's secrets
+    // (RELEASE_KEYSTORE_*, see .github/workflows/build.yml). A build without
+    // them signs its release APK with the debug key: on a CI runner, a new
+    // random one every job.
+    def releaseKeystore = System.getenv("RELEASE_KEYSTORE_FILE")
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storeType "pkcs12"
+                storePassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
         }
         debug {
         }
