@@ -11,7 +11,7 @@ zip4j = "2.11.5"
 # appends the -ruby<variant> suffix) and litergss-host, its Android host and
 # layout model (one artifact for every Ruby variant). They go together: the
 # runtime's natives are litergss-host's NativeSurface.
-litergss = "1.12.2"
+litergss = "1.13.0"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
