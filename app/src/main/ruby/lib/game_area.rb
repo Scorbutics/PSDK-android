@@ -10,13 +10,14 @@
 # frozen screen of a transition) lands beside the game.
 #
 # Once PSDK created its window, its offsets become the window's game area
-# (litergss/window_origin) and are set back to 0 in PSDK: LiteRGSS centres
-# the game, and the game sees a window of its own size, whatever its PSDK
-# version. The touch overlay keeps the whole window.
+# (LiteRGSS's DisplayWindow#game_area=) and are set back to 0 in PSDK:
+# LiteRGSS centres the game, and the game sees a window of its own size
+# (width, height, mouse and touch positions), whatever its PSDK version. The
+# touch overlay keeps the whole window.
 #
 # Nothing changes for a game as large as its window (no offset), a game
 # placing its viewports itself (Viewport's own global offsets), or a runtime
-# without window origin (LiteRGSS::WindowOrigin.install is false).
+# without game area (no DisplayWindow#game_area=).
 #
 # Guarded like touch_layouts.rb: a prelude of start.rb.
 unless defined?(PsdkGameArea::Creation)
@@ -37,7 +38,7 @@ module PsdkGameArea
   # Hook the windows' creation (idempotent)
   # @return [Boolean] if the game area will be applied
   def install(window_class = LiteRGSS::DisplayWindow)
-    return false unless defined?(LiteRGSS::WindowOrigin) && LiteRGSS::WindowOrigin.install
+    return false unless window_class.method_defined?(:game_area=)
 
     creation = window_class.singleton_class
     creation.prepend(Creation) unless creation.ancestors.include?(Creation)

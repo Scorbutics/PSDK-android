@@ -1,24 +1,11 @@
 # Unit tests for PsdkGameArea: PSDK's viewport offsets moved to the window's
-# game area, against a fake LiteRGSS (litergss-everywhere's window_origin is
-# tested there).
+# game area, against a fake LiteRGSS (DisplayWindow#game_area= is LiteRGSS's).
 #
 # Run:  ruby app/src/test/ruby/test_game_area.rb
 
 require 'minitest/autorun'
 
 module LiteRGSS
-  # What PsdkGameArea reads of litergss/window_origin
-  module WindowOrigin
-    class << self
-      attr_accessor :supported
-
-      def install
-        supported
-      end
-    end
-    self.supported = true
-  end
-
   class DisplayWindow
     attr_reader :game_area
 
@@ -73,7 +60,6 @@ require File.expand_path('../../main/ruby/lib/game_area', __dir__)
 
 class TestGameArea < Minitest::Test
   def setup
-    LiteRGSS::WindowOrigin.supported = true
     @config = FakePsdkConfig.new(107, 0)
     Object.const_set(:PSDK_CONFIG, @config)
   end
@@ -155,9 +141,8 @@ class TestGameArea < Minitest::Test
     assert_equal [320, 240], [window.width, window.height], 'what Graphics.width reads'
   end
 
-  def test_no_hook_without_window_origin_in_the_runtime
-    LiteRGSS::WindowOrigin.supported = false
-    window_class = Class.new(LiteRGSS::DisplayWindow)
+  def test_no_hook_without_game_area_in_the_runtime
+    window_class = Class.new(LiteRGSS::DisplayWindow) { undef_method :game_area= }
     refute PsdkGameArea.install(window_class)
     refute_includes window_class.singleton_class.ancestors, PsdkGameArea::Creation
   end

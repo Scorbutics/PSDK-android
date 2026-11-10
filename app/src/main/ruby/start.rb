@@ -210,6 +210,16 @@ SafeRunner.run(
     private :exit!
   end
 
+  # The game centred on the window by LiteRGSS (DisplayWindow#game_area=),
+  # not by PSDK's viewport offsets: the game's scripts see a window of the
+  # game's size, so what they place with Graphics.width / height lands on the
+  # game (lib/game_area.rb). Without it, PSDK keeps its offsets.
+  if defined?(PsdkGameArea) && PsdkGameArea.install
+    VMLogger.info '[start.rb] PsdkGameArea installed: LiteRGSS centres the game'
+  else
+    VMLogger.error '[start.rb] No game area in this runtime: PSDK centres the game'
+  end
+
   # On-screen gamepad, provided by the runtime (litergss-everywhere's
   # litergss/touch_overlay). It works at the LiteRGSS level, so every game
   # gets it, compiled by any PSDK version on any platform; a game drawing its
@@ -219,21 +229,6 @@ SafeRunner.run(
     LiteRGSS::TouchOverlay.install
   rescue LoadError => e
     VMLogger.error "[start.rb] No on-screen gamepad in this runtime: #{e.message}"
-  end
-
-  # The game centred on the window by LiteRGSS (litergss/window_origin), not
-  # by PSDK's viewport offsets: the game's scripts see a window of the game's
-  # size, so what they place with Graphics.width / height lands on the game
-  # (lib/game_area.rb). Without it, PSDK keeps its offsets.
-  begin
-    require 'litergss/window_origin'
-    if defined?(PsdkGameArea) && PsdkGameArea.install
-      VMLogger.info '[start.rb] PsdkGameArea installed: LiteRGSS centres the game'
-    else
-      VMLogger.error '[start.rb] No window origin in this runtime: PSDK centres the game'
-    end
-  rescue LoadError => e
-    VMLogger.error "[start.rb] No window origin in this runtime: #{e.message}"
   end
   # Its layout: the game's file, then the player's (lib/touch_layouts.rb),
   # loaded again once the app's Controls screen (the tools menu's Settings)
