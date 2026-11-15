@@ -26,6 +26,27 @@ if (!rubyVariants.contains(rubyVariant)) {
     throw new GradleException("Unsupported rubyVariant '${rubyVariant}', expected one of ${rubyVariants}")
 }
 
+// Debug APKs embed the Tracy profiler build of the runtime (<version>-tracy):
+// LiteCGSS instrumented, listening on localhost only, recording nothing until
+// a Tracy v0.13.1 server connects through adb forward (README, Profiling).
+// Release APKs, and the games exported from them, never do. -Ptracy=false
+// gives the debug APK the release runtime. litergss-everywhere publishes the
+// Tracy runtime from 1.14.0 on: older versions have none to resolve.
+def litergssVersion = libs.versions.litergss.get()
+def tracyFirstLitergss = '1.14.0'
+def versionAtLeast = { String version, String minimum ->
+    def numbers = { String v -> v.tokenize('-')[0].tokenize('.').collect { it.isInteger() ? it.toInteger() : 0 } }
+    def a = numbers(version), b = numbers(minimum)
+    for (i in 0..<Math.max(a.size(), b.size())) {
+        def x = i < a.size() ? a[i] : 0
+        def y = i < b.size() ? b[i] : 0
+        if (x != y) return x > y
+    }
+    return true
+}
+def tracyWanted = (project.findProperty('tracy') ?: 'true').toString() != 'false'
+def debugTracy = tracyWanted && versionAtLeast(litergssVersion, tracyFirstLitergss)
+
 base {
     archivesName = "PSDK-android-ruby${rubyVariant}"
 }
@@ -137,7 +158,10 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
 
-    // rgss-runtime is published once per Ruby variant: <version>-ruby<variant>.
-    implementation "com.scorbutics.rubyvm:rgss-runtime-android:${libs.versions.litergss.get()}-ruby${rubyVariant}"
+    // rgss-runtime is published once per Ruby variant: <version>-ruby<variant>,
+    // and its Tracy build as <version>-ruby<variant>-tracy (debugTracy above).
+    def rgssRuntime = "com.scorbutics.rubyvm:rgss-runtime-android:${litergssVersion}-ruby${rubyVariant}"
+    releaseImplementation rgssRuntime
+    debugImplementation debugTracy ? "${rgssRuntime}-tracy" : rgssRuntime
     implementation libs.litergss.host
 }

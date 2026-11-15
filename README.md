@@ -184,6 +184,18 @@ Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as asset
 
 The native entry point and Ruby VM initialization are handled internally by the `rgss-runtime-android` dependency.
 
+### Profiling with Tracy
+
+The debug APK embeds the [Tracy](https://github.com/wolfpld/tracy) build of the runtime (`rgss-runtime-android:<version>-ruby<variant>-tracy`, litergss 1.14.0 and later): LiteCGSS's drawing and loading are instrumented. Release APKs, and the games exported from them, never are. The profiler listens on the device's localhost only and records nothing until a server connects: until then, an instrumented zone costs an atomic check. `-Ptracy=false` builds a debug APK with the release runtime.
+
+Each process starting a Ruby VM has its own profiler, on the first free port from 8086: the launcher takes 8086, the game (`com.psdk.starter:game`) 8087. With the game running:
+
+```bash
+adb forward tcp:8087 tcp:8087
+```
+
+Then connect a Tracy **v0.13.1** profiler (the GUI, or `tracy-capture -o game.tracy -a 127.0.0.1 -p 8087`) to `127.0.0.1:8087`. The server must be that exact version.
+
 ## 🐛 Troubleshooting
 
 ### Common Issues
