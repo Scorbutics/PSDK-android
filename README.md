@@ -184,17 +184,19 @@ Place your Ruby scripts in `app/src/main/ruby/`. These will be packaged as asset
 
 The native entry point and Ruby VM initialization are handled internally by the `rgss-runtime-android` dependency.
 
-### Profiling with Tracy
+### Debug Listeners
 
-The debug APK embeds the [Tracy](https://github.com/wolfpld/tracy) build of the runtime (`rgss-runtime-android:<version>-ruby<variant>-tracy`, litergss 1.14.0 and later): LiteCGSS's drawing and loading are instrumented. Release APKs, and the games exported from them, never are. The profiler listens on the device's localhost only and records nothing until a server connects: until then, an instrumented zone costs an atomic check. `-Ptracy=false` builds a debug APK with the release runtime.
+A debug APK opens three listeners in each process running a Ruby VM, all on the device's loopback only. Both processes are alive while a game runs: six ports.
 
-Each process starting a Ruby VM has its own profiler, on the first free port from 8086: the launcher takes 8086, the game (`com.psdk.starter:game`) 8087. With the game running:
+| Listener | Game (`com.psdk.starter:game`) | Launcher (`com.psdk.starter`) | Client |
+|---|---|---|---|
+| Remote debug (rdbg / DAP) | 7777 | 7787 | `RUBY_DEBUG_COOKIE=psdk-dev-cookie rdbg _1.4.0_ --attach 127.0.0.1 7777` |
+| Remote eval console | 7778 | 7788 | `rlwrap nc 127.0.0.1 7778`, then send `psdk-dev-cookie` |
+| Tracy profiler | 8087 | 8086 | Tracy **v0.13.1** on `127.0.0.1:8087` (GUI, or `tracy-capture -o game.tracy -a 127.0.0.1 -p 8087`) |
 
-```bash
-adb forward tcp:8087 tcp:8087
-```
+Forward the ones you want with `adb forward tcp:<port> tcp:<port>`. When another PSDK app holds them, the debug and eval pair moves by +100 and Tracy to the next free port: logcat (tags `PsdkInterpreter`, `GameActivity`) has the ports in use. Remote debug and eval: [`RemoteListenerConfig.kt`](app/src/main/java/com/psdk/ruby/vm/RemoteListenerConfig.kt). All three: litergss-everywhere's [Debug Listeners](https://github.com/Scorbutics/litergss-everywhere/blob/master/docs/INTEGRATION.md#debug-listeners).
 
-Then connect a Tracy **v0.13.1** profiler (the GUI, or `tracy-capture -o game.tracy -a 127.0.0.1 -p 8087`) to `127.0.0.1:8087`. The server must be that exact version.
+**Tracy.** The debug APK embeds the [Tracy](https://github.com/wolfpld/tracy) build of the runtime (`rgss-runtime-android:<version>-ruby<variant>-tracy`, litergss 1.14.0 and later): LiteCGSS's drawing and loading are instrumented. Release APKs, and the games exported from them, never are. The profiler records nothing until a server connects: until then, an instrumented zone costs an atomic check. The server must be Tracy v0.13.1 exactly. `-Ptracy=false` builds a debug APK with the release runtime.
 
 ## 🐛 Troubleshooting
 

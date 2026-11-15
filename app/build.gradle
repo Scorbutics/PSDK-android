@@ -28,7 +28,7 @@ if (!rubyVariants.contains(rubyVariant)) {
 
 // Debug APKs embed the Tracy profiler build of the runtime (<version>-tracy):
 // LiteCGSS instrumented, listening on localhost only, recording nothing until
-// a Tracy v0.13.1 server connects through adb forward (README, Profiling).
+// a Tracy v0.13.1 server connects through adb forward (README, Debug Listeners).
 // Release APKs, and the games exported from them, never do. -Ptracy=false
 // gives the debug APK the release runtime. litergss-everywhere publishes the
 // Tracy runtime from 1.14.0 on: older versions have none to resolve.
