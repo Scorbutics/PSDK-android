@@ -80,6 +80,8 @@ class PsdkInterpreter private constructor(
         // Never resurrect after close(): the interpreter would be leaked.
         check(!closed) { "PsdkInterpreter used after close()" }
         if (interpreter == null) {
+            // Before the VM exists: its Tracy profiler reads TRACY_PORT at start
+            RemoteListenerConfig.applyTracyPort()
             interpreter = KmpInterpreter.create(
                 appPath = ".",
                 rubyBaseDir = paths.rubyBaseDir,

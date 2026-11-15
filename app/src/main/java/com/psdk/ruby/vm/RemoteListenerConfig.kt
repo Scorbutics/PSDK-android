@@ -32,6 +32,12 @@ import com.psdk.BuildConfig
  * PSDK hub, each exported game) asks for the same ones. The pair actually
  * used is the first free one among the defaults, +100, +200, ... — check
  * logcat (tag PsdkInterpreter / GameActivity) for the ports to forward.
+ *
+ * The Tracy profiler of the debug runtime (rgss-runtime-android -tracy)
+ * listens too, on [tracyPort]: 8086 for the game, 8096 for the shell, the
+ * same +100 search. Left to itself, Tracy takes the first free port from
+ * 8086, so the process starting first (the shell) would get the game's.
+ * TRACY_PORT, read when the VM starts its profiler, pins it ([applyTracyPort]).
  */
 object RemoteListenerConfig {
     const val DEBUG_HOST  = "127.0.0.1"
@@ -40,6 +46,8 @@ object RemoteListenerConfig {
     const val EVAL_PORT   = 7778
     const val SHELL_DEBUG_PORT = 7787
     const val SHELL_EVAL_PORT  = 7788
+    const val TRACY_PORT       = 8086
+    const val SHELL_TRACY_PORT = 8096
     const val TOKEN       = "psdk-dev-cookie"
 
     /** Off in release builds, on in debug builds. Inlined by R8 in release. */
@@ -51,6 +59,35 @@ object RemoteListenerConfig {
 
     private const val PORT_PAIR_STEP     = 100
     private const val PORT_PAIR_ATTEMPTS = 10
+
+    /**
+     * The Tracy profiler's port for the VM in the current process: the first
+     * free one from this process's default, by +100. Tracy listens on the
+     * IPv4 loopback only (TRACY_ONLY_LOCALHOST), as probed here. When none
+     * is free, the default: Tracy then fails to listen and the game runs
+     * unprofiled (TRACY_PORT set, it searches no other port).
+     */
+    val tracyPort: Int by lazy {
+        val default = if (isGameProcess) TRACY_PORT else SHELL_TRACY_PORT
+        val port = (0 until PORT_PAIR_ATTEMPTS)
+            .map { default + it * PORT_PAIR_STEP }
+            .firstOrNull { isBindable(DEBUG_HOST, it) }
+            ?: default
+        if (port != default) {
+            android.util.Log.w("RemoteListenerConfig", "Tracy port $default busy (another PSDK app?), using $port")
+        }
+        port
+    }
+
+    /**
+     * Pin the Tracy port before the VM starts (its profiler reads TRACY_PORT
+     * then). Debug builds only; a runtime without Tracy ignores it.
+     */
+    fun applyTracyPort() {
+        if (!enabled) return
+        android.system.Os.setenv("TRACY_PORT", tracyPort.toString(), true)
+        android.util.Log.i("RemoteListenerConfig", "Tracy profiler port $tracyPort (adb forward tcp:$tracyPort tcp:$tracyPort)")
+    }
 
     /**
      * Resolved once per process: the first (debug, eval) pair both free on
