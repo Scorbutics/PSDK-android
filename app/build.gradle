@@ -45,10 +45,24 @@ def versionAtLeast = { String version, String minimum ->
     return true
 }
 def tracyWanted = (project.findProperty('tracy') ?: 'true').toString() != 'false'
+
+// The runtime's graphics backend: sfml (LiteRGSS2, default) or raylib (LiteRGSS3,
+// Ruby 3.2+). litergss-everywhere publishes the raylib runtime under the same
+// artifact with -raylib after the Ruby variant (<version>-ruby3.3-raylib), so
+// -Pbackend=raylib only changes the version resolved.
+def backends = ['sfml', 'raylib']
+def backend = (project.findProperty('backend') ?: 'sfml').toString()
+if (!backends.contains(backend)) {
+    throw new GradleException("Unsupported backend '${backend}', expected one of ${backends}")
+}
+if (backend == 'raylib' && rubyVariant == '3.0') {
+    throw new GradleException("The raylib backend needs Ruby 3.2 or newer: -PrubyVariant=3.2 or 3.3")
+}
+def backendSuffix = backend == 'raylib' ? '-raylib' : ''
 def debugTracy = tracyWanted && versionAtLeast(litergssVersion, tracyFirstLitergss)
 
 base {
-    archivesName = "PSDK-android-ruby${rubyVariant}"
+    archivesName = "PSDK-android-ruby${rubyVariant}${backendSuffix}"
 }
 
 android {
@@ -160,7 +174,8 @@ dependencies {
 
     // rgss-runtime is published once per Ruby variant: <version>-ruby<variant>,
     // and its Tracy build as <version>-ruby<variant>-tracy (debugTracy above).
-    def rgssRuntime = "com.scorbutics.rubyvm:rgss-runtime-android:${litergssVersion}-ruby${rubyVariant}"
+    // -Pbackend=raylib: <version>-ruby<variant>-raylib[-tracy]
+    def rgssRuntime = "com.scorbutics.rubyvm:rgss-runtime-android:${litergssVersion}-ruby${rubyVariant}${backendSuffix}"
     releaseImplementation rgssRuntime
     debugImplementation debugTracy ? "${rgssRuntime}-tracy" : rgssRuntime
     implementation libs.litergss.host
