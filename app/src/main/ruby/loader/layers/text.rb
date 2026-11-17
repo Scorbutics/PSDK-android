@@ -68,7 +68,7 @@ module Loader
                    end
         @footer = LiteRGSS::Text.new(0, viewport, left.to_i, footer_y.to_i,
                                      (full_w - left - right).to_i, FOOTER_HEIGHT,
-                                     'Powered by PSDK · LiteRGSS2 · Ruby VM', 1)
+                                     "Powered by PSDK · #{engine_name} · Ruby VM", 1)
         @footer.size          = FOOTER_FONT_SIZE
         @footer.fill_color    = LiteRGSS::Color.new(110, 125, 150, 200)
         @footer_outline_final = [0, 0, 0, 140]
@@ -232,6 +232,12 @@ module Loader
 
       def color(rgba)
         LiteRGSS::Color.new(rgba[0], rgba[1], rgba[2], rgba[3])
+      end
+
+      # The engine the runtime embeds: LiteRGSS3 (raylib backend) defines its
+      # own module (LiteRGSS is its alias), LiteRGSS2 only LiteRGSS
+      def engine_name
+        defined?(::LiteRGSS3) ? 'LiteRGSS3' : 'LiteRGSS2'
       end
 
       # Lerp the outline RGB from @accent (bright palette) toward its
