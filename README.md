@@ -106,7 +106,7 @@ Each release (tag `vX.Y.Z`) holds the debug and release APK of every variant: `P
 
 #### Runtime (graphics engine)
 
-Every variant runs on LiteRGSS2 (SFML) by default. Ruby 3.2 and 3.3 also have a LiteRGSS3 build, on raylib, selected with `-Pbackend=raylib`: it resolves `rgss-runtime-android:<version>-ruby<variant>-raylib` and builds `PSDK-android-ruby<variant>-raylib-<debug|release>.apk`.
+Every variant runs on LiteRGSS2 (SFML) by default. Every variant also has a LiteRGSS3 build, on raylib, selected with `-Pbackend=raylib`: it resolves `rgss-runtime-android:<version>-ruby<variant>-raylib` and builds `PSDK-android-ruby<variant>-raylib-<debug|release>.apk`.
 
 ```bash
 ./gradlew assembleRelease -PrubyVariant=3.3 -Pbackend=raylib   # app/build/outputs/apk/release/PSDK-android-ruby3.3-raylib-release.apk

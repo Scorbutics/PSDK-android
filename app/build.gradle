@@ -46,17 +46,14 @@ def versionAtLeast = { String version, String minimum ->
 }
 def tracyWanted = (project.findProperty('tracy') ?: 'true').toString() != 'false'
 
-// The runtime's graphics backend: sfml (LiteRGSS2, default) or raylib (LiteRGSS3,
-// Ruby 3.2+). litergss-everywhere publishes the raylib runtime under the same
+// The runtime's graphics backend: sfml (LiteRGSS2, default) or raylib (LiteRGSS3;
+// on Ruby 3.0 from litergss 1.17.0). litergss-everywhere publishes the raylib runtime under the same
 // artifact with -raylib after the Ruby variant (<version>-ruby3.3-raylib), so
 // -Pbackend=raylib only changes the version resolved.
 def backends = ['sfml', 'raylib']
 def backend = (project.findProperty('backend') ?: 'sfml').toString()
 if (!backends.contains(backend)) {
     throw new GradleException("Unsupported backend '${backend}', expected one of ${backends}")
-}
-if (backend == 'raylib' && rubyVariant == '3.0') {
-    throw new GradleException("The raylib backend needs Ruby 3.2 or newer: -PrubyVariant=3.2 or 3.3")
 }
 def backendSuffix = backend == 'raylib' ? '-raylib' : ''
 def debugTracy = tracyWanted && versionAtLeast(litergssVersion, tracyFirstLitergss)

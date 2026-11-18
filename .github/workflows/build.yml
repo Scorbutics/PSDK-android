@@ -11,16 +11,13 @@ jobs:
   build:
     # One APK per Ruby variant: game bytecode only loads on the Ruby minor
     # that compiled it (3.0 Windows Studio, 3.2 macOS, 3.3 Linux). And per
-    # runtime: sfml (LiteRGSS2) for every variant, raylib (LiteRGSS3) for
-    # Ruby 3.2 and newer (PSDK-android-ruby3.3-raylib-*.apk).
+    # runtime, for every variant: sfml (LiteRGSS2) and raylib (LiteRGSS3,
+    # PSDK-android-ruby3.3-raylib-*.apk).
     strategy:
       fail-fast: false
       matrix:
         ruby_variant: ['3.0', '3.2', '3.3']
-        backend: ['sfml']
-        include:
-          - { ruby_variant: '3.2', backend: 'raylib' }
-          - { ruby_variant: '3.3', backend: 'raylib' }
+        backend: ['sfml', 'raylib']
     runs-on: ubuntu-latest
 
     steps:
@@ -62,7 +59,7 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
         # The screens module's tests depend on neither the Ruby variant nor
         # the runtime: run them once, with the 3.0 build (sfml only)
-        run: ./gradlew assembleDebug assembleRelease ${{ matrix.ruby_variant == '3.0' && ':screens:testAndroidHostTest' || '' }} -PrubyVariant=${{ matrix.ruby_variant }} -Pbackend=${{ matrix.backend }}
+        run: ./gradlew assembleDebug assembleRelease ${{ matrix.ruby_variant == '3.0' && matrix.backend == 'sfml' && ':screens:testAndroidHostTest' || '' }} -PrubyVariant=${{ matrix.ruby_variant }} -Pbackend=${{ matrix.backend }}
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
