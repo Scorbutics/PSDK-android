@@ -222,8 +222,9 @@ SafeRunner.run(
 
   # On-screen gamepad, provided by the runtime (litergss-everywhere's
   # litergss/touch_overlay). It works at the LiteRGSS level, so every game
-  # gets it, compiled by any PSDK version on any platform; a game drawing its
-  # own touch controls (Input::InputTouch) keeps them.
+  # gets it, compiled by any PSDK version on any platform. It is the only
+  # gamepad: from litergss 1.17.3, the touch controls of games compiled by an
+  # older PSDK (Input::InputTouch) are switched off.
   begin
     require 'litergss/touch_overlay'
     LiteRGSS::TouchOverlay.install
