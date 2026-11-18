@@ -15,6 +15,7 @@ import androidx.fragment.app.viewModels
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.psdk.AppModeDetector
 import com.psdk.ClassicModeState
 import com.psdk.R
@@ -384,17 +385,28 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                         if (result.isValid) {
                             viewModel.archive.value = result.archive
                         } else {
-                            android.widget.Toast.makeText(
-                                requireContext(),
-                                result.error ?: "Archive validation failed",
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                            requireActivity().onBackPressedDispatcher.onBackPressed()
+                            showArchiveError(result.error ?: "Archive validation failed")
                         }
                     }
                 }.start()
             }
         }
+    }
+
+    /**
+     * Why the archive can't be opened (e.g. a game compiled for another Ruby,
+     * and which app plays it), then back. A dialog: a toast shows two lines
+     * at most (Android 12+), too few for that message.
+     */
+    private fun showArchiveError(message: String) {
+        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Psdk_Dialog)
+            .setTitle("Can't open this game")
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok, null)
+            .setOnDismissListener {
+                if (isAdded) requireActivity().onBackPressedDispatcher.onBackPressed()
+            }
+            .show()
     }
 
     private fun navigateToStep(step: Int) {

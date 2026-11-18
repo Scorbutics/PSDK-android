@@ -13,6 +13,11 @@ unless defined?(GameContent::COMPILED_GAME)
 module GameContent
   module_function
 
+  # A game archive this app can't use, for a reason the player can act on:
+  # the message says what is wrong and what to do, in words for a player.
+  # extract_loader_assets.rb hands it to the host as is (ArchiveValidator).
+  class ArchiveError < RuntimeError; end
+
   # PSDK's compilation writes it next to Game.rb, which only evaluates it.
   # Stock Studio releases may ship it alone.
   COMPILED_GAME = 'Game.yarb'.freeze
@@ -41,20 +46,24 @@ module GameContent
   # player which app variant runs it. Loading (not evaluating) runs the
   # same checks as the game's boot, without running any game code.
   def check_bytecode!(bin)
-    raise "#{COMPILED_GAME} is not Ruby bytecode" unless bin.byteslice(0, 4) == YARB_MAGIC
+    unless bin.byteslice(0, 4) == YARB_MAGIC
+      raise ArchiveError, "This game can't be opened: its #{COMPILED_GAME} is not Ruby bytecode " \
+                          '(the archive may be damaged). Export the game again from Pokémon Studio.'
+    end
 
     major, minor = bin.byteslice(4, 8).unpack('L<L<')
     ours = RUBY_VERSION.split('.').first(2).map(&:to_i)
     if [major, minor] != ours
-      raise "This game was compiled by Ruby #{major}.#{minor}, this app runs Ruby #{ours.join('.')}: " \
-            "install the PSDK-android-ruby#{major}.#{minor} app to play it"
+      raise ArchiveError, "This game was compiled for Ruby #{major}.#{minor}, but this app runs " \
+                          "Ruby #{ours.join('.')}. To play it, install the PSDK-android-ruby#{major}.#{minor} app."
     end
 
     begin
       RubyVM::InstructionSequence.load_from_binary(bin)
     rescue RuntimeError, TypeError, ArgumentError => e
       platform = bin.byteslice(YARB_PLATFORM_OFFSET, 64).to_s[/\A[^\0]*/]
-      raise "#{COMPILED_GAME} (Ruby #{major}.#{minor}, #{platform}) does not load on this app: #{e.message}"
+      raise ArchiveError, "This game's compiled scripts (#{COMPILED_GAME}, Ruby #{major}.#{minor}, #{platform}) " \
+                          "can't be loaded by this app: #{e.message}"
     end
   end
 

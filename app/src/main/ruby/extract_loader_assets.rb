@@ -14,6 +14,11 @@
 # Its Game.yarb must also load on this app's Ruby: a game compiled by
 # another Ruby is refused here, at import, instead of at its first launch.
 # TARGET_COMPILED marks it for the app: it has no sources to run in Debug.
+#
+# On a failure, TARGET_ERROR holds what the app shows the player: the message
+# of a GameContent::ArchiveError (what is wrong with the archive, what to do),
+# else the unexpected error. A file, not a log line nor a host event: those
+# reach the app asynchronously, this one is written before the script ends.
 
 require 'fileutils'
 require 'json'
@@ -33,6 +38,8 @@ TARGET_ICON      = File.join(TARGET_DIR, 'game.png').freeze
 TARGET_FONT      = File.join(TARGET_DIR, 'game_font.ttf').freeze
 TARGET_COLOR     = File.join(TARGET_DIR, 'icon_color.json').freeze
 TARGET_COMPILED  = File.join(TARGET_DIR, 'compiled_release').freeze
+# ArchiveValidator.EXTRACT_ERROR, keep both in sync
+TARGET_ERROR     = File.join(TARGET_DIR, 'extract_error.txt').freeze
 # Version of what this script writes: the app re-extracts loader_assets
 # written by another one (ArchiveValidator.LOADER_ASSETS_VERSION, keep both
 # in sync when the written files change).
@@ -45,9 +52,11 @@ ArchiveMount.mount!
 
 def pick_font_source
   return PREFERRED_FONT if PhysFS.exist?(PREFERRED_FONT)
-  raise "Archive has no Fonts/ directory" unless PhysFS.directory?(FONTS_DIR)
+  unless PhysFS.directory?(FONTS_DIR)
+    raise GameContent::ArchiveError, "This game can't be opened: its archive has no #{FONTS_DIR}/ folder."
+  end
   fallback = PhysFS.enumerate(FONTS_DIR).find { |name| name =~ /\.ttf\z/i }
-  raise "Archive Fonts/ has no .ttf font file" unless fallback
+  raise GameContent::ArchiveError, "This game can't be opened: its #{FONTS_DIR}/ folder has no .ttf font." unless fallback
   File.join(FONTS_DIR, fallback)
 end
 
@@ -87,22 +96,27 @@ def detect_icon_color(png_data)
   [rs[mid], gs[mid], bs[mid]]
 end
 
+def archive_error!(missing)
+  raise GameContent::ArchiveError, "This game can't be opened: #{missing} is missing from its archive."
+end
+
 begin
-  font_src = pick_font_source
   compiled = GameContent.compiled_release?(PhysFS)
+  # First: a game compiled for another Ruby says which app plays it
+  GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME)) if compiled
+  font_src = pick_font_source
   if compiled
-    GameContent.check_bytecode!(PhysFS.read(GameContent::COMPILED_GAME))
     infos = GameContent.compiled_infos(PhysFS)
-    raise "#{GameContent::COMPILED_INFOS} missing from #{GameContent::COMPILED_CONFIGS}" unless infos
+    archive_error!("#{GameContent::COMPILED_INFOS} (in #{GameContent::COMPILED_CONFIGS})") unless infos
     infos_json = JSON.generate(infos)
     icon_src = 'studio_icon.png' if PhysFS.exist?('studio_icon.png')
     icon_bytes = icon_src ? PhysFS.read(icon_src) : GameContent.compiled_icon(PhysFS)
-    raise "#{GameContent::COMPILED_ICON} icon missing from #{GameContent::COMPILED_ICONS.join(', ')}" unless icon_bytes
+    archive_error!("the game icon (#{GameContent::COMPILED_ICONS.join(' or ')})") unless icon_bytes
     icon_src ||= GameContent::COMPILED_ICONS.join('|')
   else
-    raise "#{INFOS_CONFIG_SRC} missing from archive" unless PhysFS.exist?(INFOS_CONFIG_SRC)
+    archive_error!(INFOS_CONFIG_SRC) unless PhysFS.exist?(INFOS_CONFIG_SRC)
     icon_src = ICON_SOURCES.find { |path| PhysFS.exist?(path) }
-    raise "#{ICON_SOURCES.last} missing from archive" unless icon_src
+    archive_error!(ICON_SOURCES.last) unless icon_src
     infos_json = PhysFS.read(INFOS_CONFIG_SRC)
     icon_bytes = PhysFS.read(icon_src)
   end
@@ -125,6 +139,15 @@ begin
 
   puts "[extract_loader_assets] wrote #{TARGET_INFOS}, #{TARGET_ICON}, #{TARGET_FONT}" \
        " (font_src=#{font_src}, icon_src=#{icon_src}, icon_color=#{icon_color&.inspect || 'unavailable'})"
+rescue StandardError, ScriptError => e
+  message = e.is_a?(GameContent::ArchiveError) ? e.message : "Unexpected error while reading this game: #{e.class}: #{e.message}"
+  begin
+    FileUtils.mkdir_p(TARGET_DIR)
+    File.write(TARGET_ERROR, message)
+  rescue SystemCallError => write_error
+    warn "[extract_loader_assets] #{TARGET_ERROR} not written: #{write_error.message}"
+  end
+  raise
 ensure
   # Released even on a failure: the archive stays mounted while a compile
   # running meanwhile holds it (it would lose its whole VFS: LoadError on

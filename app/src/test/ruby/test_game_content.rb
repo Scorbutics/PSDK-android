@@ -124,12 +124,13 @@ class TestGameContent < Minitest::Test
     bin = RubyVM::InstructionSequence.compile('1').to_binary
     major, minor = RUBY_VERSION.split('.').map(&:to_i)
     bin[4, 8] = [major, minor + 1].pack('L<L<')
-    error = assert_raises(RuntimeError) { GameContent.check_bytecode!(bin) }
-    assert_includes error.message, "install the PSDK-android-ruby#{major}.#{minor + 1} app"
+    error = assert_raises(GameContent::ArchiveError) { GameContent.check_bytecode!(bin) }
+    assert_equal "This game was compiled for Ruby #{major}.#{minor + 1}, but this app runs Ruby #{major}.#{minor}. " \
+                 "To play it, install the PSDK-android-ruby#{major}.#{minor + 1} app.", error.message
   end
 
   def test_check_bytecode_refuses_other_files
-    error = assert_raises(RuntimeError) { GameContent.check_bytecode!('PK\x03\x04 not bytecode') }
+    error = assert_raises(GameContent::ArchiveError) { GameContent.check_bytecode!('PK\x03\x04 not bytecode') }
     assert_includes error.message, 'is not Ruby bytecode'
   end
 

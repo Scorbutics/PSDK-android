@@ -32,6 +32,10 @@ import java.io.File
  *
  * The Ruby pass treats "no font in Fonts/" as archive-invalid — without
  * one, LiteRGSS::Text raises and the splash can't render its title bar.
+ *
+ * On a failure, the Ruby pass writes what to tell the player into
+ * loader_assets/[EXTRACT_ERROR] (a game compiled for another Ruby names
+ * the app variant that plays it): [ValidationResult.error] is that text.
  */
 object ArchiveValidator {
     private const val TAG = "ArchiveValidator"
@@ -43,6 +47,13 @@ object ArchiveValidator {
      */
     private const val LOADER_ASSETS_VERSION = "2"
     private const val EXTRACT_TIMEOUT_MS = 120_000L
+    /**
+     * Written by extract_loader_assets.rb (TARGET_ERROR, keep both in sync)
+     * when it fails: the message for the player. A file rather than its
+     * logs: they reach [runLoaderAssetExtraction]'s listener asynchronously,
+     * and on an exception their last line is a backtrace frame.
+     */
+    private const val EXTRACT_ERROR = "extract_error.txt"
     const val NOT_AN_ARCHIVE = "Not a game archive: expected an .epsa, .psa or .zip file."
 
     data class ValidationResult(
@@ -158,14 +169,19 @@ object ArchiveValidator {
     private data class ExtractionOutcome(
         val success: Boolean,
         val exitCode: Int,
-        val errorLines: List<String>
+        val errorLines: List<String>,
+        /** The script's [EXTRACT_ERROR], if it got to write one */
+        val playerMessage: String?
     ) {
         fun errorSummary(): String {
-            val tail = errorLines.lastOrNull()
-            return if (tail.isNullOrBlank())
+            playerMessage?.let { return it }
+            // The script died before writing it (or timed out): its first
+            // error line, the exception's message (the next are its backtrace)
+            val first = errorLines.firstOrNull { it.isNotBlank() }
+            return if (first == null)
                 "Loader asset extraction failed (exit=$exitCode)"
             else
-                "Loader asset extraction failed: $tail"
+                "Loader asset extraction failed: $first"
         }
     }
 
@@ -175,6 +191,8 @@ object ArchiveValidator {
         keys: ArchiveKeys
     ): ExtractionOutcome {
         val errorLines = mutableListOf<String>()
+        val errorFile = File(File(executionLocation, "loader_assets"), EXTRACT_ERROR)
+        errorFile.delete() // a previous import's
         val done = Object()
         var finishedExitCode: Int? = null
 
@@ -219,13 +237,17 @@ object ArchiveValidator {
         }
 
         val exitCode = finishedExitCode ?: run {
-            errorLines += "Extraction timed out after ${EXTRACT_TIMEOUT_MS / 1000}s"
+            // First: errorSummary() reports the first line
+            errorLines.add(0, "Extraction timed out after ${EXTRACT_TIMEOUT_MS / 1000}s")
             -1
         }
+        val playerMessage = if (exitCode == 0) null else
+            runCatching { errorFile.readText().trim() }.getOrNull()?.ifEmpty { null }
         return ExtractionOutcome(
             success = exitCode == 0,
             exitCode = exitCode,
-            errorLines = errorLines
+            errorLines = errorLines,
+            playerMessage = playerMessage
         )
     }
 
