@@ -92,6 +92,7 @@ module Loader
       # In the background, the runtime pauses this update until the
       # surface is back (or a close request comes)
       @window.update
+      @clock.pace!
       unless @state.first_frame_signaled
         @state.first_frame_signaled = true
         loader_emit READY_EVENT
@@ -100,7 +101,7 @@ module Loader
     end
 
     def run_intro
-      INTRO_FRAMES.times { return unless tick }
+      tick_for(INTRO_FRAMES)
     end
 
     # Tick for `seconds` real-time seconds (rounded to the nearest
@@ -108,7 +109,18 @@ module Loader
     # underlying window closes — callers should bail in that case,
     # same contract as #tick.
     def hold_seconds(seconds)
-      (seconds * Clock::FRAME_RATE).round.times { return false unless tick }
+      tick_for((seconds * Clock::FRAME_RATE).round)
+    end
+
+    # Ticks until `frames` clock frames (Clock::FRAME_RATE, wall time) have
+    # passed, however many are drawn meanwhile. Same contract as #tick.
+    def tick_for(frames)
+      return false unless tick
+
+      until_frame = @clock.frame + frames
+      while @clock.frame < until_frame
+        return false unless tick
+      end
       true
     end
 
@@ -116,7 +128,7 @@ module Loader
     def set_status(text)
       return unless @text.status_present?
       @text.update_status(text)
-      STATUS_HOLD.times { return unless tick }
+      tick_for(STATUS_HOLD)
     end
 
     # True iff HostMessages has overwritten the status text at least once
@@ -131,7 +143,7 @@ module Loader
 
     def fade_out_and_dispose
       @clock.request_fade_out
-      Clock::OUTRO_FRAMES.times { break unless tick }
+      tick_for(Clock::OUTRO_FRAMES)
       dispose
     end
 
