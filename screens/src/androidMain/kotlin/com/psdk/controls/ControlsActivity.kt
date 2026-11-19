@@ -1,5 +1,7 @@
 package com.psdk.controls
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -72,7 +74,15 @@ class ControlsActivity : ComponentActivity() {
                 )
             }
         }
-        setContent { ControlsScreen(model, onClose = ::close, onLogs = onLogs, saves = savesSection) }
+        // Read again by the game when this screen closes (GameActivity)
+        var keepAlive by androidx.compose.runtime.mutableStateOf(com.psdk.background.KeepAlive.enabled(this))
+        val backgroundSection: @androidx.compose.runtime.Composable () -> Unit = {
+            com.psdk.background.BackgroundSection(keepAlive) {
+                keepAlive = it
+                com.psdk.background.KeepAlive.setEnabled(this, it)
+            }
+        }
+        setContent { ControlsScreen(model, onClose = ::close, onLogs = onLogs, saves = savesSection, background = backgroundSection) }
         // Not closed half-way through the saves: an import under a running
         // game must be done (its marker written) before the game hears back
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {

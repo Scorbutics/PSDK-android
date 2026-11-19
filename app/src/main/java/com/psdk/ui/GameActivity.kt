@@ -101,6 +101,8 @@ class GameActivity : AppCompatActivity() {
             return@registerForActivityResult endSession(0)
         }
         HostMessages.send(this, CONTROLS_RELOAD_MESSAGE)
+        // Settings > In the background, changed or not
+        GameKeepAliveService.update(this, playing = !sessionEnded, title = null)
     }
 
     /** Settings tapped again before the screen showed: one screen only. */
@@ -175,15 +177,26 @@ class GameActivity : AppCompatActivity() {
         val mode = gameMode()
         // An import from the project's page, before this game: not one under it
         SaveTransfer.takeImported(GameSaves.root(executionLocation, mode))
-        configureGameEnv(executionLocation, mode)
         showGameStartOverlay(executionLocation)
         inputForwarder.start()
         imeBridge.start()
 
+        // Wired now: the surface may be ready while the resume question shows
         glSurface.onSurfaceReady = { w, h ->
             android.util.Log.i(TAG, "surface ready (${w}x${h})")
             workloadController.onSurfaceReady()
         }
+        // Killed in the background last time: the player chooses to resume first
+        GameSuspend.askResume(this, executionLocation) { resume -> launch(executionLocation, mode, resume) }
+    }
+
+    /** Starts the game, from its suspend file when [resume] (GameSuspend) */
+    private fun launch(executionLocation: String, mode: GameMode, resume: Boolean) {
+        if (isFinishing || isDestroyed) return
+        configureGameEnv(executionLocation, mode, resume)
+        // Its notification while the game plays, if the player keeps it on
+        GameKeepAliveService.update(this, playing = true, title = null)
+
         // Debug mode resolves the archive keys first: KDF, plus a fresh key
         // attestation when the cached verdict expired. Not on the main
         // thread (that froze the launch). The controller queues the start
@@ -209,6 +222,7 @@ class GameActivity : AppCompatActivity() {
      */
     private fun endSession(exitCode: Int) {
         sessionEnded = true
+        GameKeepAliveService.update(this, playing = false, title = null)
         val close = { reported: Boolean ->
             setResult(Activity.RESULT_OK, Intent().putExtra(RESULT_EXIT_CODE, exitCode).putExtra(RESULT_REPORTED, reported))
             finish()
@@ -329,11 +343,15 @@ class GameActivity : AppCompatActivity() {
 
     /**
      * Populate the env vars start.rb reads (RGSS_EXECUTION_LOCATION,
-     * RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_APP_DEBUG, RGSS_REMOTE_*).
+     * RGSS_ERROR_LOG_FILE, RGSS_GAME_MODE, RGSS_APP_DEBUG, RGSS_SUSPEND_FILE,
+     * RGSS_RESUME_SUSPEND, RGSS_REMOTE_*).
      * Process-local, which is why it runs here and not in the shell process.
      */
-    private fun configureGameEnv(executionLocation: String, mode: GameMode) {
+    private fun configureGameEnv(executionLocation: String, mode: GameMode, resume: Boolean) {
         android.system.Os.setenv("RGSS_EXECUTION_LOCATION", executionLocation, true)
+        // lib/suspend_save.rb: its file, and whether to resume from it
+        android.system.Os.setenv("RGSS_SUSPEND_FILE", GameSuspend.file(executionLocation).path, true)
+        android.system.Os.setenv("RGSS_RESUME_SUSPEND", if (resume) "1" else "0", true)
         android.system.Os.setenv("RGSS_ERROR_LOG_FILE", GameLogs.errors(executionLocation, mode).path, true)
         android.system.Os.setenv("RGSS_GAME_MODE", mode.envValue(), true)
         // lib/game_warnings.rb: a debug base APK keeps the game's warnings
@@ -385,6 +403,7 @@ class GameActivity : AppCompatActivity() {
     // and an EGL_BAD_SURFACE that kills the game workload.
 
     override fun onDestroy() {
+        GameKeepAliveService.update(this, playing = false, title = null)
         if (::inputForwarder.isInitialized) inputForwarder.stop()
         if (::imeBridge.isInitialized) imeBridge.stop()
         gameStartTimeoutHandler.removeCallbacks(gameStartTimeoutRunnable)
@@ -500,9 +519,10 @@ class GameActivity : AppCompatActivity() {
          * start.rb's helper modules: TouchLayouts loads the gamepad's layout
          * files, ScriptErrors replaces PSDK's error window, GameWarnings sets
          * the game's warnings by base APK, PsdkGameArea centres the game on the
-         * window with LiteRGSS instead of PSDK's viewport offsets.
+         * window with LiteRGSS instead of PSDK's viewport offsets, SuspendSave
+         * keeps the game when Android kills it in the background.
          */
-        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb", "lib/game_warnings.rb", "lib/game_area.rb")
+        private val START_PRELUDES = listOf("lib/touch_layouts.rb", "lib/script_errors.rb", "lib/game_warnings.rb", "lib/game_area.rb", "lib/suspend_save.rb")
 
         /**
          * DEBUG_UNCOMPILED mode's: start.rb's debug branch also needs

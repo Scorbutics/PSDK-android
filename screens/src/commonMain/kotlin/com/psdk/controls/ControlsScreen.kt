@@ -65,6 +65,7 @@ import kotlin.math.roundToInt
  * controls).
  * @param onLogs the game's logs, opened in game: null hides them
  * @param saves the game's Saves section (export / import): null hides it
+ * @param background the In the background section (keep the game running): null hides it
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +74,7 @@ fun ControlsScreen(
     onClose: () -> Unit,
     onLogs: (() -> Unit)? = null,
     saves: (@Composable () -> Unit)? = null,
+    background: (@Composable () -> Unit)? = null,
 ) {
     PsdkTheme {
         Scaffold(
@@ -102,6 +104,10 @@ fun ControlsScreen(
                     HorizontalDivider()
                     Section("Logs")
                     OutlinedButton(onClick = it) { Text("Game logs") }
+                }
+                background?.let {
+                    HorizontalDivider()
+                    it()
                 }
                 saves?.let {
                     HorizontalDivider()

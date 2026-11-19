@@ -245,6 +245,23 @@ SafeRunner.run(
     end
   end
 
+  # The game written when the app goes to the background, where Android may
+  # kill it, and resumed at the next launch if it was (lib/suspend_save.rb).
+  # Needs the runtime's litergss/host_lifecycle (litergss 1.17.9+).
+  if defined?(SuspendSave)
+    begin
+      require 'litergss/host_lifecycle'
+      if SuspendSave.install(path: ENV['RGSS_SUSPEND_FILE'], resume: ENV['RGSS_RESUME_SUSPEND'] == '1',
+                             lifecycle: LiteRGSS::HostLifecycle)
+        VMLogger.info '[start.rb] SuspendSave installed'
+      end
+    rescue LoadError => e
+      VMLogger.error "[start.rb] No suspend save in this runtime: #{e.message}"
+    end
+  else
+    VMLogger.error '[start.rb] SuspendSave not loaded: no suspend save'
+  end
+
   # PSDK's error window can't be closed on Android: its errors go to the
   # app instead (lib/script_errors.rb).
   if defined?(ScriptErrors)

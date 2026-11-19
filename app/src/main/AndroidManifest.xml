@@ -10,6 +10,10 @@
     <!-- PSDK games go online (online features, mystery gifts, update checks); debug builds
          also need it for the rdbg/DAP listener and the remote-eval console (socket(2) → EPERM without it) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- GameKeepAliveService: a game kept running in the background while it plays -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application android:label="@string/app_name"
         android:icon="@drawable/logo"
@@ -54,6 +58,18 @@
             android:process=":game"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
+
+        <!-- Keeps the game's process running in the background while a game
+             plays (its notification shows meanwhile): in the game's process,
+             whose priority it raises. The player turns it off in the game's
+             Settings. -->
+        <service android:name=".ui.GameKeepAliveService"
+            android:process=":game"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a game the player is playing running while they switch apps, so that the system does not end it and lose their progress." />
+        </service>
 
 <provider
             android:name="androidx.core.content.FileProvider"
