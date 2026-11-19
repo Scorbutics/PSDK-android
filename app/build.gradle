@@ -81,6 +81,8 @@ android {
         versionName "1.13.6"
 
         buildConfigField "String", "RUBY_VARIANT", "\"${rubyVariant}\""
+        // The graphics backend: a small APK's game names the one it was published for
+        buildConfigField "String", "BACKEND", "\"${backend}\""
 
         ndk {
             abiFilters += ["x86_64", "arm64-v8a"]

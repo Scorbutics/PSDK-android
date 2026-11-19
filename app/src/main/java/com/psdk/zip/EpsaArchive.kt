@@ -190,7 +190,8 @@ object EpsaArchive {
         }
     }
 
-    private fun signingCertDer(context: Context): ByteArray? {
+    /** The DER of the certificate the installed APK is signed with (its archive keys derive from it) */
+    fun signingCertDer(context: Context): ByteArray? {
         val pm = context.packageManager
         return try {
             if (Build.VERSION.SDK_INT >= 28) {

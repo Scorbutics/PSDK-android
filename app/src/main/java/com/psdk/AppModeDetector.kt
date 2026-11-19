@@ -19,9 +19,14 @@ object AppModeDetector {
     const val EXPORT_ANDROID_PSA_NAME = "game.psa"
     private val ARCHIVE_EXTENSIONS = listOf(".epsa", ".psa")
 
+    /**
+     * A single game's APK when its game is bundled (an archive in assets/),
+     * or hosted (a small APK: assets/game.remote.json, com.psdk.remote).
+     */
     fun detect(context: Context): AppMode {
         val epsaFile = findEpsaInAssets(context)
-        return if (epsaFile != null) AppMode.CLASSIC_USER else AppMode.SUPER_USER
+        val hosted = epsaFile == null && com.psdk.remote.RemoteGame.descriptor(context) != null
+        return if (epsaFile != null || hosted) AppMode.CLASSIC_USER else AppMode.SUPER_USER
     }
 
     /**

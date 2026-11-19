@@ -21,6 +21,9 @@ import com.psdk.ClassicModeState
 import com.psdk.R
 import com.psdk.compilation.ArchiveValidator
 import com.psdk.compilation.CompilationEngine
+import com.psdk.remote.RemoteGame
+import com.psdk.remote.GameSplash
+import com.psdk.remote.RemoteSetup
 import com.psdk.ui.wizard.CompileDoneFragment
 import com.psdk.ui.wizard.CompileProgressFragment
 import com.scorbutics.litergss.LiteRgssSurfaceView
@@ -286,6 +289,10 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                         .putString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_SETUP_COMPLETE)
                         .putLong(ClassicModeState.VERSION_CODE_KEY, versionCode)
                         .apply()
+                    // A small APK's game: installed, its archive no longer needed
+                    if (RemoteGame.descriptor(requireContext()) != null) {
+                        RemoteSetup.installed(requireContext(), ArchiveValidator.getStagingFile(executionLocation))
+                    }
                 }
             }
         }
@@ -333,37 +340,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
             // waits forever for an archive that never comes.
             if (viewModel.archive.value == null && !viewModel.bootstrapStarted) {
                 viewModel.bootstrapStarted = true
-                // The copy takes a while (hundreds of MB): say so, rather than
-                // showing the hub's empty-centre look ("+" halo, "Add project")
-                // with no "+" button in classic mode.
-                (requireActivity() as LoaderHost).setLoaderState(LoaderState.Preparing(COPYING_ARCHIVE_MESSAGE))
-                val ctx = requireContext().applicationContext
-                Thread {
-                    val keys = runCatching {
-                        extractBundledArchive(ctx, executionLocation)
-                        ArchiveValidator.resolveKeys(
-                            ctx,
-                            ArchiveValidator.getStagingFile(executionLocation),
-                        ) ?: error("classic bootstrap: archive key resolution failed")
-                    }.onFailure {
-                        android.util.Log.e(TAG, "classic bootstrap failed", it)
-                    }.getOrNull()
-
-                    activity?.runOnUiThread {
-                        if (!isAdded || isRemoving) return@runOnUiThread
-                        if (keys == null) {
-                            android.widget.Toast.makeText(
-                                requireContext(),
-                                "Failed to load bundled archive. Try reinstalling.",
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                            requireActivity().finish()
-                            return@runOnUiThread
-                        }
-                        viewModel.archive.value = keys
-                        viewModel.currentStep.value = 0
-                    }
-                }.start()
+                runClassicBootstrap(executionLocation)
             }
         } else {
             // Super-user (non-debug-play): the archive is already staged on
@@ -536,6 +513,103 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 else R.drawable.bg_step_connector
             )
         }
+    }
+
+    /**
+     * Classic bootstrap: the game's archive staged (copied from the APK, or
+     * downloaded for a small APK: RemoteSetup), then its keys. Run again by
+     * Retry after a small APK's setup failed (no connection, no room).
+     */
+    private fun runClassicBootstrap(executionLocation: String) {
+        val ctx = requireContext().applicationContext
+        val descriptor = RemoteGame.descriptor(ctx)
+        // The copy or the download takes a while (hundreds of MB): say so,
+        // rather than showing the hub's empty-centre look ("+" halo, "Add
+        // project") with no "+" button in classic mode. A small APK with its
+        // game's splash shows the game, its icon rolling while it downloads.
+        val host = requireActivity() as LoaderHost
+        val gameSplash = if (descriptor != null) GameSplash.install(ctx) else null
+        if (gameSplash != null) {
+            host.setLoaderState(LoaderState.FromExtracted(gameSplash))
+            host.sendLoaderMessage(LoaderMessage.Tap)
+        } else {
+            host.setLoaderState(
+                LoaderState.Preparing(if (descriptor != null) PREPARING_GAME_MESSAGE else COPYING_ARCHIVE_MESSAGE)
+            )
+        }
+        val ui = remoteSetupUi()
+        Thread {
+            val keys = runCatching {
+                if (descriptor != null) {
+                    RemoteSetup.prepare(ctx, descriptor, ArchiveValidator.getStagingFile(executionLocation), ui)
+                } else {
+                    extractBundledArchive(ctx, executionLocation)
+                }
+                ArchiveValidator.resolveKeys(
+                    ctx,
+                    ArchiveValidator.getStagingFile(executionLocation),
+                ) ?: error("classic bootstrap: archive key resolution failed")
+            }.onFailure {
+                android.util.Log.e(TAG, "classic bootstrap failed", it)
+            }
+
+            activity?.runOnUiThread {
+                if (!isAdded || isRemoving) return@runOnUiThread
+                val failure = keys.exceptionOrNull()
+                if (failure is RemoteGame.Error) return@runOnUiThread showRemoteSetupError(executionLocation, failure)
+                val resolved = keys.getOrNull()
+                if (resolved == null) {
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        if (descriptor != null) "The game can't be opened. Try reinstalling the app."
+                        else "Failed to load bundled archive. Try reinstalling.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                    requireActivity().finish()
+                    return@runOnUiThread
+                }
+                viewModel.archive.value = resolved
+                viewModel.currentStep.value = 0
+            }
+        }.start()
+    }
+
+    /**
+     * A small APK's setup on the splash: its status in place of the
+     * preparing message (loader.status, a second line under it), and the
+     * mobile data question
+     */
+    private fun remoteSetupUi(): RemoteSetup.Ui {
+        val activity = requireActivity()
+        return object : RemoteSetup.Ui {
+            override fun status(text: String) {
+                (activity as LoaderHost).sendLoaderMessage(LoaderMessage.Status(text))
+            }
+
+            override fun confirmMeteredDownload(bytes: Long): Boolean = RemoteSetup.onUiThread(activity) { answer ->
+                MaterialAlertDialogBuilder(activity, R.style.Theme_Psdk_Dialog)
+                    .setTitle("Download on mobile data?")
+                    .setMessage("The game is ${RemoteSetup.mb(bytes)} to download. Download it now on mobile data, " +
+                        "or wait for Wi-Fi?")
+                    .setPositiveButton("Download") { _, _ -> answer(true) }
+                    .setNegativeButton("Wait for Wi-Fi") { _, _ -> answer(false) }
+                    .setCancelable(false)
+                    .show()
+            }
+        }
+    }
+
+    /** What stopped a small APK's setup; Retry when it can work later */
+    private fun showRemoteSetupError(executionLocation: String, error: RemoteGame.Error) {
+        val dialog = MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Psdk_Dialog)
+            .setTitle("The game isn't installed yet")
+            .setMessage(error.message)
+            .setNegativeButton("Quit") { _, _ -> requireActivity().finish() }
+            .setCancelable(false)
+        if (error.retryable) {
+            dialog.setPositiveButton("Try again") { _, _ -> if (isAdded) runClassicBootstrap(executionLocation) }
+        }
+        dialog.show().also(DialogStyle::callToAction)
     }
 
     /**
@@ -829,6 +903,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
         const val ARG_EXECUTION_LOCATION = "EXECUTION_LOCATION"
 
         private const val COPYING_ARCHIVE_MESSAGE = "Copying archive"
+        private const val PREPARING_GAME_MESSAGE = "Preparing the game"
 
         /** Serializes [extractBundledArchive] across wizard instances. */
         private val ARCHIVE_COPY_LOCK = Any()

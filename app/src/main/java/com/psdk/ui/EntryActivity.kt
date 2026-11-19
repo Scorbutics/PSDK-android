@@ -40,14 +40,70 @@ class EntryActivity : AppCompatActivity() {
             GameExitReport.takeCrash(applicationInfo.dataDir)
         } else null
         if (crashedAt == null) {
+            startGame(target)
+            return
+        }
+        GameExitReport.show(this, applicationInfo.dataDir, crashedAt, crashed = true, exitCode = null) { choice ->
+            if (choice == GameExitReport.Choice.OK) startGame(target) else finish()
+        }
+    }
+
+    /**
+     * Starts `target`. A small APK's installed game is compared to its
+     * manifest first (com.psdk.remote): another one was published, the
+     * player chooses to update it now (back through the setup, which
+     * downloads it, the saves kept) or later. Offline, or the server slow
+     * to answer: the game starts.
+     */
+    private fun startGame(target: Intent) {
+        val descriptor = com.psdk.remote.RemoteGame.descriptor(this)
+        val installed = getSharedPreferences(ClassicModeState.PREFS, MODE_PRIVATE)
+            .getString(ClassicModeState.GAME_INSTALLED_SHA_KEY, null)
+        if (descriptor == null || installed == null || target.component?.className != GameActivity::class.java.name) {
             startActivity(target)
             finish()
             return
         }
-        GameExitReport.show(this, applicationInfo.dataDir, crashedAt, crashed = true, exitCode = null) { choice ->
-            if (choice == GameExitReport.Choice.OK) startActivity(target)
-            finish()
+        Thread({
+            val manifest = runCatching { com.psdk.remote.RemoteGame.fetchManifest(descriptor, UPDATE_CHECK_TIMEOUT_MS) }
+                .onFailure { android.util.Log.i("EntryActivity", "update check skipped: ${it.message}") }
+                .getOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (manifest == null || manifest.sha256 == installed) {
+                    startActivity(target)
+                    finish()
+                    return@runOnUiThread
+                }
+                offerUpdate(manifest, target)
+            }
+        }, "psdk-update-check").start()
+    }
+
+    private fun offerUpdate(manifest: com.psdk.remote.RemoteGame.Manifest, game: Intent) {
+        val play = { startActivity(game); finish() }
+        val blocked = com.psdk.remote.RemoteGame.incompatibility(this, manifest)
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this, com.psdk.R.style.Theme_Psdk_Dialog)
+            .setTitle("Update available")
+            .setCancelable(false)
+        if (blocked != null) {
+            dialog.setMessage("Version ${manifest.version} of the game is out. $blocked")
+                .setPositiveButton(android.R.string.ok) { _, _ -> play() }
+                .show()
+            return
         }
+        dialog.setMessage("Version ${manifest.version} of the game is out " +
+                "(${com.psdk.remote.RemoteSetup.mb(manifest.size)} to download). Your saves are kept.")
+            .setPositiveButton("Update") { _, _ ->
+                getSharedPreferences(ClassicModeState.PREFS, MODE_PRIVATE).edit()
+                    .putString(ClassicModeState.STATE_KEY, ClassicModeState.STATE_NEEDS_SETUP)
+                    .apply()
+                startActivity(RootActivity.classicWizardIntent(this, applicationInfo.dataDir))
+                finish()
+            }
+            .setNegativeButton("Later") { _, _ -> play() }
+            .show()
+            .also(DialogStyle::callToAction)
     }
 
     /**
@@ -130,6 +186,9 @@ class EntryActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** The update check doesn't hold the game back longer than this */
+        private const val UPDATE_CHECK_TIMEOUT_MS = 4_000
+
         /**
          * AndroidManifest `<meta-data>` key. Honored only in classic-user mode.
          * Value is one of [GameMode.envValue]: "release" (default) or

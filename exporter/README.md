@@ -28,16 +28,25 @@ exporter downloaded. `PSDK_ANDROID_RELEASE=v1.2.11` pins a release;
 Run it from the project root (the folder holding `project.studio`):
 
 ```sh
-# Full APK from the latest release's base APK, signed with ~/.psdk/debug.p12
-# (generated on the first run)
-ruby <exporter>/export_android.rb -o MyGame.apk
+# Small APK (recommended): the game is downloaded by the app at its first
+# launch. Writes MyGame.apk, plus game.epsa and android-game.json to upload
+# together where the URL points (here, the game's latest GitHub release)
+ruby <exporter>/export_android.rb -o MyGame.apk \
+  --remote https://github.com/<owner>/<repo>/releases/latest/download/android-game.json
 
-# The same, from a base APK of your own
-ruby <exporter>/export_android.rb --apk PSDK-android-ruby3.0-release.apk -o MyGame.apk
+# Full APK: the game inside the APK, from the latest release's base APK,
+# signed with ~/.psdk/debug.p12 (generated on the first run)
+ruby <exporter>/export_android.rb -o MyGame.apk --full
+
+# On LiteRGSS3 (raylib) instead of LiteRGSS2 (SFML)
+ruby <exporter>/export_android.rb -o MyGame.apk --full --backend raylib
+
+# From a base APK of your own
+ruby <exporter>/export_android.rb --apk PSDK-android-ruby3.0-release.apk -o MyGame.apk --full
 
 # A release APK, signed with your own PKCS12 keystore
 PSDK_KS_PASS=... ruby <exporter>/export_android.rb --apk PSDK-android-ruby3.0-release.apk \
-  -k my-release.p12 -o MyGame.apk
+  -k my-release.p12 -o MyGame.apk --full
 
 # Encrypted archive for an existing player APK, plain archive
 ruby <exporter>/export_android.rb --apk player.apk -o MyGame.epsa
@@ -47,10 +56,36 @@ ruby <exporter>/export_android.rb -o MyGame.psa
 `--help` lists every option. The header of `export_android.rb` documents how
 Pokémon Studio calls it.
 
+An APK export needs `--remote <URL>` or `--full`: how players get the game.
+
+### Small APK (`--remote`)
+
+The APK (about 45 MB) holds no game: `assets/game.remote.json` points the
+app to `android-game.json`, the manifest written next to the APK with the
+archive (`game.epsa`). Upload both at the `--remote` URL; the archive's URL
+in the manifest is its file name, next to the manifest, unless
+`--archive-url` says otherwise. At its first launch, the app downloads the
+archive (resuming after an interruption), checks its size and SHA-256, then
+installs it as a full APK's. A later export uploaded at the same URL is an
+update: the app offers it at launch, the player's saves kept.
+
+The APK also carries the game's splash (`assets/loader_assets_game/`: its
+title and version, icon and font, from `Data/configs/infos_config.json`,
+the project icon and `Fonts/PokemonDS.ttf` or the first `Fonts/*.ttf`):
+while the game downloads, players see its splash, its icon rolling, and
+the download's progress under it.
+
+The manifest also says which app plays the archive: the certificate whose
+keys open it (the keystore signing the APK, so keep exporting with the same
+one), the Ruby and the graphics backend, and the oldest PSDK-android release
+whose engine runs it (the base APK's). `--game-version` sets the version
+shown to players (default: `gameVersion` of `Data/configs/infos_config.json`).
+
 ### Base APK
 
 An APK export without `--apk` builds from the release APK of the latest
-PSDK-android release. Each export asks GitHub for the latest release and
+PSDK-android release, for the graphics backend of `--backend` (`sfml`, the
+default, or `raylib`). Each export asks GitHub for the latest release and
 downloads its APK into `~/.psdk/android-apk/<version>/` the first time only,
 checked against the size and SHA-256 GitHub gives; a new release replaces the
 cached one. Offline, the newest APK already downloaded is used.
@@ -115,6 +150,8 @@ others in place (other save slots), keeps no backup, and adds its
 | `plugin/export_android.rb` | The copy for a project's `plugins/`: runs the latest release's exporter |
 | `lib/apk_export.rb` | APK build (steps 2-6) |
 | `lib/base_apk.rb` | Base APK download and cache, without `--apk` |
+| `lib/remote_game.rb` | Small APK (`--remote`): the APK's `game.remote.json`, the hosted `android-game.json` |
+| `lib/splash_assets.rb` | Small APK (`--remote`): the game's splash in the APK, shown while it downloads |
 | `lib/binary_manifest.rb`, `lib/resource_table.rb`, `lib/res_string_pool.rb` | Compiled manifest and resource edits |
 | `lib/apk_zip.rb`, `lib/apk_v2_signer.rb` | ZIP alignment, APK Signature Scheme v2 |
 | `lib/epsa_writer.rb`, `lib/epsa_kdf.rb` | `.epsa` encryption |

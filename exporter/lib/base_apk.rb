@@ -6,8 +6,9 @@
 # one. Offline, or when GitHub doesn't answer, the newest APK already cached
 # is used.
 #
-# Release APKs come in one variant per Ruby (PSDK-android-ruby<x.y>-release.apk):
-# the caller lists the ones that fit, preferred first.
+# Release APKs come in one variant per Ruby and graphics backend
+# (PSDK-android-ruby<x.y>[-raylib]-release.apk; no suffix: SFML): the caller
+# lists the Rubies that fit, preferred first, and picks the backend.
 
 require 'digest'
 require 'fileutils'
@@ -30,34 +31,48 @@ module BaseApk
 
   module_function
 
-  def apk_name(ruby)
-    "PSDK-android-ruby#{ruby}-release.apk"
+  # The graphics backends: SFML (LiteRGSS2, the default) or raylib (LiteRGSS3)
+  BACKENDS = %w[sfml raylib].freeze
+
+  def apk_name(ruby, backend = 'sfml')
+    "PSDK-android-ruby#{ruby}#{'-raylib' unless backend == 'sfml'}-release.apk"
+  end
+
+  # The backend a base APK was built for, from its release name
+  def backend_of(apk_path)
+    File.basename(apk_path).include?('-raylib') ? 'raylib' : 'sfml'
+  end
+
+  # The Ruby a base APK plays, from its release name (nil when renamed)
+  def ruby_of(apk_path)
+    File.basename(apk_path)[/ruby(\d+\.\d+)/, 1]
   end
 
   # The release APK for the first of `rubies` the release has, downloaded
   # unless already cached.
   # @param rubies [Array<String>] the variants that fit ('3.0'...), preferred first
   # @param tag [String, nil] a release tag (v1.6.0...), nil for the latest release
+  # @param backend [String] sfml or raylib
   # @return [Array(String, String)] the APK path and its release tag
-  def fetch(rubies, tag: nil, cache_dir: CACHE_DIR, api_url: API_URL)
+  def fetch(rubies, tag: nil, backend: 'sfml', cache_dir: CACHE_DIR, api_url: API_URL)
     release = begin
       JSON.parse(http_get("#{api_url}/#{tag ? "tags/#{tag}" : 'latest'}"))
     rescue NotFound
       raise Error, tag ? "PSDK-android has no release #{tag} (#{RELEASES_URL})" : "PSDK-android has no release yet (#{RELEASES_URL})"
     rescue StandardError => e
-      return cached(rubies, tag, cache_dir, "#{RELEASES_URL} can't be reached (#{e.message})")
+      return cached(rubies, tag, cache_dir, "#{RELEASES_URL} can't be reached (#{e.message})", backend)
     end
 
     tag_name = release['tag_name']
     assets = release['assets'].to_h { |asset| [asset['name'], asset] }
-    ruby = rubies.find { |candidate| assets.key?(apk_name(candidate)) }
+    ruby = rubies.find { |candidate| assets.key?(apk_name(candidate, backend)) }
     unless ruby
       released = assets.keys.filter_map { |name| name[/\APSDK-android-ruby(.+)-release\.apk\z/, 1] }
-      raise Error, "PSDK-android #{tag_name} has no APK for Ruby #{rubies.join(' or ')} " \
+      raise Error, "PSDK-android #{tag_name} has no #{"#{backend} " unless backend == 'sfml'}APK for Ruby #{rubies.join(' or ')} " \
                    "(#{released.empty? ? 'none' : "#{released.join(', ')} only"}): pass --apk <base APK>"
     end
 
-    asset = assets[apk_name(ruby)]
+    asset = assets[apk_name(ruby, backend)]
     path = File.join(cache_dir, tag_name, asset['name'])
     download(asset, path) unless File.file?(path) && File.size(path) == asset['size']
     remove_other_releases(cache_dir, tag_name) unless tag
@@ -66,10 +81,10 @@ module BaseApk
 
   # Without GitHub: the newest release cached (`tag` only, when given) with
   # one of `rubies`.
-  def cached(rubies, tag, cache_dir, problem)
+  def cached(rubies, tag, cache_dir, problem, backend = 'sfml')
     tags = tag ? [tag] : Dir.glob('v*', base: cache_dir).sort_by { |candidate| version(candidate) }.reverse
     tags.product(rubies).each do |candidate, ruby|
-      path = File.join(cache_dir, candidate, apk_name(ruby))
+      path = File.join(cache_dir, candidate, apk_name(ruby, backend))
       next unless File.file?(path)
 
       warn "  #{problem}: using the downloaded base APK of #{candidate}"

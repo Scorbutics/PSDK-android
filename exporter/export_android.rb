@@ -1,15 +1,26 @@
 # Export a PSDK project as an Android APK, or as a standalone .epsa / .psa
 # archive. The extension of --output picks what is built:
 #
-#   .apk   Full APK (the default, as <name>.apk):
-#            ruby export_android.rb [<name>] [--apk PSDK-base.apk] [options]
-#          Builds, signs, and outputs a complete .apk from the base PSDK APK
-#          template. The game archive is bundled inside, encrypted with a key
-#          derived from the keystore's signing certificate (or plain with
-#          --archive psa). Without --apk, the base APK is the release APK of
-#          the latest PSDK-android release, downloaded once into
-#          ~/.psdk/android-apk/ (lib/base_apk.rb); PSDK_ANDROID_RELEASE=<tag>
-#          picks another release.
+#   .apk   An APK (the default, as <name>.apk), built, signed and output from
+#          the base PSDK APK template. How players get the game, to choose:
+#            ruby export_android.rb [<name>] --remote <manifest URL> [options]
+#              Small APK (the recommended one): the game isn't inside. The
+#              app downloads it at its first launch from where the manifest
+#              is, resumes an interrupted download, checks it (SHA-256), and
+#              updates it later without a new APK (lib/remote_game.rb).
+#              Writes, next to the APK, the archive and android-game.json
+#              to upload together at that URL (a GitHub release:
+#              https://github.com/<owner>/<repo>/releases/latest/download/android-game.json).
+#            ruby export_android.rb [<name>] --full [options]
+#              Full APK: the game archive is bundled inside, for players
+#              without a connection at the first launch. A 640 MB APK often
+#              arrives corrupted from a phone's browser.
+#          Either way the archive is encrypted with a key derived from the
+#          keystore's signing certificate (or plain with --archive psa).
+#          Without --apk, the base APK is the release APK of the latest
+#          PSDK-android release (--backend sfml or raylib), downloaded once
+#          into ~/.psdk/android-apk/ (lib/base_apk.rb);
+#          PSDK_ANDROID_RELEASE=<tag> picks another release.
 #
 #   .epsa  Encrypted archive only:
 #            ruby export_android.rb --apk  player.apk -o mygame.epsa
@@ -69,9 +80,13 @@
 #   for Windows Studio), so pick the matching player APK. -o <Title>.psa
 #   without --apk gives an unencrypted archive, for testing.
 #
-#   Full APK export (no Java / Android SDK needed either):
-#     -o <out>/<Title>.apk [--apk <PSDK-base.apk>] -k <project keystore dir>
+#   APK export (no Java / Android SDK needed either):
+#     -o <out>/<Title>.apk (--remote <manifest URL> | --full)
+#       [--apk <PSDK-base.apk> | --backend sfml|raylib] -k <project keystore dir>
 #       [--package <id>] [--icon <png>] [--debug-mode] [--archive psa]
+#   One of --remote / --full is required (since the small APK): --remote, a
+#   small APK, also writes game.epsa and android-game.json next to it, for
+#   the maker to upload at that URL; --full bundles the game in the APK.
 #   Without --apk, the latest release's base APK is downloaded (see above).
 #   -k: a project-relative directory, so the generated debug.p12 travels with
 #   the project (it holds a private key: keep it out of public repositories).
@@ -102,6 +117,9 @@ require_relative 'lib/epsa_writer'
 require_relative 'lib/pkcs12_cert'
 require_relative 'lib/apk_export'
 require_relative 'lib/base_apk'
+require_relative 'lib/remote_game'
+require_relative 'lib/splash_assets'
+require_relative 'lib/archive_input'
 
 # The release this exporter comes with (VERSION, written into the release
 # zip), or "dev" from a checkout.
@@ -234,8 +252,8 @@ parser = OptionParser.new do |o|
   o.banner = 'Usage: ruby export_android.rb [<name>] [options]'
   o.separator ''
   o.separator '<name> is the app name (default: project.studio title). The --output extension'
-  o.separator 'picks what is built: .apk (full APK), .epsa (encrypted archive only) or .psa'
-  o.separator '(plain archive only).'
+  o.separator 'picks what is built: .apk (an APK: --remote or --full), .epsa (encrypted archive only)'
+  o.separator 'or .psa (plain archive only).'
   o.separator ''
   o.on('-o', '--output PATH', 'Output .apk, .epsa or .psa (default: <name>.apk)') { |v| opts[:output] = v }
   o.on('--apk PATH', 'APK: the base PSDK APK template. Default: the release APK of the',
@@ -248,6 +266,9 @@ parser = OptionParser.new do |o|
        'the app installs it without compiling on the device. Its bytecode only',
        'runs on the PSDK-android variant of the Ruby that compiled it',
        '(printed below; Windows Studio: ruby3.0).') { opts[:compiled] = true }
+  o.on('--from ARCHIVE', 'Export a game archive (.psa, a ZIP of project sources or of a',
+       'compiled release) instead of the project in the current folder. Its',
+       'title, version and icon come from it; it is packed as is') { |v| opts[:from] = v }
   o.on('--with-saves', 'Include the Saves folder in the archive') { opts[:with_saves] = true }
   # --no-mega-script: don't bundle mega_script.deflate. For APKs built on the
   # older v0.7.0 engine, whose ScriptLoad.rb doesn't expect it.
@@ -256,6 +277,16 @@ parser = OptionParser.new do |o|
   o.on('--keep-tmp', 'Keep temporary files for debugging') { opts[:keep_tmp] = true }
   o.separator ''
   o.separator 'APK only:'
+  o.on('--remote URL', 'Small APK: the app downloads the game from the manifest at URL',
+       '(android-game.json, written next to the APK with the archive: upload',
+       'both there). Recommended: a phone\'s browser often corrupts big APKs') { |v| opts[:remote] = v }
+  o.on('--full', 'Full APK: the game inside the APK (works offline from the install)') { opts[:full] = true }
+  o.on('--backend NAME', BaseApk::BACKENDS, "Without --apk: the base APK's graphics backend,",
+       'sfml (LiteRGSS2, default) or raylib (LiteRGSS3)') { |v| opts[:backend] = v }
+  o.on('--game-version VERSION', "--remote: the game's version in the manifest (default:",
+       'gameVersion of Data/configs/infos_config.json)') { |v| opts[:game_version] = v }
+  o.on('--archive-url URL', "--remote: the archive's URL in the manifest (default: its file",
+       'name, next to the manifest)') { |v| opts[:archive_url] = v }
   o.on('--archive TYPE', %w[epsa psa], 'Archive bundled in the APK: epsa (encrypted, default)',
        'or psa (plain ZIP, anyone can unzip it)') { |v| opts[:archive] = v }
   o.on('--icon PATH', 'App icon (PNG, recommended 192x192). Default: the project icon',
@@ -315,6 +346,21 @@ compiled_mode = opts[:compiled]
 debug_mode    = opts[:debug_mode]
 keep_tmp      = opts[:keep_tmp]
 
+# --from: a game archive instead of the project in the current folder
+from_input = nil
+if opts[:from]
+  begin
+    from_input = ArchiveInput.new(opts[:from])
+    from_input.check!
+  rescue ArchiveInput::Error => e
+    abort e.message
+  end
+  ignored = %i[compiled with_saves no_mega_script].select { |key| opts[key] }
+  warn "  Ignored with --from (the archive is packed as is): #{ignored.map { |key| "--#{key.to_s.tr('_', '-')}" }.join(', ')}" \
+    unless ignored.empty?
+  compiled_mode = from_input.compiled?
+end
+
 studio = begin
   JSON.parse(File.read('project.studio'))
 rescue StandardError
@@ -323,8 +369,10 @@ end
 studio = {} unless studio.is_a?(Hash)
 
 app_name = ARGV.first
+app_name ||= from_input&.title
 app_name ||= studio['title'] if studio['title'].is_a?(String) && !studio['title'].strip.empty?
-no_name_message = 'Missing <name>: project.studio has no title to default to'
+no_name_message = from_input ? "Missing <name>: #{from_input.path} has no game title to default to" :
+                               'Missing <name>: project.studio has no title to default to'
 
 output_path = opts[:output]
 unless output_path
@@ -344,13 +392,22 @@ apk_mode = output_kind == 'apk'
 
 abort '--compiled is incompatible with --debug-mode (a compiled release has no sources to run)' \
   if compiled_mode && debug_mode
-abort '--compiled: missing Release/Game.yarb (compile the project first)' \
-  if compiled_mode && !File.file?('Release/Game.yarb')
-abort 'Missing Game.rb: launch the project once from Pokemon Studio (it writes Game.rb), or export with --compiled' \
-  if !compiled_mode && !File.file?('Game.rb')
+unless from_input
+  abort '--compiled: missing Release/Game.yarb (compile the project first)' \
+    if compiled_mode && !File.file?('Release/Game.yarb')
+  abort 'Missing Game.rb: launch the project once from Pokemon Studio (it writes Game.rb), or export with --compiled' \
+    if !compiled_mode && !File.file?('Game.rb')
+end
 
-# Ruby that compiled Release/Game.yarb: YARB magic, then major and minor (u32).
-if compiled_mode
+# Ruby that compiled Game.yarb: YARB magic, then major and minor (u32).
+if from_input && compiled_mode
+  begin
+    yarb_ruby = from_input.bytecode_ruby
+  rescue ArchiveInput::Error => e
+    abort e.message
+  end
+  yarb_platform = 'in the archive'
+elsif compiled_mode
   yarb = File.binread('Release/Game.yarb', 64)
   abort 'Release/Game.yarb is not Ruby bytecode' unless yarb.start_with?('YARB')
   yarb_ruby = yarb.byteslice(4, 8).unpack('L<L<').join('.')
@@ -366,9 +423,27 @@ if apk_mode
   safe_name = app_name.downcase.gsub(/[^a-z0-9]/, '')
   abort 'App name must contain at least one letter or digit' if safe_name.empty?
   warn '  --cert ignored: an APK is encrypted for the cert of the keystore that signs it' if opts[:cert]
+  remote_url = opts[:remote]
+  abort 'How do players get the game? --remote <manifest URL>: a small APK, the game downloaded at the ' \
+        'first launch (recommended); --full: the game inside the APK' unless remote_url || opts[:full]
+  abort 'Pass either --remote or --full, not both' if remote_url && opts[:full]
+  if remote_url
+    begin
+      RemoteGame.check_url!(remote_url, '--remote')
+      RemoteGame.check_url!(opts[:archive_url], '--archive-url') if opts[:archive_url]&.include?('://')
+    rescue RemoteGame::Error => e
+      abort e.message
+    end
+    abort '--debug-mode needs the game inside the APK (--full): it runs the game out of the archive, ' \
+          'which a small APK deletes once installed' if debug_mode
+  else
+    ignored = %i[game_version archive_url].select { |key| opts[key] }
+    warn "  Ignored with --full: #{ignored.map { |key| "--#{key.to_s.tr('_', '-')}" }.join(', ')}" unless ignored.empty?
+  end
+  warn "  --backend ignored: the base APK is #{base_apk_path}" if base_apk_path && opts[:backend]
 else
   plain_mode = output_kind == 'psa'
-  ignored = %i[archive icon package keystore ks_pass debug_mode].select { |key| opts[key] }
+  ignored = %i[archive icon package keystore ks_pass debug_mode remote full backend game_version archive_url].select { |key| opts[key] }
   warn "  Ignored without an APK to build: #{ignored.map { |key| "--#{key.to_s.tr('_', '-')}" }.join(', ')}" \
     unless ignored.empty?
   if plain_mode
@@ -392,7 +467,8 @@ if apk_mode && !base_apk_path
   rubies = compiled_mode ? [yarb_ruby] : [RbConfig::CONFIG.values_at('MAJOR', 'MINOR').join('.'), BaseApk::DEFAULT_RUBY].uniq
   release_tag = ENV['PSDK_ANDROID_RELEASE']
   begin
-    base_apk_path, base_apk_release = BaseApk.fetch(rubies, tag: release_tag && !release_tag.empty? ? release_tag : nil)
+    base_apk_path, base_apk_release = BaseApk.fetch(rubies, tag: release_tag && !release_tag.empty? ? release_tag : nil,
+                                                            backend: opts[:backend] || 'sfml')
   rescue BaseApk::Error => e
     abort e.message
   end
@@ -416,7 +492,13 @@ at_exit do
   end
 end
 
-studio_icon_path, studio_icon_source = project_icon(compiled_mode, studio, work_dir)
+studio_icon_path, studio_icon_source =
+  if from_input
+    png = from_input.icon_png
+    png && [File.join(work_dir, 'archive_icon.png').tap { |path| File.binwrite(path, png) }, 'the archive']
+  else
+    project_icon(compiled_mode, studio, work_dir)
+  end
 
 if apk_mode
   package_id    = opts[:package] || "com.psdk.#{safe_name}"
@@ -440,8 +522,16 @@ if apk_mode
 end
 
 puts "=== PSDK Android Export (exporter #{EXPORTER_VERSION}) ==="
-puts "  Mode:        #{apk_mode ? 'Full APK' : 'Archive only'}"
-puts "  Archive:     #{plain_mode ? 'plain .psa' : 'encrypted .epsa'}, #{compiled_mode ? 'compiled release (Release/)' : 'project sources'}"
+mode_label = if !apk_mode then 'Archive only'
+             elsif remote_url then "Small APK (the game downloaded from #{remote_url})"
+             else 'Full APK (the game inside)'
+             end
+puts "  Mode:        #{mode_label}"
+content = if from_input then "#{compiled_mode ? 'compiled release' : 'project sources'} from #{from_input.path}"
+          elsif compiled_mode then 'compiled release (Release/)'
+          else 'project sources'
+          end
+puts "  Archive:     #{plain_mode ? 'plain .psa' : 'encrypted .epsa'}, #{content}"
 if apk_mode
   puts "  App name:    #{app_name}"
   puts "  Package ID:  #{package_id}"
@@ -521,7 +611,9 @@ puts(apk_mode ? "[1/6] Building #{archive_kind} archive..." : "[1/1] Building #{
 # followed by purely native-FS requires. Written to work_dir and added to
 # the archive under its PSDK path, never to the project tree.
 mega_script_path = nil
-if compiled_mode
+if from_input
+  puts "  Packing #{from_input.path} as is (#{compiled_mode ? 'a compiled release' : 'project sources'})"
+elsif compiled_mode
   puts '  Skipping mega_script.deflate (--compiled: the release ships its compiled scripts)'
 elsif opts[:no_mega_script]
   puts '  Skipping mega_script.deflate (--no-mega-script)'
@@ -581,9 +673,15 @@ archive_name = plain_mode ? 'game.psa' : 'game.epsa'
 epsa_path = apk_mode ? File.join(work_dir, archive_name) : output_path
 FileUtils.mkdir_p(File.dirname(epsa_path))
 
+# --from: the archive is the ZIP (a plain archive: copied as is)
+if from_input
+  zip_path = from_input.path
+  FileUtils.cp(zip_path, epsa_path) if plain_mode
+end
 # A plain archive is the ZIP itself: write it in place, no copy.
-zip_path = plain_mode ? epsa_path : File.join(work_dir, 'archive.zip')
-FileUtils.rm_f(zip_path)
+zip_path ||= plain_mode ? epsa_path : File.join(work_dir, 'archive.zip')
+FileUtils.rm_f(zip_path) unless from_input
+unless from_input
 Zip::File.open(zip_path, create: true) do |zip|
   if compiled_mode
     files = release_files(with_saves)
@@ -626,6 +724,7 @@ Zip::File.open(zip_path, create: true) do |zip|
   zip.add('Game.rb', 'Game.rb')
   zip.add(MEGA_SCRIPT_ARCHIVE_PATH, mega_script_path) if mega_script_path
 end
+end
 
 if plain_mode
   puts "  Plain archive: #{File.size(epsa_path)} bytes"
@@ -656,15 +755,49 @@ end
 # Steps 2 to 6: Build the APK (see lib/apk_export.rb)
 # ---------------------------------------------------------------------------
 
+# A small APK shows its game's splash while downloading it: title, version,
+# icon (the one the archive packs as studio_icon.png) and font
+splash_assets = if remote_url
+                  splash_icon = studio_icon_path && File.binread(studio_icon_path, 8) == PNG_SIGNATURE &&
+                                File.binread(studio_icon_path)
+                  SplashAssets.entries(from_input || SplashAssets::Folder.new(compiled_mode ? RELEASE_DIR : '.'),
+                                       icon: splash_icon || nil)
+                end
+
 begin
-  ApkExport.export(base_apk_path: base_apk_path, output_path: output_path, archive_path: epsa_path,
-                   archive_name: archive_name, package_id: package_id, app_name: app_name, icon_path: icon_path,
+  ApkExport.export(base_apk_path: base_apk_path, output_path: output_path,
+                   archive_path: remote_url ? nil : epsa_path, archive_name: archive_name,
+                   remote_asset: remote_url && RemoteGame.apk_asset(remote_url),
+                   splash_assets: remote_url ? splash_assets : {},
+                   package_id: package_id, app_name: app_name, icon_path: icon_path,
                    debug_mode: debug_mode, signing_key: signing_key, signing_cert: signing_cert)
+  min_app_version = ApkExport.version_name(base_apk_path) if remote_url
 rescue ApkExport::Error => e
   abort e.message
+end
+
+# A small APK's game: the archive and its manifest, next to the APK, to upload
+if remote_url
+  out_dir = File.dirname(output_path)
+  hosted_archive = File.join(out_dir, archive_name)
+  FileUtils.cp(epsa_path, hosted_archive)
+  manifest_path = File.join(out_dir, RemoteGame::MANIFEST_NAME)
+  File.write(manifest_path, RemoteGame.manifest(
+    title: app_name, version: RemoteGame.game_version(opts[:game_version] || from_input&.version),
+    archive_path: hosted_archive, archive_url: opts[:archive_url] || archive_name,
+    ruby: compiled_mode ? yarb_ruby : BaseApk.ruby_of(base_apk_path), backend: BaseApk.backend_of(base_apk_path),
+    compiled: compiled_mode ? true : false, cert_der: plain_mode ? nil : signing_cert_der,
+    min_app_version: min_app_version
+  ))
 end
 
 puts ''
 puts '=== Done! ==='
 puts "  Output: #{output_path} (#{File.size(output_path)} bytes)"
+if remote_url
+  puts "  Game:   #{hosted_archive} (#{File.size(hosted_archive)} bytes)"
+  puts "          #{manifest_path}"
+  puts "  Upload both so that #{remote_url} serves #{RemoteGame::MANIFEST_NAME}"
+  puts '  (and the archive next to it), then share the APK.'
+end
 puts "  Install: adb install #{output_path}"

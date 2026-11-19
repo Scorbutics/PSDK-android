@@ -13,6 +13,8 @@ require_relative 'apk_zip'
 require_relative 'apk_v2_signer'
 require_relative 'binary_manifest'
 require_relative 'resource_table'
+require_relative 'remote_game'
+require_relative 'splash_assets'
 
 module ApkExport
   module_function
@@ -27,15 +29,20 @@ module ApkExport
   ICON_RESOURCE         = 'logo'
   ICON_TYPES            = %w[drawable mipmap].freeze
 
-  # @param archive_path [String] the game archive, bundled as assets/<archive_name>
+  # @param archive_path [String, nil] the game archive, bundled as assets/<archive_name>;
+  #   nil for a small APK (remote_asset)
   # @param archive_name [String] game.epsa or game.psa
+  # @param remote_asset [String, nil] a small APK's assets/game.remote.json (RemoteGame):
+  #   the app downloads its game instead
+  # @param splash_assets [Hash{String => String}] a small APK's game splash
+  #   (SplashAssets.entries): APK entry name => bytes
   # @param icon_path    [String, nil] a PNG replacing the base APK's icon
   # @param debug_mode   [Boolean] launch the game in DEBUG_UNCOMPILED
   # @param signing_key  [OpenSSL::PKey::PKey] the keystore's key (RSA or EC)
   # @param signing_cert [OpenSSL::X509::Certificate] its certificate
   # @raise [Error] on a base APK it can't edit, or a key it can't sign with
   def export(base_apk_path:, output_path:, archive_path:, archive_name:, package_id:, app_name:,
-             icon_path:, debug_mode:, signing_key:, signing_cert:)
+             icon_path:, debug_mode:, signing_key:, signing_cert:, remote_asset: nil, splash_assets: {})
     File.open(base_apk_path, 'rb') do |base_apk|
       puts '[2/6] Reading base APK...'
       entries = ApkZip.entries(base_apk)
@@ -45,14 +52,26 @@ module ApkExport
       customize(base_apk, entries, package_id: package_id, app_name: app_name, icon_path: icon_path,
                                    debug_mode: debug_mode)
 
-      puts '[4/6] Injecting game archive into assets...'
-      # The app plays the first archive it finds: drop the other kind a
-      # re-export onto an exported APK would leave behind.
-      entries.reject! { |entry| ARCHIVE_ENTRIES.include?(entry.name) }
-      # Stored: an .epsa is encrypted (nothing to compress) and a .psa is a
-      # ZIP already. The app reads it as a stream either way.
-      entries << ApkZip.stored_file("assets/#{archive_name}", archive_path)
-      puts "  Injected #{archive_name} into assets/"
+      # The app plays the first game it finds: drop the ones a re-export
+      # onto an exported APK would leave behind.
+      entries.reject! do |entry|
+        ARCHIVE_ENTRIES.include?(entry.name) || entry.name == RemoteGame::ASSET ||
+          entry.name.start_with?("#{SplashAssets::ASSET_DIR}/")
+      end
+      if remote_asset
+        puts '[4/6] Pointing the app to its hosted game...'
+        entries << ApkZip.stored(RemoteGame::ASSET, remote_asset)
+        puts "  Injected #{RemoteGame::ASSET} (no game inside: downloaded at the first launch)"
+        splash_assets.each { |name, data| entries << ApkZip.deflated(name, data) }
+        puts "  Injected the game's splash (#{splash_assets.keys.map { |name| File.basename(name) }.join(', ')})" \
+          unless splash_assets.empty?
+      else
+        puts '[4/6] Injecting game archive into assets...'
+        # Stored: an .epsa is encrypted (nothing to compress) and a .psa is a
+        # ZIP already. The app reads it as a stream either way.
+        entries << ApkZip.stored_file("assets/#{archive_name}", archive_path)
+        puts "  Injected #{archive_name} into assets/"
+      end
 
       write_signed(base_apk, entries, output_path, signing_key, signing_cert)
     end
@@ -62,6 +81,16 @@ module ApkExport
     raise Error, "Unexpected base APK resources: #{e.message}"
   rescue ApkV2Signer::SigningError => e
     raise Error, e.message
+  end
+
+  # The base APK's android:versionName: the PSDK-android release it comes from
+  def version_name(base_apk_path)
+    File.open(base_apk_path, 'rb') do |base_apk|
+      entries = ApkZip.entries(base_apk)
+      BinaryManifest.new(read_entry(base_apk, find_entry(entries, 'AndroidManifest.xml'))).version_name
+    end
+  rescue ApkZip::FormatError, BinaryManifest::ParseError => e
+    raise Error, "#{base_apk_path}: #{e.message}"
   end
 
   # Replaces the manifest, the resource table and the icon in `entries`.

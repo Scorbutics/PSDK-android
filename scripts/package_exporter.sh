@@ -1,7 +1,7 @@
 #!/bin/sh
 # Packages the exporter as a release asset, psdk-android-exporter-<version>.zip:
-# export_android.rb, lib/ (with the app's epsa_format.rb in place of the
-# pointer to it), README.md and VERSION, under psdk-android-exporter/.
+# export_android.rb, lib/ (with the app's epsa_format.rb and game_content.rb
+# in place of the pointers to them), README.md and VERSION, under psdk-android-exporter/.
 #
 # Usage: scripts/package_exporter.sh <version> [<output dir>]
 set -eu
@@ -17,6 +17,7 @@ mkdir -p "$dir"
 cp "$root/exporter/export_android.rb" "$root/exporter/README.md" "$dir/"
 cp -R "$root/exporter/lib" "$dir/"
 cp "$root/app/src/main/ruby/lib/epsa_format.rb" "$dir/lib/epsa_format.rb"
+cp "$root/app/src/main/ruby/lib/game_content.rb" "$dir/lib/game_content.rb"
 printf '%s\n' "$version" > "$dir/VERSION"
 
 mkdir -p "$out_dir"

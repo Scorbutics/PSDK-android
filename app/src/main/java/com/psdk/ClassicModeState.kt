@@ -22,6 +22,16 @@ object ClassicModeState {
     const val STATE_KEY = "CLASSIC_MODE_STATE"
     const val VERSION_CODE_KEY = "VERSION_CODE"
 
+    /**
+     * A small APK's game (com.psdk.remote): the SHA-256 and version of the
+     * archive in archive.staging, until installed; then those of the game
+     * installed (archive.staging deleted), which the manifest is compared to.
+     */
+    const val GAME_STAGED_SHA_KEY = "GAME_STAGED_SHA256"
+    const val GAME_STAGED_VERSION_KEY = "GAME_STAGED_VERSION"
+    const val GAME_INSTALLED_SHA_KEY = "GAME_INSTALLED_SHA256"
+    const val GAME_INSTALLED_VERSION_KEY = "GAME_INSTALLED_VERSION"
+
     const val STATE_NEEDS_SETUP = "NEEDS_SETUP"
     const val STATE_SETUP_COMPLETE = "SETUP_COMPLETE"
     const val STATE_READY = "READY"

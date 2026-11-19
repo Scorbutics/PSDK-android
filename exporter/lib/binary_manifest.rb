@@ -41,6 +41,7 @@ class BinaryManifest
   ATTR_NAME         = 0x01010003
   ATTR_VALUE        = 0x01010024
   ATTR_VERSION_CODE = 0x0101021b
+  ATTR_VERSION_NAME = 0x0101021c
 
   def initialize(bytes)
     type, header_size, size = bytes.unpack('vvV')
@@ -67,6 +68,12 @@ class BinaryManifest
   # (<package>.provider, <package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION).
   def rename_package(old_package, new_package)
     @pool.strings.map! { |string| string.gsub(old_package, new_package) }
+  end
+
+  # The android:versionName of <manifest> (the base APK's release), nil if none
+  def version_name
+    _, _, value = attributes(manifest_element).find { |_, name| @resource_ids[name] == ATTR_VERSION_NAME }
+    value && value != NO_INDEX ? @pool.strings[value] : nil
   end
 
   def version_code=(code)

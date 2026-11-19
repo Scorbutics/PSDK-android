@@ -151,4 +151,13 @@ class BaseApkTest < Minitest::Test
     error = assert_raises(BaseApk::Error) { fetch(%w[3.3], api_url: offline) }
     assert_match(/No base APK downloaded yet, and .* can't be reached/, error.message)
   end
+
+  def test_the_backend_picks_the_apk
+    assert_equal 'PSDK-android-ruby3.0-release.apk', BaseApk.apk_name('3.0')
+    assert_equal 'PSDK-android-ruby3.0-raylib-release.apk', BaseApk.apk_name('3.0', 'raylib')
+    assert_equal 'raylib', BaseApk.backend_of('/x/PSDK-android-ruby3.0-raylib-release.apk')
+    assert_equal 'sfml', BaseApk.backend_of('/x/PSDK-android-ruby3.2-release.apk')
+    assert_equal '3.2', BaseApk.ruby_of('/x/PSDK-android-ruby3.2-release.apk')
+    assert_nil BaseApk.ruby_of('/x/mygame.apk')
+  end
 end

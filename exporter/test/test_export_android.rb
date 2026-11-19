@@ -22,6 +22,11 @@ require_relative '../lib/pkcs12_cert'
 require_relative '../lib/apk_signing_block'
 require_relative '../lib/apk_zip'
 require_relative '../lib/apk_export'
+require_relative '../lib/base_apk'
+require_relative '../lib/remote_game'
+require_relative '../lib/splash_assets'
+require 'digest'
+require 'json'
 require_relative '../../app/src/main/ruby/lib/epsa_stream'
 
 class ExportAndroidTest < Minitest::Test
@@ -52,10 +57,20 @@ class ExportAndroidTest < Minitest::Test
   end
 
   def export(*args)
-    output, status = Open3.capture2e({ 'PSDK_KS_PASS' => KEYSTORE_PASS }, RbConfig.ruby, EXPORT_ANDROID, *args,
-                                     chdir: @project)
+    output, status = run_export(*args)
     assert status.success?, "export_android.rb #{args.join(' ')} failed:\n#{output}"
     output
+  end
+
+  # The exporter refuses: its message
+  def export_refused(*args)
+    output, status = run_export(*args)
+    refute status.success?, "export_android.rb #{args.join(' ')} should have failed:\n#{output}"
+    output
+  end
+
+  def run_export(*args)
+    Open3.capture2e({ 'PSDK_KS_PASS' => KEYSTORE_PASS }, RbConfig.ruby, EXPORT_ANDROID, *args, chdir: @project)
   end
 
   def test_plain_archive
@@ -117,7 +132,7 @@ class ExportAndroidTest < Minitest::Test
     keystore_dir = File.join(@dir, 'keys')
     output_path = File.join(@dir, 'out', 'Exporter Test.apk')
     File.binwrite(File.join(@dir, 'icon.png'), ICON)
-    log = export('-o', output_path, '--apk', base_apk, '-k', keystore_dir, '--debug-mode',
+    log = export('-o', output_path, '--apk', base_apk, '-k', keystore_dir, '--full', '--debug-mode',
                  '--icon', File.join(@dir, 'icon.png'))
     assert_equal (1..6).map { |step| "[#{step}/6]" }, log.scan(%r{\[\d/6\]})
 
@@ -137,12 +152,101 @@ class ExportAndroidTest < Minitest::Test
     check_with_build_tools(output_path)
 
     # A re-export onto the exported APK (base = output) keeps one archive.
-    export('-o', output_path, '--apk', output_path, '-k', keystore_dir, '--archive', 'psa')
+    export('-o', output_path, '--apk', output_path, '-k', keystore_dir, '--full', '--archive', 'psa')
     names = File.open(output_path, 'rb') { |apk| ApkZip.entries(apk).map(&:name) }
     assert_equal ['assets/game.psa'], names.grep(%r{\Aassets/game\.})
     assert_archive_contents(apk_entry(output_path, 'assets/game.psa'))
     refute File.exist?("#{output_path}.part")
     check_with_build_tools(output_path)
+  end
+
+  def test_small_apk_and_its_hosted_game
+    base_apk = base_apk!
+    keystore_dir = File.join(@dir, 'keys')
+    out_dir = File.join(@dir, 'out')
+    output_path = File.join(out_dir, 'Exporter Test.apk')
+    url = 'https://example.com/releases/latest/download/android-game.json'
+    log = export('-o', output_path, '--apk', base_apk, '-k', keystore_dir, '--remote', url, '--game-version', '7')
+    assert_equal (1..6).map { |step| "[#{step}/6]" }, log.scan(%r{\[\d/6\]})
+
+    # The APK: no game inside, where to get it
+    names = File.open(output_path, 'rb') { |apk| ApkZip.entries(apk).map(&:name) }
+    assert_empty names.grep(%r{\Aassets/game\.(e?psa)\z})
+    assert_equal({ 'format' => 1, 'manifest_url' => url }, JSON.parse(apk_entry(output_path, RemoteGame::ASSET)))
+    # A game without its infos: no splash of its own (the app's meanwhile)
+    assert_empty names.grep(%r{\A#{SplashAssets::ASSET_DIR}/})
+    assert_match(/The game's splash is not in the APK/, log)
+    check_with_build_tools(output_path)
+
+    # Next to it, the game and its manifest, to upload
+    archive = File.join(out_dir, 'game.epsa')
+    manifest = JSON.parse(File.read(File.join(out_dir, RemoteGame::MANIFEST_NAME)))
+    cert_der = Pkcs12Cert.signing_cert_der(File.join(keystore_dir, 'debug.p12'), KEYSTORE_PASS)
+    assert_equal 'Exporter Test', manifest['title']
+    assert_equal '7', manifest['version']
+    assert_equal({ 'url' => 'game.epsa', 'size' => File.size(archive),
+                   'sha256' => Digest::SHA256.file(archive).hexdigest }, manifest['archive'])
+    assert_equal Digest::SHA256.hexdigest(cert_der), manifest['cert_sha256'], 'the APK signing it opens it'
+    assert_equal ApkExport.version_name(base_apk), manifest['min_app_version']
+    refute_nil manifest['min_app_version']
+    assert_equal BaseApk.backend_of(base_apk), manifest['backend']
+    assert_equal false, manifest['compiled']
+    assert_archive_contents(decrypt(archive, cert_der))
+  end
+
+  def test_an_apk_needs_a_choice_of_how_players_get_the_game
+    base_apk = base_apk!
+    keys = File.join(@dir, 'keys')
+    assert_match(/--remote <manifest URL>.*--full/, export_refused('--apk', base_apk, '-k', keys))
+    assert_match(/either --remote or --full/, export_refused('--apk', base_apk, '-k', keys, '--full',
+                                                              '--remote', 'https://example.com/m.json'))
+    assert_match(/absolute http/, export_refused('--apk', base_apk, '-k', keys, '--remote', 'example.com/m.json'))
+    assert_match(/--debug-mode needs the game inside/,
+                 export_refused('--apk', base_apk, '-k', keys, '--debug-mode', '--remote', 'https://example.com/m.json'))
+  end
+
+  def test_small_apk_from_a_game_archive
+    base_apk = base_apk!
+    FileUtils.mkdir_p(File.join(@project, 'Data/configs'))
+    File.write(File.join(@project, 'Data/configs/infos_config.json'), '{"gameTitle": "Archived Game", "gameVersion": 42}')
+    File.binwrite(File.join(@project, 'graphics/icons/game.png').tap { |p| FileUtils.mkdir_p(File.dirname(p)) }, ICON)
+    File.binwrite(File.join(@project, 'Fonts/PokemonDS.ttf').tap { |p| FileUtils.mkdir_p(File.dirname(p)) }, 'font bytes')
+    psa = File.join(@dir, 'game.psa')
+    export('-o', psa)
+
+    # Elsewhere than the project: everything comes from the archive
+    elsewhere = File.join(@dir, 'elsewhere')
+    FileUtils.mkdir_p(elsewhere)
+    out_dir = File.join(@dir, 'out')
+    output_path = File.join(out_dir, 'Archived.apk')
+    keys = File.join(@dir, 'keys')
+    output, status = Open3.capture2e({ 'PSDK_KS_PASS' => KEYSTORE_PASS }, RbConfig.ruby, EXPORT_ANDROID,
+                                     '--from', psa, '-o', output_path, '--apk', base_apk, '-k', keys,
+                                     '--remote', 'https://example.com/android-game.json', chdir: elsewhere)
+    assert status.success?, output
+    assert_match(/App name:\s+Archived Game/, output)
+    manifest = JSON.parse(File.read(File.join(out_dir, RemoteGame::MANIFEST_NAME)))
+    assert_equal 'Archived Game', manifest['title']
+    assert_equal '42', manifest['version']
+    assert_equal false, manifest['compiled']
+    resources = ResourceTable.new(apk_entry(output_path, 'resources.arsc'))
+    assert_equal ['Archived Game'], resources.string_values('app_name')
+    resources.string_values('logo', type: 'drawable').each { |file| assert_equal ICON, apk_entry(output_path, file) }
+    # The game's splash, shown while the game downloads
+    assert_equal '{"gameTitle": "Archived Game", "gameVersion": 42}',
+                 apk_entry(output_path, "#{SplashAssets::ASSET_DIR}/infos_config.json")
+    assert_equal ICON, apk_entry(output_path, "#{SplashAssets::ASSET_DIR}/game.png")
+    assert_equal 'font bytes', apk_entry(output_path, "#{SplashAssets::ASSET_DIR}/game_font.ttf")
+    # The archive packed is the given one, encrypted for the APK's cert
+    cert_der = Pkcs12Cert.signing_cert_der(File.join(keys, 'debug.p12'), KEYSTORE_PASS)
+    assert_equal File.binread(psa), decrypt(File.join(out_dir, 'game.epsa'), cert_der)
+  end
+
+  def test_the_game_version_comes_from_the_project
+    FileUtils.mkdir_p(File.join(@project, 'Data/configs'))
+    File.write(File.join(@project, 'Data/configs/infos_config.json'), '{"gameTitle": "T", "gameVersion": 536}')
+    assert_equal '536', RemoteGame.game_version(nil, @project)
+    assert_equal '1.6.13', RemoteGame.game_version('1.6.13', @project)
   end
 
   def test_apk_with_an_ec_key
@@ -160,7 +264,7 @@ class ExportAndroidTest < Minitest::Test
     File.binwrite(keystore, OpenSSL::PKCS12.create(KEYSTORE_PASS, 'key', key, cert).to_der)
 
     output_path = File.join(@dir, 'ec.apk')
-    export('-o', output_path, '--apk', base_apk, '-k', keystore)
+    export('-o', output_path, '--apk', base_apk, '-k', keystore, '--full')
     assert_equal cert.to_der, ApkSigningBlock.first_cert_der(output_path)
     check_with_build_tools(output_path)
   end
