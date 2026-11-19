@@ -545,10 +545,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 } else {
                     extractBundledArchive(ctx, executionLocation)
                 }
-                ArchiveValidator.resolveKeys(
-                    ctx,
-                    ArchiveValidator.getStagingFile(executionLocation),
-                ) ?: error("classic bootstrap: archive key resolution failed")
+                ArchiveValidator.resolveKeysOrFailure(ctx, ArchiveValidator.getStagingFile(executionLocation)).getOrThrow()
             }.onFailure {
                 android.util.Log.e(TAG, "classic bootstrap failed", it)
             }
@@ -557,6 +554,12 @@ class CompileWizardFragment : Fragment(), LoaderListener {
                 if (!isAdded || isRemoving) return@runOnUiThread
                 val failure = keys.exceptionOrNull()
                 if (failure is RemoteGame.Error) return@runOnUiThread showRemoteSetupError(executionLocation, failure)
+                // Why the archive doesn't open on this device (its integrity
+                // check...), rather than "reinstall the app"
+                if (failure is ArchiveValidator.KeysFailure) {
+                    return@runOnUiThread showRemoteSetupError(
+                        executionLocation, RemoteGame.Error(failure.message.orEmpty(), retryable = !failure.permanent))
+                }
                 val resolved = keys.getOrNull()
                 if (resolved == null) {
                     android.widget.Toast.makeText(

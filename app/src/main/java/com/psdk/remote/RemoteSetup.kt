@@ -1,6 +1,7 @@
 package com.psdk.remote
 
 import android.content.Context
+import com.psdk.zip.KeyAttestationGate
 import android.net.ConnectivityManager
 import com.psdk.ClassicModeState
 import java.io.File
@@ -36,6 +37,13 @@ object RemoteSetup {
         ui.status("Looking for the game...")
         val manifest = RemoteGame.fetchManifest(descriptor)
         RemoteGame.incompatibility(context, manifest)?.let { throw RemoteGame.Error(it, retryable = false) }
+        // The archive opens only on a device passing the integrity check
+        // (release builds): one that fails learns it now, not after the
+        // download (hundreds of MB). Its verdict is cached for the archive's
+        // opening.
+        (KeyAttestationGate.check(context) as? KeyAttestationGate.Result.Fail)?.let {
+            throw RemoteGame.Error(KeyAttestationGate.playerMessage(it.reason), retryable = !KeyAttestationGate.isPermanent(it.reason))
+        }
 
         val prefs = prefs(context)
         if (staging.isFile && prefs.getString(ClassicModeState.GAME_STAGED_SHA_KEY, null) == manifest.sha256) return

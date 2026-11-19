@@ -41,7 +41,8 @@ object EpsaArchive {
 
     sealed class Result {
         data class Ok(val keys: Keys) : Result()
-        data class Failure(val message: String) : Result()
+        /** [attestationReason]: the device failed KeyAttestationGate (its reason) */
+        data class Failure(val message: String, val attestationReason: String? = null) : Result()
     }
 
     /** Derived key material + the .epsa path the Ruby side will open. */
@@ -140,7 +141,7 @@ object EpsaArchive {
                     is KeyAttestationGate.Result.Pass -> { /* proceed */ }
                     is KeyAttestationGate.Result.Fail -> {
                         Log.w(TAG, "Key attestation failed: ${verdict.reason}")
-                        return Result.Failure("Device integrity check failed: ${verdict.reason}")
+                        return Result.Failure("Device integrity check failed: ${verdict.reason}", verdict.reason)
                     }
                 }
 

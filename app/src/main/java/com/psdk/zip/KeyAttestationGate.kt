@@ -94,6 +94,24 @@ object KeyAttestationGate {
         data class Fail(val reason: String) : Result()
     }
 
+    /** Whether [reason] describes the device itself: trying again can't pass */
+    fun isPermanent(reason: String): Boolean = reason in CACHEABLE_FAILURES || reason == "root_not_recognized"
+
+    /**
+     * What the player reads when the gate fails: why this device can't open
+     * the game, and the reason code for whoever helps them.
+     */
+    fun playerMessage(reason: String): String {
+        val why = when (reason) {
+            "software_only_security_level" -> "it has no hardware security module to protect the game's keys"
+            "verified_boot_failed" -> "its system failed Android's boot verification"
+            "root_not_recognized" -> "its security chip isn't certified by Google (an uncertified device or system)"
+            else -> "its security check didn't complete"
+        }
+        val next = if (isPermanent(reason)) "This game can't be played on this device." else "Try again in a moment."
+        return "This device can't open the game: $why. $next ($reason)"
+    }
+
     /**
      * Run the gate (with cache). Returns Pass on success, Fail with a reason otherwise.
      *

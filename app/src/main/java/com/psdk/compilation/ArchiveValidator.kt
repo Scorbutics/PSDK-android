@@ -7,6 +7,7 @@ import com.psdk.ruby.vm.PsdkInterpreter
 import com.psdk.ruby.vm.RubyScript
 import com.psdk.ruby.vm.ScriptLocation
 import com.psdk.zip.EpsaArchive
+import com.psdk.zip.KeyAttestationGate
 import com.scorbutics.rubyvm.LogLevel
 import com.scorbutics.rubyvm.LogListener
 import com.scorbutics.rubyvm.LogMessage
@@ -114,17 +115,38 @@ object ArchiveValidator {
      * env vars before launching the loader interpreter. Returns null if
      * the file isn't a game archive or the KDF refuses (e.g. cert mismatch).
      */
-    fun resolveKeys(context: Context, stagingFile: File): ArchiveKeys? {
-        if (!stagingFile.exists() || !stagingFile.canRead()) return null
-        return (resolveArchive(context, stagingFile) as? Resolution.Ok)?.keys
+    fun resolveKeys(context: Context, stagingFile: File): ArchiveKeys? = resolveKeysOrFailure(context, stagingFile).getOrNull()
+
+    /**
+     * The staged archive's keys, or what the player reads about why they
+     * can't be had (a [KeysFailure]): the device failing the integrity
+     * check says so, not "reinstall the app".
+     */
+    fun resolveKeysOrFailure(context: Context, stagingFile: File): kotlin.Result<ArchiveKeys> {
+        if (!stagingFile.exists() || !stagingFile.canRead()) {
+            return kotlin.Result.failure(KeysFailure("The game's archive is missing. Try reinstalling the app.", permanent = false))
+        }
+        return when (val r = resolveArchive(context, stagingFile)) {
+            is Resolution.Ok -> kotlin.Result.success(r.keys)
+            is Resolution.Failure -> {
+                Log.e(TAG, "archive keys not resolved: ${r.message}")
+                kotlin.Result.failure(
+                    r.attestationReason?.let { KeysFailure(KeyAttestationGate.playerMessage(it), KeyAttestationGate.isPermanent(it)) }
+                        ?: KeysFailure("The game can't be opened (${r.message}). Try reinstalling the app.", permanent = true)
+                )
+            }
+        }
     }
+
+    /** Why an archive's keys can't be had: [message] for the player; [permanent]: no use trying again */
+    class KeysFailure(message: String, val permanent: Boolean) : Exception(message)
 
     /** True if the file is an archive the app can mount (.epsa or plain ZIP). */
     fun isGameArchive(file: File): Boolean = EpsaArchive.isEpsaFile(file) || EpsaArchive.isZipFile(file)
 
     private sealed class Resolution {
         data class Ok(val keys: ArchiveKeys) : Resolution()
-        data class Failure(val message: String) : Resolution()
+        data class Failure(val message: String, val attestationReason: String? = null) : Resolution()
     }
 
     private fun resolveArchive(context: Context, file: File): Resolution {
@@ -135,7 +157,7 @@ object ArchiveValidator {
             return Resolution.Failure(NOT_AN_ARCHIVE)
         }
         return when (val r = EpsaArchive.resolve(context, file)) {
-            is EpsaArchive.Result.Failure -> Resolution.Failure(r.message)
+            is EpsaArchive.Result.Failure -> Resolution.Failure(r.message, r.attestationReason)
             is EpsaArchive.Result.Ok      -> Resolution.Ok(
                 ArchiveKeys(
                     path      = r.keys.epsaPath,
