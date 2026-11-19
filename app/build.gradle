@@ -152,6 +152,8 @@ kotlin {
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
+    // Android's org.json is a stub in JVM tests: the real one (RemoteGame.parseManifest)
+    testImplementation "org.json:json:20240303"
 
     def room_version = "2.6.1"
     implementation "androidx.room:room-runtime:$room_version"

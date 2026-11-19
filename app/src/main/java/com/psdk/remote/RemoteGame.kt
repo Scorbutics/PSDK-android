@@ -74,17 +74,17 @@ object RemoteGame {
         val archive = json.getJSONObject("archive")
         val url = archive.getString("url")
         Manifest(
-            title = json.optString("title").ifEmpty { null },
+            title = json.optionalString("title"),
             version = json.getString("version"),
             archiveUrl = URI(manifestUrl).resolve(url).toString(),
             archiveName = url.substringAfterLast('/').substringBefore('?').ifEmpty { "game.epsa" },
             size = archive.getLong("size"),
             sha256 = archive.getString("sha256").lowercase(),
-            ruby = json.optString("ruby").ifEmpty { null },
-            backend = json.optString("backend").ifEmpty { null },
+            ruby = json.optionalString("ruby"),
+            backend = json.optionalString("backend"),
             compiled = json.optBoolean("compiled"),
-            certSha256 = json.optString("cert_sha256").ifEmpty { null }?.lowercase(),
-            minAppVersion = json.optString("min_app_version").ifEmpty { null },
+            certSha256 = json.optionalString("cert_sha256")?.lowercase(),
+            minAppVersion = json.optionalString("min_app_version"),
         )
     } catch (e: org.json.JSONException) {
         throw Error("The game's manifest can't be read (${e.message})", retryable = false)
@@ -163,3 +163,7 @@ internal object Http {
         throw java.io.IOException("too many redirects")
     }
 }
+
+/** A string field, null when absent, JSON null or empty (optString gives "null" for JSON null) */
+private fun org.json.JSONObject.optionalString(key: String): String? =
+    if (isNull(key)) null else optString(key).ifEmpty { null }

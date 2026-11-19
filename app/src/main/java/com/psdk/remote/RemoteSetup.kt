@@ -37,11 +37,12 @@ object RemoteSetup {
         ui.status("Looking for the game...")
         val manifest = RemoteGame.fetchManifest(descriptor)
         RemoteGame.incompatibility(context, manifest)?.let { throw RemoteGame.Error(it, retryable = false) }
-        // The archive opens only on a device passing the integrity check
-        // (release builds): one that fails learns it now, not after the
+        // An encrypted archive opens only on a device passing the integrity
+        // check (release builds): one that fails learns it now, not after the
         // download (hundreds of MB). Its verdict is cached for the archive's
-        // opening.
-        (KeyAttestationGate.check(context) as? KeyAttestationGate.Result.Fail)?.let {
+        // opening. A plain one (.psa) needs no check.
+        val encrypted = !manifest.archiveName.endsWith(".psa", ignoreCase = true)
+        if (encrypted) (KeyAttestationGate.check(context) as? KeyAttestationGate.Result.Fail)?.let {
             throw RemoteGame.Error(KeyAttestationGate.playerMessage(it.reason), retryable = !KeyAttestationGate.isPermanent(it.reason))
         }
 
