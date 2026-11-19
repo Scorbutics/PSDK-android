@@ -23,7 +23,8 @@ module LiteRGSS
   end
 
   class Text
-    attr_reader :x, :y, :width, :height, :text
+    attr_reader :x, :y, :width, :height
+    attr_accessor :text
     attr_accessor :size, :fill_color, :outline_color, :outline_thickness, :opacity, :z
 
     def initialize(_font, _viewport, x, y, width, height, text, _align)
@@ -34,7 +35,7 @@ module LiteRGSS
   end
 end
 
-FakeIcon = Struct.new(:present?, :cta_accent_color)
+FakeIcon = Struct.new(:present?, :cta_accent_color, :center_y, :icon_h)
 
 require File.expand_path('../../main/ruby/loader/layers/text', __dir__)
 
@@ -51,8 +52,8 @@ class TestLoaderText < Minitest::Test
     build(533, 240, preparing_message)
   end
 
-  def build(width, height, preparing_message)
-    text = Loader::Layers::Text.new({}, font_loaded: true, preparing_message: preparing_message)
+  def build(width, height, preparing_message, font: true)
+    text = Loader::Layers::Text.new({}, font_loaded: font, preparing_message: preparing_message)
     text.build(:viewport, width, height, FakeIcon.new(false, [255, 255, 255]))
     text
   end
@@ -60,7 +61,7 @@ class TestLoaderText < Minitest::Test
   def test_the_footer_sits_at_the_bottom_between_the_side_bars
     footer = landscape_layer.instance_variable_get(:@footer)
     scale = 533 / 2712.0
-    assert_equal (240 - 8 - 12), footer.y
+    assert_equal (240 - 8 - Loader::Layers::Text::FOOTER_HEIGHT), footer.y
     assert_equal (104 * scale).to_i, footer.x
     assert_equal (533 - (104 + 142) * scale).to_i, footer.width
   end
@@ -69,7 +70,7 @@ class TestLoaderText < Minitest::Test
     LiteRGSS::DisplayWindow.desktop_width = 1220
     ENV[Loader::Layers::Text::INSETS_ENV] = '0,0,0,132' # portrait, 3-button bar
     footer = build(240, 533, nil).instance_variable_get(:@footer)
-    assert_equal (533 - 132 * 240 / 1220.0 - 8 - 12).to_i, footer.y
+    assert_equal (533 - 132 * 240 / 1220.0 - 8 - Loader::Layers::Text::FOOTER_HEIGHT).to_i, footer.y
   end
 
   def test_the_hub_leaves_add_project_to_android
@@ -80,4 +81,38 @@ class TestLoaderText < Minitest::Test
     hint = landscape_layer(preparing_message: 'Preparing...').instance_variable_get(:@hint)
     assert_equal 'Preparing...', hint.text
   end
+
+  # A small APK's setup: the host's statuses (loader.status) replace the
+  # preparing message, their second line under it
+  def test_a_status_replaces_the_preparing_message
+    layer = landscape_layer(preparing_message: 'Preparing the game')
+    layer.update_status("Downloading the game… 42%\n126 MB / 300 MB")
+    assert_equal 'Downloading the game… 42%', layer.instance_variable_get(:@hint).text
+    assert_equal '126 MB / 300 MB', layer.instance_variable_get(:@hint_detail).text
+    layer.update_status('Checking the game…')
+    assert_equal 'Checking the game…', layer.instance_variable_get(:@hint).text
+    assert_equal '', layer.instance_variable_get(:@hint_detail).text
+  end
+
+  # loader.rb's "Tap logo to compile" CTA goes to the status line only
+  def test_the_preparing_hint_is_no_status_line
+    refute landscape_layer(preparing_message: 'Preparing the game').status_present?
+  end
+
+  def test_a_status_without_a_hint_or_status_line_is_ignored
+    landscape_layer.update_status('Downloading the game… 1%')
+  end
+
+  # A small APK with its game's splash: the download in the status line
+  def test_a_status_with_a_detail_under_the_status_line
+    LiteRGSS::DisplayWindow.desktop_width = 1220
+    text = Loader::Layers::Text.new({ title: 'Lethalmon', version: 'v2.24' }, font_loaded: true)
+    text.build(:viewport, 240, 533, FakeIcon.new(true, [90, 170, 255], 266, 64))
+    text.update_status("Downloading Lethalmon v2.24... 35%\n221 MB / 633 MB")
+    assert_equal 'Downloading Lethalmon v2.24... 35%', text.instance_variable_get(:@status).text
+    assert_equal '221 MB / 633 MB', text.instance_variable_get(:@status_detail).text
+    text.update_status('‹ Tap logo to compile ›')
+    assert_equal '', text.instance_variable_get(:@status_detail).text
+  end
 end
+

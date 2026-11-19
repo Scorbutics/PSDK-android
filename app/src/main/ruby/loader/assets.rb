@@ -22,6 +22,8 @@ module Loader
     # project the splash can't show yet, e.g. the classic wizard copying
     # the bundled archive. Holds the one-line message to display.
     PREPARING_PATH    = "#{LOADER_BASE_DIR}/loader_assets/preparing.txt".freeze
+    # Font ids from here on are the splash's font at one size each (#font_id)
+    FIRST_SIZED_FONT_ID = 10
 
     # Fallback gradient hue when extract_loader_assets.rb didn't write
     # icon_color.json (e.g. all-transparent icon, decode failure).
@@ -96,18 +98,43 @@ module Loader
     # have that yet, so register the well-known PSDK default ourselves,
     # falling back to a system font so the footer renders in the
     # default state.
+    # Loads the splash's font as font 0: the game's, else the system's.
+    # True when one loads.
     def ensure_font_loaded(font_path: DEFAULT_FONT_PATH)
       ([font_path] + SYSTEM_FONT_FALLBACKS).each do |path|
         next unless File.exist?(path)
         begin
           LiteRGSS::Fonts.load_font(0, path)
           LiteRGSS::Fonts.set_default_size(0, 13)
+          @font_path = path
           return true
         rescue StandardError => e
           loader_say "font load failed (#{path}): #{e.class}: #{e.message}"
         end
       end
+      @font_path = nil
       false
+    end
+
+    # The font id drawing the splash's font at `size`. LiteRGSS3 (raylib)
+    # rasterizes a font once, at its default size, and scales its glyphs
+    # to the size a text asks for: a pixel font drawn at another size gets
+    # columns doubled or dropped (nearest sampling). Each size gets a font
+    # id of its own, rasterized at that size; kept for the VM's life, which
+    # the splash's runs share. 0 (the default size) without a font.
+    def font_id(size)
+      return 0 unless @font_path
+
+      @font_ids ||= {}
+      @font_ids[[@font_path, size]] ||= begin
+        id = FIRST_SIZED_FONT_ID + @font_ids.size
+        LiteRGSS::Fonts.set_default_size(id, size)
+        LiteRGSS::Fonts.load_font(id, @font_path)
+        id
+      end
+    rescue StandardError => e
+      loader_say "font at #{size}: #{e.class}: #{e.message}"
+      0
     end
   end
 end

@@ -20,26 +20,36 @@ module Loader
     # / status are positioned relative to the icon and only built when
     # one is present.
     class Text
-      TITLE_FONT_SIZE   = 20
-      VERSION_FONT_SIZE = 11
-      CTA_FONT_SIZE     = 12
-      FOOTER_FONT_SIZE  = 9
+      # Whole multiples of PokemonDS's pixel (PSDK's font, the game's on the
+      # splash nearly always): 13 per em. A pixel font drawn at another size
+      # gets columns doubled or dropped.
+      TITLE_FONT_SIZE   = 26
+      VERSION_FONT_SIZE = 13
+      CTA_FONT_SIZE     = 13
+      FOOTER_FONT_SIZE  = 13
       # Sized to roughly match the title font weight in the icon-present
       # state — the hint IS the centerpiece copy while preparing.
       HINT_FONT_SIZE    = 16
+      # The detail under the hint while preparing (a download's MB)
+      HINT_DETAIL_FONT_SIZE = 11
       # System bar insets of the surface, "left,top,right,bottom" in surface
       # pixels, set by RootActivity before each loader start (the loader is
       # restarted on every resize, so they always match the canvas).
       INSETS_ENV        = 'PSDK_LOADER_INSETS'
-      FOOTER_HEIGHT     = 12
+      FOOTER_HEIGHT     = 14
+      # The status's second line, under it
+      STATUS_DETAIL_OFFSET = 20
       FOOTER_MARGIN     = 8
       # Footer offset from the canvas bottom without INSETS_ENV: a 3-button
       # navigation bar at the bottom
       FALLBACK_FOOTER_OFFSET = 56
 
-      def initialize(project_info, font_loaded:, preparing_message: nil)
+      # @param font_ids [#call] size -> the font id drawing at that size
+      #   (Assets.font_id)
+      def initialize(project_info, font_loaded:, preparing_message: nil, font_ids: ->(_size) { 0 })
         @project_info      = project_info
         @font_loaded       = font_loaded
+        @font_ids          = font_ids
         @preparing_message = preparing_message
       end
 
@@ -66,7 +76,7 @@ module Loader
                    else
                      window_height - FALLBACK_FOOTER_OFFSET
                    end
-        @footer = LiteRGSS::Text.new(0, viewport, left.to_i, footer_y.to_i,
+        @footer = LiteRGSS::Text.new(@font_ids.call(FOOTER_FONT_SIZE), viewport, left.to_i, footer_y.to_i,
                                      (full_w - left - right).to_i, FOOTER_HEIGHT,
                                      "Powered by PSDK · #{engine_name} · Ruby VM", 1)
         @footer.size          = FOOTER_FONT_SIZE
@@ -86,11 +96,12 @@ module Loader
           #
           # While preparing (LoaderState.Preparing: no "+" FAB, nothing to
           # add) this line carries the host's message, centred where the
-          # icon would be.
+          # icon would be. The host's statuses replace it (#update_status:
+          # a download's progress), their second line under it.
           return unless @preparing_message
 
           hint_y = window_height / 2 - 12
-          @hint = LiteRGSS::Text.new(0, viewport, 0, hint_y, full_w, 24,
+          @hint = LiteRGSS::Text.new(@font_ids.call(HINT_FONT_SIZE), viewport, 0, hint_y, full_w, 24,
                                      @preparing_message, 1)
           @hint.size              = HINT_FONT_SIZE
           @hint.fill_color        = LiteRGSS::Color.new(245, 245, 250, 255)
@@ -99,6 +110,14 @@ module Loader
           @hint.outline_thickness = 2
           @hint.opacity           = 0
           @hint.z                 = 20
+
+          @hint_detail = LiteRGSS::Text.new(@font_ids.call(HINT_DETAIL_FONT_SIZE), viewport, 0, hint_y + 26, full_w, 18, '', 1)
+          @hint_detail.size          = HINT_DETAIL_FONT_SIZE
+          @hint_detail.fill_color    = LiteRGSS::Color.new(@accent[0], @accent[1], @accent[2], 230)
+          @hint_detail_outline_final = [0, 0, 0, 180]
+          @hint_detail.outline_color = color(@hint_detail_outline_final)
+          @hint_detail.opacity       = 0
+          @hint_detail.z             = 20
           return
         end
 
@@ -122,7 +141,7 @@ module Loader
         @version_base_y = version_y
         @status_base_y  = cta_y
 
-        @title = LiteRGSS::Text.new(0, viewport, 0, title_y, full_w, 28, @project_info[:title], 1)
+        @title = LiteRGSS::Text.new(@font_ids.call(TITLE_FONT_SIZE), viewport, 0, title_y, full_w, 28, @project_info[:title], 1)
         @title.size              = TITLE_FONT_SIZE
         @title.fill_color        = LiteRGSS::Color.new(245, 245, 250, 255)
         @title_outline_final     = [0, 0, 0, 220]
@@ -131,7 +150,7 @@ module Loader
         @title.opacity           = 0
         @title.z                 = 20
 
-        @version = LiteRGSS::Text.new(0, viewport, 0, version_y, full_w, 18, @project_info[:version], 1)
+        @version = LiteRGSS::Text.new(@font_ids.call(VERSION_FONT_SIZE), viewport, 0, version_y, full_w, 18, @project_info[:version], 1)
         @version.size          = VERSION_FONT_SIZE
         @version.fill_color    = LiteRGSS::Color.new(accent[0], accent[1], accent[2], 230)
         @version_outline_final = [0, 0, 0, 180]
@@ -143,7 +162,7 @@ module Loader
         # glyphs; they fall back to a missing-glyph box on fonts
         # without them. The PokemonDS.ttf shipped by most PSDK projects
         # covers them.
-        @status = LiteRGSS::Text.new(0, viewport, 0, cta_y, full_w, 16,
+        @status = LiteRGSS::Text.new(@font_ids.call(CTA_FONT_SIZE), viewport, 0, cta_y, full_w, 16,
                                      "‹ Initializing… ›", 1)
         @status.size              = CTA_FONT_SIZE
         @status.fill_color        = LiteRGSS::Color.new(accent[0], accent[1], accent[2], 255)
@@ -152,6 +171,15 @@ module Loader
         @status.outline_thickness = 1
         @status.opacity           = 0
         @status.z                 = 20
+
+        # Under the status: a status's second line (a download's MB)
+        @status_detail = LiteRGSS::Text.new(@font_ids.call(VERSION_FONT_SIZE), viewport, 0, cta_y + STATUS_DETAIL_OFFSET, full_w, 18, '', 1)
+        @status_detail.size          = VERSION_FONT_SIZE
+        @status_detail.fill_color    = LiteRGSS::Color.new(accent[0], accent[1], accent[2], 230)
+        @status_detail_outline_final = [0, 0, 0, 180]
+        @status_detail.outline_color = color(@status_detail_outline_final)
+        @status_detail.opacity       = 0
+        @status_detail.z             = 20
       end
 
       def animate(clock, state, m)
@@ -183,6 +211,11 @@ module Loader
           @status.outline_color = warm_outline(@status_outline_final, status_t)
           @status.y = (@status_base_y - status_lift).to_i if @status_base_y
         end
+        if @status_detail && !@status_detail.disposed?
+          @status_detail.opacity = (230 * status_t * m).to_i
+          @status_detail.outline_color = warm_outline(@status_detail_outline_final, status_t)
+          @status_detail.y = (@status_base_y + STATUS_DETAIL_OFFSET - status_lift).to_i if @status_base_y
+        end
 
         footer_t = Util.ease_out_cubic(((clock.frame - 84) / 56.0).clamp(0.0, 1.0))
         if @footer && !@footer.disposed?
@@ -199,22 +232,36 @@ module Loader
           @hint.opacity = (235 * hint_t * m).to_i
           @hint.outline_color = warm_outline(@hint_outline_final, hint_t)
         end
+        if @hint_detail && !@hint_detail.disposed?
+          @hint_detail.opacity = (230 * hint_t * m).to_i
+          @hint_detail.outline_color = warm_outline(@hint_detail_outline_final, hint_t)
+        end
       end
 
+      # The status line, or while preparing the hint: its first line there,
+      # the rest in the detail line under it ("Downloading Lethalmon v2.24...
+      # 42%", "120 MB / 300 MB").
       def update_status(text)
-        return unless status_present?
-        @status.text = text
+        headline, detail = text.split("\n", 2).map(&:strip)
+        if status_present?
+          @status.text = headline.to_s
+          @status_detail.text = detail.to_s if @status_detail && !@status_detail.disposed?
+        elsif @hint && !@hint.disposed?
+          @hint.text = headline.to_s
+          @hint_detail.text = detail.to_s if @hint_detail && !@hint_detail.disposed?
+        end
       end
 
+      # Only the status line: the hint isn't one for loader.rb's CTA
       def status_present?
         @status && !@status.disposed?
       end
 
       def dispose
-        [@title, @version, @status, @footer, @hint].each do |t|
+        [@title, @version, @status, @status_detail, @footer, @hint, @hint_detail].each do |t|
           t.dispose if t && !t.disposed?
         end
-        @title = @version = @status = @footer = @hint = nil
+        @title = @version = @status = @status_detail = @footer = @hint = @hint_detail = nil
       end
 
       private

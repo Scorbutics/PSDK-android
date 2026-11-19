@@ -40,13 +40,18 @@ module Loader
         loader_say 'stop requested before the window was created'
         return
       end
-      font_loaded   = Assets.ensure_font_loaded
       @project_info = Assets.load_project_info
       icon_color    = Assets.load_icon_color
-      icon_bitmap   = Assets.load_icon_bitmap
       preparing     = Assets.load_preparing_message
 
       @window.open(@project_info[:title])
+      # After the window: LiteRGSS3 (raylib) builds a font's atlas, and a
+      # bitmap's texture, in its GL context, which the window makes. Loaded
+      # before it, the font failed quietly and the splash had no text on
+      # its first run (the window is kept for the next ones): a small APK's
+      # "Preparing the game" and download progress.
+      font_loaded   = Assets.ensure_font_loaded
+      icon_bitmap   = Assets.load_icon_bitmap
 
       @bg      = Layers::Background.new(icon_color)
       @ambient = Layers::AmbientParticles.new
@@ -54,7 +59,8 @@ module Loader
       # While preparing there is no project to show and no "+" button over
       # the centre: no halo, and the message replaces the hub's hint.
       @icon    = Layers::Icon.new(icon_color, icon_bitmap, halo: preparing.nil?)
-      @text    = Layers::Text.new(@project_info, font_loaded: font_loaded, preparing_message: preparing)
+      @text    = Layers::Text.new(@project_info, font_loaded: font_loaded, preparing_message: preparing,
+                                                  font_ids: Assets.method(:font_id))
 
       @bg.build(@window.viewport)
       @ambient.build(@window.viewport)
