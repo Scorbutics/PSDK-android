@@ -77,8 +77,8 @@ android {
         applicationId "com.psdk.starter"
         minSdkVersion 26
         targetSdkVersion 35
-        versionCode 42
-        versionName "1.14.2"
+        versionCode 43
+        versionName "1.14.3"
 
         buildConfigField "String", "RUBY_VARIANT", "\"${rubyVariant}\""
         // The graphics backend: a small APK's game names the one it was published for
