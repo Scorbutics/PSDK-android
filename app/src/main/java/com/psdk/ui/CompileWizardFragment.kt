@@ -666,7 +666,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
     override fun onLoaderReady() {
         if (launchReady) {
-            // Override loader.rb's default "‹ Tap logo to compile ›" CTA
+            // Override loader.rb's default "< Tap logo to compile >" CTA
             // with the play variant. A status also flips
             // `external_status_received` inside the loader so the default
             // CTA branch is suppressed (loader/host_messages.rb).
@@ -943,7 +943,7 @@ class CompileWizardFragment : Fragment(), LoaderListener {
 
         /**
          * Mirrors the bracket styling of the loader's default
-         * "‹ Tap logo to compile ›" CTA so the swap reads as a label
+         * "< Tap logo to compile >" CTA so the swap reads as a label
          * change, not a font change. Sent as the splash status in
          * debug-play mode once the splash is ready.
          */

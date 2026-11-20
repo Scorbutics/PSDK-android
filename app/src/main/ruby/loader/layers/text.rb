@@ -7,11 +7,11 @@ module Loader
     #   [Game Title]            ← TITLE_FONT_SIZE, white, full outline
     #     v1.2.3                ← VERSION_FONT_SIZE, icon-tinted
     #     [ICON]                ← centered on canvas (Layers::Icon)
-    #   ‹tap logo to compile›   ← CTA_FONT_SIZE, accent-tinted
+    #   < Tap logo to compile > ← CTA_FONT_SIZE, accent-tinted
     #            …
     #   Powered by PSDK · …     ← FOOTER_FONT_SIZE, canvas bottom
     #
-    # The status line ("‹ Initializing… ›") doubles as the externally-
+    # The status line ("< Initializing… >") doubles as the externally-
     # driven progress display — HostMessages calls #update_status as the
     # compile wizard posts new sub-step labels.
     #
@@ -158,12 +158,11 @@ module Loader
         @version.opacity       = 0
         @version.z             = 20
 
-        # Caption-style CTA. "‹" and "›" are common single-guillemet
-        # glyphs; they fall back to a missing-glyph box on fonts
-        # without them. The PokemonDS.ttf shipped by most PSDK projects
-        # covers them.
+        # Caption-style CTA, between ASCII "<" ">" as the host's CTAs: every
+        # font has them. PSDK's PokemonDS has no "‹" "›" (raylib drew '?'
+        # for them, SFML nothing).
         @status = LiteRGSS::Text.new(@font_ids.call(CTA_FONT_SIZE), viewport, 0, cta_y, full_w, 16,
-                                     "‹ Initializing… ›", 1)
+                                     "< Initializing… >", 1)
         @status.size              = CTA_FONT_SIZE
         @status.fill_color        = LiteRGSS::Color.new(accent[0], accent[1], accent[2], 255)
         @status_outline_final     = [0, 0, 0, 220]
